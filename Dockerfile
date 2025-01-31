@@ -1,5 +1,4 @@
-# Use Node.js 20 as base
-FROM node:20-slim
+FROM node:22-alpine 
 
 # Install wget and supercronic
 RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
