@@ -6,3 +6,13 @@ README.md
 .next
 .git
 .env
+*.ts
+!*.d.ts
+.gitignore
+*.md
+tests/
+*.test.*
+*.spec.*
+.vscode/
+coverage/
+build-and-push.sh

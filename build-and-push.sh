@@ -29,11 +29,21 @@ if [[ -n $(git status -s) ]]; then
     fi
 fi
 
-# Setup build arguments
+# Setup build arguments and flags
 BUILD_ARGS="--pull --no-cache=false"
-if [[ "${1:-}" == "--no-cache" ]]; then
-    BUILD_ARGS="--pull --no-cache=true"
-fi
+SHOULD_PUSH=true
+
+# Parse arguments
+for arg in "$@"; do
+    case $arg in
+        --no-cache)
+            BUILD_ARGS="--pull --no-cache=true"
+            ;;
+        --build-only)
+            SHOULD_PUSH=false
+            ;;
+    esac
+done
 
 # Configuration
 readonly IMAGE_NAME="ghcr.io/asphaltanchors/importer"
@@ -49,10 +59,14 @@ dotenv docker build $BUILD_ARGS \
     -t $IMAGE_NAME:latest \
     -t $IMAGE_NAME:$GIT_HASH .
 
-echo "Pushing images to registry..."
+if $SHOULD_PUSH; then
+    echo "Pushing images to registry..."
 
-# Push both tags
-docker push $IMAGE_NAME:latest
-docker push $IMAGE_NAME:$GIT_HASH
+    # Push both tags
+    docker push $IMAGE_NAME:latest
+    docker push $IMAGE_NAME:$GIT_HASH
 
-echo "Successfully built and pushed: $IMAGE_NAME:$GIT_HASH"
+    echo "Successfully built and pushed: $IMAGE_NAME:$GIT_HASH"
+else
+    echo "Build completed successfully. Skipping push as --build-only was specified."
+fi
