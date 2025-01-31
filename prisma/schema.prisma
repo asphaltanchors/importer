@@ -1,0 +1,228 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["views"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// schema.prisma
+model Customer {
+  id              String    @id @default(cuid())
+  quickbooksId    String    @unique 
+  customerName    String    
+  
+  // Relationships
+  company         Company?  @relation(fields: [companyDomain], references: [domain])
+  companyDomain   String?   
+  orders          Order[]
+  
+  // Contact Information
+  emails          CustomerEmail[]
+  phones          CustomerPhone[]
+  
+  // Addresses
+  billingAddressId   String?
+  shippingAddressId  String?
+  billingAddress     Address?  @relation("CustomerBillingAddress", fields: [billingAddressId], references: [id])
+  shippingAddress    Address?  @relation("CustomerShippingAddress", fields: [shippingAddressId], references: [id])
+
+  @@index([billingAddressId])
+  @@index([shippingAddressId])
+  
+  // Business fields
+  taxCode        String?
+  taxItem        String?
+  resaleNumber   String?
+  creditLimit    Decimal?
+  terms          String?
+  
+  // Metadata
+  status         String
+  createdAt      DateTime
+  modifiedAt     DateTime
+  sourceData     Json      
+
+  @@index([customerName]) // Search by name
+  @@index([companyDomain]) // Company lookups
+}
+
+model CustomerEmail {
+  id          String    @id @default(cuid())
+  email       String
+  type        EmailType
+  isPrimary   Boolean   @default(false)
+  
+  customer    Customer  @relation(fields: [customerId], references: [id])
+  customerId  String
+
+  @@index([email]) // Email lookups/searches
+  @@index([customerId]) // Customer relation lookups
+}
+
+model CustomerPhone {
+  id          String    @id @default(cuid())
+  phone       String
+  type        PhoneType
+  isPrimary   Boolean   @default(false)
+  
+  customer    Customer  @relation(fields: [customerId], references: [id])
+  customerId  String
+
+  @@index([phone]) // Phone lookups/searches
+  @@index([customerId]) // Customer relation lookups
+}
+
+model Address {
+  id          String   @id @default(cuid())
+  line1       String
+  line2       String?
+  line3       String?
+  city        String
+  state       String?
+  postalCode  String?
+  country     String?
+  
+  customerBilling    Customer[] @relation("CustomerBillingAddress")
+  customerShipping   Customer[] @relation("CustomerShippingAddress")
+  orderBilling      Order[]    @relation("OrderBillingAddress")
+  orderShipping     Order[]    @relation("OrderShippingAddress")
+}
+
+model Company {
+  id            String    @id @default(cuid())
+  domain        String    @unique    
+  name          String?   
+  createdAt     DateTime?
+  enriched        Boolean   @default(false)
+  enrichedAt      DateTime?
+  enrichedSource  String?
+  enrichmentData  Json?    
+  enrichmentError String?
+  
+  customers     Customer[]
+  companyStats  CompanyStats? @relation("CompanyToStats")
+}
+
+model Product {
+  id            String    @id @default(cuid())
+  productCode   String    @unique
+  name          String
+  description   String?
+  
+  createdAt     DateTime
+  modifiedAt    DateTime
+  
+  orderItems    OrderItem[]
+}
+
+model Order {
+  id              String    @id @default(cuid())
+  orderNumber     String    @unique
+  orderDate       DateTime
+  
+  customer        Customer  @relation(fields: [customerId], references: [id])
+  customerId      String
+  
+  items           OrderItem[]
+  
+  billingAddressId   String?
+  shippingAddressId  String?
+  billingAddress     Address?  @relation("OrderBillingAddress", fields: [billingAddressId], references: [id])
+  shippingAddress    Address?  @relation("OrderShippingAddress", fields: [shippingAddressId], references: [id])
+
+  @@index([billingAddressId])
+  @@index([shippingAddressId])
+  
+  status          OrderStatus
+  paymentStatus   PaymentStatus
+  paymentMethod   String?
+  paymentDate     DateTime?
+  dueDate         DateTime?
+  terms           String?
+  
+  subtotal        Decimal
+  taxAmount       Decimal
+  taxPercent      Decimal?
+  totalAmount     Decimal
+  
+  shipDate        DateTime?
+  shippingMethod  String?
+  
+  createdAt       DateTime
+  modifiedAt      DateTime
+  sourceData      Json
+  
+  poNumber        String?
+  quickbooksId    String?
+  class           String?
+
+  @@index([customerId]) // Customer's orders lookup
+  @@index([orderDate]) // Date range queries
+  @@index([status, paymentStatus]) // Order status filters
+  @@index([quickbooksId]) // External system lookups
+}
+
+model OrderItem {
+  id            String    @id @default(cuid())
+  
+  order         Order     @relation(fields: [orderId], references: [id])
+  orderId       String
+  
+  product       Product   @relation(fields: [productCode], references: [productCode])
+  productCode   String
+  
+  description   String?
+  quantity      Decimal
+  unitPrice     Decimal
+  amount        Decimal
+  serviceDate   DateTime?
+  sourceData    Json?
+  
+  @@index([orderId]) // Order's items lookup
+  @@index([productCode]) // Product history lookup
+  @@index([serviceDate]) // Date range queries
+}
+
+/// @view
+view CompanyStats {
+  id            String @unique
+  customerCount Int
+  totalOrders   Decimal
+  company       Company @relation("CompanyToStats", fields: [id], references: [id])
+}
+
+enum EmailType {
+  MAIN
+  CC
+}
+
+enum PhoneType {
+  MAIN
+  MOBILE
+  WORK
+  OTHER
+}
+
+enum OrderStatus {
+  OPEN
+  CLOSED
+  VOID
+  PENDING
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  PARTIAL
+  PENDING
+  FAILED
+}

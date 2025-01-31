@@ -1,0 +1,24 @@
+{
+  "name": "importer",
+  "version": "1.0.0",
+  "description": "Process daily CSV imports for customers, invoices, and sales receipts",
+  "main": "process-daily-imports.ts",
+  "type": "module",
+  "scripts": {
+    "start": "node --loader ts-node/esm process-daily-imports.ts",
+    "build": "tsc",
+    "dev": "node --loader ts-node/esm --watch process-daily-imports.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.8.1",
+    "commander": "^11.1.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "prisma": "^5.8.1",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.3.3"
+  }
+}
