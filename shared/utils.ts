@@ -1,4 +1,7 @@
-import { parse } from 'csv-parse';
+import { Parser, Options } from 'csv-parse';
+type ParserOptions = Options & {
+  on_record?: (record: any, context: { lines: number }) => any;
+};
 import { createReadStream } from 'fs';
 import { Command } from 'commander';
 import { PrismaClient } from '@prisma/client';
@@ -126,16 +129,16 @@ export async function createCsvParser(filePath: string, skipLines?: number) {
   }
   
   const fileStream = createReadStream(filePath);
-  const parser = parse({
+  const parser = new Parser(({
     columns: true,
     skip_empty_lines: true,
-    on_record: (record, { lines }) => {
+    on_record: (record: any, { lines }: { lines: number }) => {
       if (skipLines && lines > 1 && lines <= skipLines + 1) {
         return null;
       }
       return record;
     }
-  });
+  }) as ParserOptions);
 
   // Handle cleanup on errors
   parser.on('error', () => {

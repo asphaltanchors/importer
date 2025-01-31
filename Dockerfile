@@ -5,7 +5,7 @@ FROM node:20-slim
 RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
 
 # Install supercronic
-ENV SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/v0.2.29/supercronic-linux-amd64 \
+ENV SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/v0.2.33/supercronic-linux-amd64 \
     SUPERCRONIC=/usr/local/bin/supercronic
 RUN wget -q "$SUPERCRONIC_URL" -O "$SUPERCRONIC" && \
     chmod +x "$SUPERCRONIC"
