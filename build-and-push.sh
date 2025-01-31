@@ -35,9 +35,11 @@ if [[ "${1:-}" == "--no-cache" ]]; then
     BUILD_ARGS="--pull --no-cache=true"
 fi
 
+# Configuration
+readonly IMAGE_NAME="ghcr.io/asphaltanchors/importer"
+
 # Get the git hash
 GIT_HASH=$(git rev-parse --short HEAD)
-IMAGE_NAME="ghcr.io/${GITHUB_USER:-$USER}/importer"
 
 echo "Building image with tag: $GIT_HASH"
 
