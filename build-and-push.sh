@@ -29,21 +29,52 @@ if [[ -n $(git status -s) ]]; then
     fi
 fi
 
-# Setup build arguments and flags
-BUILD_ARGS="--pull --no-cache=false"
+# Default settings
+BUILD_ARGS="--pull"
 SHOULD_PUSH=true
+BUILD_MODE="local"
+USE_CACHE=true
 
 # Parse arguments
-for arg in "$@"; do
-    case $arg in
+while [[ $# -gt 0 ]]; do
+    case $1 in
         --no-cache)
-            BUILD_ARGS="--pull --no-cache=true"
+            USE_CACHE=false
+            shift
             ;;
         --build-only)
             SHOULD_PUSH=false
+            shift
+            ;;
+        --local)
+            BUILD_MODE="local"
+            shift
+            ;;
+        --prod)
+            BUILD_MODE="prod"
+            shift
+            ;;
+        *)
+            echo "Unknown argument: $1"
+            echo "Usage: $0 [--no-cache] [--build-only] [--local|--prod]"
+            exit 1
             ;;
     esac
 done
+
+# Set up build arguments based on mode and cache settings
+if [ "$USE_CACHE" = false ]; then
+    BUILD_ARGS="$BUILD_ARGS --no-cache=true"
+else
+    BUILD_ARGS="$BUILD_ARGS --no-cache=false"
+fi
+
+if [ "$BUILD_MODE" = "prod" ]; then
+    BUILD_ARGS="$BUILD_ARGS --platform linux/amd64"
+    echo "Building for production (AMD64)"
+else
+    echo "Building for local architecture"
+fi
 
 # Configuration
 readonly IMAGE_NAME="ghcr.io/asphaltanchors/importer"
@@ -57,7 +88,8 @@ echo "Building image with tag: $GIT_HASH"
 dotenv docker build $BUILD_ARGS \
     --secret id=DATABASE_URL,env=DATABASE_URL \
     -t $IMAGE_NAME:latest \
-    -t $IMAGE_NAME:$GIT_HASH .
+    -t $IMAGE_NAME:$GIT_HASH \
+    --build-arg TARGETARCH=$([ "$BUILD_MODE" = "prod" ] && echo "amd64" || echo "arm64") .
 
 if $SHOULD_PUSH; then
     echo "Pushing images to registry..."

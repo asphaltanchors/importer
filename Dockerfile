@@ -16,9 +16,11 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY package*.json ./
 RUN npm ci --only=production
 
-# Install supercronic
-ENV SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/v0.2.33/supercronic-linux-amd64
-RUN apk add --no-cache wget && \
+# Set up architecture-specific supercronic
+ARG TARGETARCH
+ENV SUPERCRONIC_VERSION=v0.2.33
+RUN SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-${TARGETARCH} && \
+    apk add --no-cache wget && \
     wget -q "$SUPERCRONIC_URL" -O /usr/local/bin/supercronic && \
     chmod +x /usr/local/bin/supercronic && \
     apk del wget
