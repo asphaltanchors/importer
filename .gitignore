@@ -39,3 +39,5 @@ poetry.lock
 # OS
 .DS_Store
 Thumbs.db
+
+inputs/
