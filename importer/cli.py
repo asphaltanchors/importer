@@ -12,6 +12,7 @@ from importer.processors.address import AddressProcessor
 from importer.processors.customer import CustomerProcessor
 from importer.processors.email import EmailProcessor
 from importer.processors.phone import PhoneProcessor
+from importer.processors.verifier import ImportVerifier
 import pandas as pd
 from dataclasses import dataclass
 
@@ -532,6 +533,91 @@ def process_phones(file: Path, output: Path | None):
             
     except Exception as e:
         click.secho(f"Phone processing failed: {str(e)}", fg='red')
+        raise click.Abort()
+
+@cli.command()
+@click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save verification results to file')
+def verify_import(output: Path | None):
+    """Verify data integrity after import process."""
+    try:
+        # Load environment variables
+        load_dotenv()
+        database_url = os.getenv('DATABASE_URL')
+        
+        if not database_url:
+            click.secho("Error: DATABASE_URL not found in environment variables", fg='red')
+            raise click.Abort()
+            
+        click.echo("Verifying import data integrity...")
+        
+        # Create database engine and session
+        engine = create_engine(database_url)
+        from sqlalchemy.orm import sessionmaker
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        
+        try:
+            # Run verification
+            verifier = ImportVerifier(session)
+            results = verifier.verify_import()
+            
+            # Display summary
+            click.echo("\nVerification Summary:")
+            summary = results['summary']
+            
+            click.echo("\nCustomer Statistics:")
+            customers = summary['customers']
+            click.echo(f"Total Customers: {customers['total']}")
+            click.echo(f"With Company: {customers['with_company']}")
+            click.echo(f"With Billing Address: {customers['with_billing_address']}")
+            click.echo(f"With Shipping Address: {customers['with_shipping_address']}")
+            click.echo(f"With Emails: {customers['with_emails']}")
+            click.echo(f"With Phones: {customers['with_phones']}")
+            
+            click.echo("\nOrphaned Records:")
+            orphaned = summary['orphaned']
+            click.echo(f"Addresses: {orphaned['addresses']}")
+            click.echo(f"Emails: {orphaned['emails']}")
+            click.echo(f"Phones: {orphaned['phones']}")
+            
+            click.echo("\nRelationship Issues:")
+            relationships = summary['relationships']
+            click.echo(f"Invalid Company References: {relationships['invalid_company_refs']}")
+            click.echo(f"Invalid Address References: {relationships['invalid_address_refs']}")
+            
+            # Display detailed issues if any
+            if results['relationship_issues']:
+                click.echo("\nRelationship Issues Found:")
+                for issue in results['relationship_issues']:
+                    click.secho(
+                        f"- {issue['type']}: Customer {issue['customer_id']}",
+                        fg='yellow'
+                    )
+            
+            if results['orphaned_records']:
+                click.echo("\nOrphaned Records Found:")
+                for record in results['orphaned_records']:
+                    click.secho(
+                        f"- {record['type']}: {record['details']}",
+                        fg='yellow'
+                    )
+            
+            # Save detailed results if requested
+            if output:
+                with open(output, 'w') as f:
+                    json.dump(results, f, indent=2)
+                click.echo(f"\nDetailed results saved to {output}")
+            
+            if not results['success']:
+                click.secho("\nVerification completed with issues!", fg='yellow')
+            else:
+                click.secho("\nVerification completed successfully!", fg='green')
+                
+        finally:
+            session.close()
+            
+    except Exception as e:
+        click.secho(f"Verification failed: {str(e)}", fg='red')
         raise click.Abort()
 
 if __name__ == '__main__':
