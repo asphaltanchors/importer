@@ -48,6 +48,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --local)
             BUILD_MODE="local"
+            SHOULD_PUSH=false  # Local builds should not push by default
             shift
             ;;
         --prod)
@@ -100,5 +101,5 @@ if $SHOULD_PUSH; then
 
     echo "Successfully built and pushed: $IMAGE_NAME:$GIT_HASH"
 else
-    echo "Build completed successfully. Skipping push as --build-only was specified."
+    echo "Build completed successfully. Skipping push (--build-only or --local mode)."
 fi

@@ -48,9 +48,9 @@ function getConfig(baseDir: string = '/CSV'): ImportConfig {
     failedDir: path.join(baseDir, 'failed'),
     logDir: path.join(baseDir, 'logs'),
     filePatterns: {
-      customers: 'customers_*.csv',
-      invoices: 'invoices_*.csv',
-      salesReceipts: 'sales_receipts_*.csv'
+      customers: 'Customer_*.csv',
+      invoices: 'Invoice_*.csv',
+      salesReceipts: 'Sales Receipt_*.csv'
     },
     retentionDays: 30,
     batchSize: 100,
@@ -165,7 +165,13 @@ async function validateDirectoryStructure(config: ImportConfig) {
 
   for (const importType of importTypes) {
     const pattern = config.filePatterns[importType];
-    const matchingFiles = files.filter(f => f.match(pattern.replace('*', '\\d{8}')));
+    const matchingFiles = files.filter(f => {
+      // Convert pattern to regex, escaping special characters and handling the date format
+      const regexPattern = pattern
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // Escape special regex chars
+        .replace('\\*', '\\d{2}_\\d{2}_\\d{4}_\\d{1,2}_\\d{2}_\\d{2}');
+      return new RegExp(regexPattern).test(f);
+    });
     if (matchingFiles.length > 0) {
       hasMatchingFiles = true;
       break;
@@ -206,7 +212,13 @@ async function processImports(baseDir?: string) {
     // Find matching files from last 24 hours
     const recentFiles = await Promise.all(
       files
-        .filter(f => f.match(pattern.replace('*', '\\d{8}')))
+        .filter(f => {
+          // Convert pattern to regex, escaping special characters and handling the date format
+          const regexPattern = pattern
+            .replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // Escape special regex chars
+            .replace('\\*', '\\d{2}_\\d{2}_\\d{4}_\\d{1,2}_\\d{2}_\\d{2}');
+          return new RegExp(regexPattern).test(f);
+        })
         .map(async f => {
           const filePath = path.join(config.importDir, f);
           const stats = await fs.stat(filePath);
