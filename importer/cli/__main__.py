@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .config import Config
 from .logging import setup_logging
-from ..commands.validate import ValidateCustomersCommand
+from ..commands.validate import ValidateCustomersCommand, ValidateSalesCommand
 from ..commands.utils import TestConnectionCommand
 from ..commands.customers import (
     ListCompaniesCommand,
@@ -48,6 +48,25 @@ def validate(file: Path, output: Path | None, log_level: str):
         # Initialize and run command
         config = Config.from_env()
         command = ValidateCustomersCommand(config, file, output)
+        command.execute()
+        
+    except Exception as e:
+        click.secho(f"Error: {str(e)}", fg='red')
+        raise click.Abort()
+
+@cli.command()
+@click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
+@click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save validation results to file')
+@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), default='INFO')
+def validate_sales(file: Path, output: Path | None, log_level: str):
+    """Validate a sales CSV file before importing."""
+    try:
+        # Setup logging
+        setup_logging(level=log_level)
+        
+        # Initialize and run command
+        config = Config.from_env()
+        command = ValidateSalesCommand(config, file, output)
         command.execute()
         
     except Exception as e:

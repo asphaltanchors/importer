@@ -146,31 +146,67 @@ python3 -m importer.cli test-connection
 python3 -m importer.cli validate <file>
 ```
 
-### Phase 1: Data Validation
+### Phase 1: Data Validation ✓
 **Goal**: Ensure input data quality and structure
-- [ ] Implement validation command structure
-- [ ] CSV structure validation
-- [ ] Required field checks
-- [ ] Data quality validation
+- [x] Implement validation command structure
+- [x] CSV structure validation
+- [x] Required field checks
+- [x] Data quality validation
 
-**Implementation Notes**:
-1. Required Fields:
-   - Transaction number (Invoice/Receipt)
-   - Transaction date
-   - Customer information
-   - Line items
-   - Amounts/totals
+**Implementation Complete**:
 
-2. Data Quality:
-   - Date formats and ranges
-   - Amount reconciliation
-   - Tax calculations
-   - Customer data completeness
-   - Product code validation
-   - Special items (tax, shipping, etc.)
-   - Address formatting
+1. Command Structure:
+   ```
+   python3 -m importer.cli validate-sales <file>
+   ```
 
-3. Command: `python3 -m importer.cli validate-sales <file>`
+2. Field Mapping System:
+   - Handles both Invoice and Sales Receipt formats
+   - Maps variant field names (e.g., "Invoice No"/"Sales Receipt No")
+   - Flexible header detection for different formats
+   - Extensible for future format additions
+
+3. Validation Features:
+   - Required Fields:
+     * Transaction number (Invoice/Receipt)
+     * Transaction date
+     * Customer name
+     * Product/Service code
+     * Quantity
+     * Unit price
+     * Amount
+   - Date Format:
+     * Supports YYYY-MM-DD
+     * Supports MM-DD-YYYY
+   - Numeric Validation:
+     * Quantity
+     * Unit price
+     * Amount
+   - Amount Reconciliation:
+     * Validates quantity * unit_price = amount
+     * Allows for small rounding differences (0.01)
+
+4. Special Row Handling:
+   - Shipping rows (skipped from validation)
+   - Tax rows (skipped from validation)
+   - Discount rows (skipped from validation)
+   - Empty/formatting rows (skipped from validation)
+
+5. Key Findings:
+   - Invoices use double-space in field names ("Product/Service  Amount")
+   - Sales receipts use single-space ("Product/Service Amount")
+   - Invoices contain empty rows for formatting
+   - Both formats include special rows (shipping, tax, discounts)
+   - Discounts are represented as negative amounts
+   - Dates may be in different formats
+
+6. Next Phase Considerations:
+   - Product codes are in "Product/Service" field
+   - Product descriptions are in separate field
+   - Line items need grouping by transaction number
+   - Special items (shipping, tax) need filtering
+   - Source data should be preserved for audit trail
+   - Both formats use same basic line item structure
 
 ### Phase 2: Product Processing
 **Goal**: Create and update product records

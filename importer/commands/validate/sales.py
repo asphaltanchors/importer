@@ -1,20 +1,16 @@
-"""
-Validation commands for the importer CLI.
-Provides commands for validating input data before processing.
-"""
+"""Sales validation command."""
 
-import json
 import click
+import json
 from pathlib import Path
 from typing import Optional, Dict, Any
 
 from ...cli.base import FileInputCommand, command_error_handler
 from ...cli.config import Config
-from ...processors.validator import validate_customer_file
-from .sales import ValidateSalesCommand
+from ...processors.sales_validator import validate_sales_file
 
-class ValidateCustomersCommand(FileInputCommand):
-    """Command to validate customer CSV files."""
+class ValidateSalesCommand(FileInputCommand):
+    """Command to validate sales CSV files."""
     
     def __init__(self, config: Config, input_file: Path, output_file: Optional[Path] = None):
         super().__init__(config, input_file, output_file)
@@ -22,10 +18,10 @@ class ValidateCustomersCommand(FileInputCommand):
     @command_error_handler
     def execute(self) -> None:
         """Execute the validation command."""
-        self.logger.info(f"Validating {self.input_file}...")
+        self.logger.info(f"Validating sales file: {self.input_file}...")
         
         # Run validation
-        results = validate_customer_file(self.input_file)
+        results = validate_sales_file(self.input_file)
         
         # Display summary
         self._display_summary(results)
@@ -42,7 +38,7 @@ class ValidateCustomersCommand(FileInputCommand):
         summary = results['summary']
         stats = summary['stats']
         
-        click.echo("\nValidation Summary:")
+        click.echo("\nSales Validation Summary:")
         click.echo(f"Total Rows: {stats['total_rows']}")
         click.echo(f"Valid Rows: {stats['valid_rows']}")
         click.echo(f"Rows with Warnings: {stats['rows_with_warnings']}")
@@ -63,5 +59,3 @@ class ValidateCustomersCommand(FileInputCommand):
         with open(self.output_file, 'w') as f:
             json.dump(results, f, indent=2)
         click.echo(f"\nDetailed results saved to {self.output_file}")
-
-__all__ = ['ValidateCustomersCommand', 'ValidateSalesCommand']
