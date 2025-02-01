@@ -1,0 +1,47 @@
+# pyproject.toml
+[tool.poetry]
+name = "csv-importer"
+version = "0.1.0"
+description = "CSV import processor for database ingestion"
+authors = ["Your Name <your.email@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+pandas = "^2.0.0"
+sqlalchemy = "^2.0.0"
+click = "^8.0.0"
+python-dotenv = "^1.0.0"
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.0.0"
+black = "^23.0.0"
+flake8 = "^6.0.0"
+
+[tool.poetry.scripts]
+csv-import = "csv_importer.cli:main"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+# Dockerfile
+FROM python:3.9-slim
+
+# Install poetry
+RUN pip install poetry
+
+# Copy project files
+WORKDIR /app
+COPY pyproject.toml poetry.lock ./
+COPY csv_importer ./csv_importer
+COPY scripts ./scripts
+
+# Install dependencies
+RUN poetry config virtualenvs.create false \
+    && poetry install --no-dev
+
+# Set up cron job
+COPY scripts/run_import.sh /etc/cron.daily/run_import
+RUN chmod +x /etc/cron.daily/run_import
+
+CMD ["csv-import"]
