@@ -9,6 +9,7 @@ from importer.importer import CSVImporter
 from importer.processors.validator import validate_customer_file
 from importer.processors.company import CompanyProcessor
 from importer.processors.address import AddressProcessor
+from importer.processors.customer import CustomerProcessor
 import pandas as pd
 from dataclasses import dataclass
 
@@ -291,6 +292,72 @@ def process_addresses(file: Path, output: Path | None):
             
     except Exception as e:
         click.secho(f"Address processing failed: {str(e)}", fg='red')
+        raise click.Abort()
+
+@cli.command()
+@click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
+@click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save customer processing results to file')
+def process_customers(file: Path, output: Path | None):
+    """Process customer records from a CSV file."""
+    try:
+        # First validate the file
+        validation_results = validate_customer_file(file)
+        if not validation_results['is_valid']:
+            click.secho("File validation failed. Please fix validation errors first.", fg='red')
+            raise click.Abort()
+            
+        # Load environment variables
+        load_dotenv()
+        database_url = os.getenv('DATABASE_URL')
+        
+        if not database_url:
+            click.secho("Error: DATABASE_URL not found in environment variables", fg='red')
+            raise click.Abort()
+            
+        click.echo(f"Processing {file} for customers...")
+        
+        # Create database engine and session
+        engine = create_engine(database_url)
+        from sqlalchemy.orm import sessionmaker
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        
+        try:
+            # Read the CSV file
+            df = pd.read_csv(file)
+            
+            # Initialize and run customer processor
+            processor = CustomerProcessor(session)
+            processed_df = processor.process(df)
+            
+            # Get statistics
+            stats = processor.get_stats()
+            
+            # Display summary
+            click.echo("\nCustomer Processing Summary:")
+            click.echo(f"Total Rows Processed: {stats['customers_processed']}")
+            click.echo(f"Customers Created: {stats['customers_created']}")
+            click.echo(f"Missing Company Domains: {stats['missing_company_domains']}")
+            click.echo(f"Invalid Billing Addresses: {stats['invalid_billing_addresses']}")
+            click.echo(f"Invalid Shipping Addresses: {stats['invalid_shipping_addresses']}")
+            click.echo(f"Errors: {stats['errors']}")
+            
+            # Save detailed results if requested
+            if output:
+                results = {
+                    'stats': stats,
+                    'processed_rows': len(processed_df),
+                    'customer_ids': processed_df['customer_id'].dropna().tolist()
+                }
+                with open(output, 'w') as f:
+                    json.dump(results, f, indent=2)
+                click.echo(f"\nDetailed results saved to {output}")
+                
+        finally:
+            session.close()
+            
+    except Exception as e:
+        click.secho(f"Customer processing failed: {str(e)}", fg='red')
         raise click.Abort()
 
 if __name__ == '__main__':

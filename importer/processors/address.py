@@ -82,6 +82,12 @@ class AddressProcessor(BaseProcessor):
             self.stats['duplicate_addresses'] += 1
             return self.address_cache[address_hash]
             
+        # Check if address already exists in database
+        existing_address = self.session.query(Address).filter_by(id=address_hash[:32]).first()
+        if existing_address:
+            self.stats['duplicate_addresses'] += 1
+            return existing_address.id
+            
         # Create new address
         address = Address(
             id=address_hash[:32],  # Use first 32 chars of hash as ID

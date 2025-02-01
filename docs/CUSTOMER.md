@@ -157,15 +157,58 @@ Note: Address records must exist before customer creation due to foreign key con
    - In-memory caching significantly improves performance
    - Batch commits reduce database load
 
-### Phase 4: Customer Record Creation
+### Phase 4: Customer Record Creation ✓
 **Goal**: Create customer records with validated foreign keys
-- [ ] Verify company domain exists
-- [ ] Verify address IDs exist
-- [ ] Create Customer records with:
+- [x] Verify company domain exists
+- [x] Verify address IDs exist
+- [x] Create Customer records with:
   - Verified companyDomain
   - Verified billingAddressId
   - Verified shippingAddressId
-- [ ] Process business details (terms, tax info)
+- [x] Process business details (terms, tax info)
+
+**Implementation Notes**:
+1. Database Implementation:
+   - Created Customer SQLAlchemy model with schema fields:
+     * id (TEXT PRIMARY KEY)
+     * customerName (TEXT NOT NULL)
+     * companyDomain (TEXT REFERENCES Company)
+     * quickbooksId (TEXT)
+     * status (TEXT NOT NULL DEFAULT 'ACTIVE')
+     * Various business fields (terms, taxCode, etc.)
+     * billingAddressId (TEXT REFERENCES Address)
+     * shippingAddressId (TEXT REFERENCES Address)
+     * sourceData (JSONB NOT NULL DEFAULT '{}')
+     * createdAt/modifiedAt timestamps
+
+2. Key Features:
+   - Efficient domain and address validation using in-memory caching
+   - Handles missing company domains gracefully
+   - Supports optional address relationships
+   - Maintains audit timestamps
+   - Stores source data in JSON format
+
+3. Processing Approach:
+   - Validates foreign keys before creation
+   - Extracts domains from email fields if needed
+   - Maintains performance with cached lookups
+   - Commits customers in batches
+   - Tracks detailed statistics
+
+4. CLI Support:
+   - Command: `python3 -m importer.cli process-customers <file>`
+     * Shows detailed processing statistics
+     * Reports created/skipped records
+     * Tracks relationship validation
+     * Optional JSON output for detailed results
+
+5. Key Learnings:
+   - Default values critical for required fields
+   - JSON fields need explicit empty defaults
+   - Timestamp handling needs both created/modified
+   - Foreign key validation essential before inserts
+   - Cache foreign key values for performance
+   - Some customers may lack company domains
 
 ### Phase 5: Contact Information
 **Goal**: Add contact details to existing customers
