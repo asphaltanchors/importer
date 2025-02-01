@@ -2,6 +2,7 @@
 from datetime import datetime
 import uuid
 from sqlalchemy import Column, String, DateTime, ForeignKey, JSON
+from sqlalchemy.orm import relationship
 from .base import Base
 
 class Customer(Base):
@@ -24,6 +25,10 @@ class Customer(Base):
     sourceData = Column(JSON, nullable=False, default=dict)
     createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
     modifiedAt = Column(DateTime)
+
+    # Relationships
+    emails = relationship("CustomerEmail", back_populates="customer", cascade="all, delete-orphan")
+    phones = relationship("CustomerPhone", back_populates="customer", cascade="all, delete-orphan")
     
     @classmethod
     def create(cls, name: str, quickbooks_id: str, company_domain: str, 

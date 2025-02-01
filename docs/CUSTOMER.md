@@ -210,17 +210,69 @@ Note: Address records must exist before customer creation due to foreign key con
    - Cache foreign key values for performance
    - Some customers may lack company domains
 
-### Phase 5: Contact Information
+### Phase 5: Contact Information ✓
 **Goal**: Add contact details to existing customers
-- [ ] Process email addresses
-  - [ ] Verify customer ID exists
-  - [ ] Set primary email flags (first email is primary)
-  - [ ] Create CustomerEmail records
-- [ ] Process phone numbers
-  - [ ] Verify customer ID exists
-  - [ ] Set primary phone flags (first number is primary)
-  - [ ] Create CustomerPhone records
+- [x] Process email addresses
+  - [x] Verify customer ID exists
+  - [x] Set primary email flags (first email is primary)
+  - [x] Create CustomerEmail records
+- [x] Process phone numbers
+  - [x] Verify customer ID exists
+  - [x] Set primary phone flags (first number is primary)
+  - [x] Create CustomerPhone records
 Note: Customer records must exist before creating contact info due to foreign key constraints
+
+**Implementation Notes**:
+1. Email Database Implementation:
+   - Created CustomerEmail SQLAlchemy model with schema fields:
+     * id (TEXT PRIMARY KEY)
+     * customerId (TEXT REFERENCES Customer)
+     * email (TEXT NOT NULL)
+     * type (EmailType ENUM: MAIN/CC)
+     * isPrimary (BOOLEAN DEFAULT FALSE)
+
+2. Phone Database Implementation:
+   - Created CustomerPhone SQLAlchemy model with schema fields:
+     * id (TEXT PRIMARY KEY)
+     * customerId (TEXT REFERENCES Customer)
+     * phone (TEXT NOT NULL)
+     * type (PhoneType ENUM: MAIN/MOBILE/WORK/OTHER)
+     * isPrimary (BOOLEAN DEFAULT FALSE)
+
+3. Email Processing Features:
+   - Combines emails from multiple fields (Main Email, CC Email, Work Email)
+   - Splits on semicolons/commas for multiple addresses
+   - First email marked as MAIN type and primary
+   - Additional emails marked as CC type
+   - Basic email format validation
+
+4. Phone Processing Features:
+   - Handles multiple phone fields with appropriate types:
+     * Main Phone → MAIN type
+     * Mobile → MOBILE type
+     * Work Phone → WORK type
+     * Alt. Phone → OTHER type
+     * Fax → OTHER type
+   - Preserves extensions in standard format (x123)
+   - Formats numbers consistently (XXX) XXX-XXXX
+   - First number per type is primary
+
+5. CLI Support:
+   - Command: `python3 -m importer.cli process-emails <file>`
+     * Processes all email fields
+     * Shows email processing statistics
+     * Optional JSON output for detailed results
+   - Command: `python3 -m importer.cli process-phones <file>`
+     * Processes all phone fields
+     * Shows phone processing statistics
+     * Optional JSON output for detailed results
+
+6. Key Learnings:
+   - Email types simpler than schema suggested (MAIN/CC vs BUSINESS/PERSONAL/OTHER)
+   - Phone types more varied than schema suggested (added MOBILE/WORK types)
+   - In-memory caching of customer IDs improves performance
+   - Batch processing reduces database load
+   - Field-specific type mapping better than content analysis
 
 ### Phase 6: Verification & Cleanup
 **Goal**: Ensure data integrity and completeness
@@ -263,13 +315,17 @@ Each error will include:
 
 ### Email Processing
 - Split multiple emails on semicolons/commas
-- First email in list is considered primary
+- First email in list is considered primary and MAIN type
+- Additional emails are CC type
 - First valid email domain used for company association
+- Basic email format validation (user@domain.tld)
 
 ### Phone Processing
 - Remove formatting characters for storage
+- Format as (XXX) XXX-XXXX when possible
 - Preserve extensions in format " x123"
-- First phone number is considered primary
+- Type determined by source field (MAIN/MOBILE/WORK/OTHER)
+- First number of each type is primary
 
 ### Company Processing
 - Companies identified by email domain

@@ -16,6 +16,7 @@ class CustomerProcessor(BaseProcessor):
         self.stats = {
             'customers_processed': 0,
             'customers_created': 0,
+            'customers_updated': 0,
             'missing_company_domains': 0,
             'invalid_billing_addresses': 0,
             'invalid_shipping_addresses': 0,
@@ -84,27 +85,40 @@ class CustomerProcessor(BaseProcessor):
                 self.stats['invalid_shipping_addresses'] += 1
                 shipping_id = None
             
-            # Create customer record
-            customer = Customer.create(
-                name=name,
-                quickbooks_id=quickbooks_id,
-                company_domain=company_domain,
-                billing_address_id=billing_id,
-                shipping_address_id=shipping_id
-            )
+            # Check if customer exists
+            existing_customer = self.session.query(Customer).filter_by(quickbooksId=quickbooks_id).first()
             
-            # Verify the customer was created with correct field mappings
-            if not all([
-                customer.customerName == name,
-                customer.quickbooksId == quickbooks_id,
-                customer.companyDomain == company_domain.lower(),
-                customer.billingAddressId == billing_id,
-                customer.shippingAddressId == shipping_id
-            ]):
-                raise ValueError("Customer field mapping error")
-            
-            self.session.add(customer)
-            self.stats['customers_created'] += 1
+            if existing_customer:
+                # Update existing customer
+                existing_customer.customerName = name
+                existing_customer.companyDomain = company_domain.lower()
+                existing_customer.billingAddressId = billing_id
+                existing_customer.shippingAddressId = shipping_id
+                existing_customer.modifiedAt = pd.Timestamp.now()
+                customer = existing_customer
+                self.stats['customers_updated'] += 1
+            else:
+                # Create new customer
+                customer = Customer.create(
+                    name=name,
+                    quickbooks_id=quickbooks_id,
+                    company_domain=company_domain,
+                    billing_address_id=billing_id,
+                    shipping_address_id=shipping_id
+                )
+                
+                # Verify the customer was created with correct field mappings
+                if not all([
+                    customer.customerName == name,
+                    customer.quickbooksId == quickbooks_id,
+                    customer.companyDomain == company_domain.lower(),
+                    customer.billingAddressId == billing_id,
+                    customer.shippingAddressId == shipping_id
+                ]):
+                    raise ValueError("Customer field mapping error")
+                
+                self.session.add(customer)
+                self.stats['customers_created'] += 1
             
             return customer.id
             

@@ -10,6 +10,8 @@ from importer.processors.validator import validate_customer_file
 from importer.processors.company import CompanyProcessor
 from importer.processors.address import AddressProcessor
 from importer.processors.customer import CustomerProcessor
+from importer.processors.email import EmailProcessor
+from importer.processors.phone import PhoneProcessor
 import pandas as pd
 from dataclasses import dataclass
 
@@ -326,7 +328,11 @@ def process_customers(file: Path, output: Path | None):
             # Read the CSV file
             df = pd.read_csv(file)
             
-            # Initialize and run customer processor
+            # First run company processor to extract domains
+            company_processor = CompanyProcessor({'database_url': database_url})
+            df = company_processor.process(df)
+            
+            # Then run customer processor
             processor = CustomerProcessor(session)
             processed_df = processor.process(df)
             
@@ -358,6 +364,174 @@ def process_customers(file: Path, output: Path | None):
             
     except Exception as e:
         click.secho(f"Customer processing failed: {str(e)}", fg='red')
+        raise click.Abort()
+
+@cli.command()
+@click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
+@click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save email processing results to file')
+def process_emails(file: Path, output: Path | None):
+    """Process and store customer email information from a CSV file."""
+    try:
+        # First validate the file
+        validation_results = validate_customer_file(file)
+        if not validation_results['is_valid']:
+            click.secho("File validation failed. Please fix validation errors first.", fg='red')
+            raise click.Abort()
+            
+        # Load environment variables
+        load_dotenv()
+        database_url = os.getenv('DATABASE_URL')
+        
+        if not database_url:
+            click.secho("Error: DATABASE_URL not found in environment variables", fg='red')
+            raise click.Abort()
+            
+        click.echo(f"Processing {file} for customer emails...")
+        
+        # Create database engine and session
+        engine = create_engine(database_url)
+        from sqlalchemy.orm import sessionmaker
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        
+        try:
+            # Read the CSV file
+            df = pd.read_csv(file)
+            
+            # Get customer IDs from the processed customers
+            customer_processor = CustomerProcessor(session)
+            customer_df = customer_processor.process(df)
+            
+            # Process emails for each customer
+            email_processor = EmailProcessor(session)
+            total_processed = 0
+            total_stored = 0
+            
+            for _, row in customer_df.iterrows():
+                if pd.isna(row['customer_id']):
+                    continue
+                    
+                # Combine all email fields
+                email_fields = ['Main Email', 'CC Email', 'Work Email']
+                emails = []
+                for field in email_fields:
+                    if field in row and pd.notna(row[field]):
+                        emails.append(str(row[field]))
+                email_data = ';'.join(emails)
+                processed, stored = email_processor.process_customer_emails(row['customer_id'], email_data)
+                total_processed += processed
+                total_stored += stored
+            
+            # Display summary
+            click.echo("\nEmail Processing Summary:")
+            click.echo(f"Total Emails Processed: {total_processed}")
+            click.echo(f"Valid Emails Stored: {total_stored}")
+            
+            # Save detailed results if requested
+            if output:
+                results = {
+                    'stats': {
+                        'total_processed': total_processed,
+                        'total_stored': total_stored
+                    }
+                }
+                with open(output, 'w') as f:
+                    json.dump(results, f, indent=2)
+                click.echo(f"\nDetailed results saved to {output}")
+                
+        finally:
+            session.close()
+            
+    except Exception as e:
+        click.secho(f"Email processing failed: {str(e)}", fg='red')
+        raise click.Abort()
+
+@cli.command()
+@click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
+@click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save phone processing results to file')
+def process_phones(file: Path, output: Path | None):
+    """Process and store customer phone information from a CSV file."""
+    try:
+        # First validate the file
+        validation_results = validate_customer_file(file)
+        if not validation_results['is_valid']:
+            click.secho("File validation failed. Please fix validation errors first.", fg='red')
+            raise click.Abort()
+            
+        # Load environment variables
+        load_dotenv()
+        database_url = os.getenv('DATABASE_URL')
+        
+        if not database_url:
+            click.secho("Error: DATABASE_URL not found in environment variables", fg='red')
+            raise click.Abort()
+            
+        click.echo(f"Processing {file} for customer phones...")
+        
+        # Create database engine and session
+        engine = create_engine(database_url)
+        from sqlalchemy.orm import sessionmaker
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        
+        try:
+            # Read the CSV file
+            df = pd.read_csv(file)
+            
+            # Get customer IDs from the processed customers
+            customer_processor = CustomerProcessor(session)
+            customer_df = customer_processor.process(df)
+            
+            # Process phones for each customer
+            phone_processor = PhoneProcessor(session)
+            total_processed = 0
+            total_stored = 0
+            
+            for _, row in customer_df.iterrows():
+                if pd.isna(row['customer_id']):
+                    continue
+                    
+                # Process each phone field
+                phone_fields = [
+                    'Main Phone',
+                    'Alt. Phone',
+                    'Work Phone',
+                    'Mobile',
+                    'Fax'
+                ]
+                
+                for field_name in phone_fields:
+                    if field_name in row and pd.notna(row[field_name]):
+                        processed, stored = phone_processor.process_customer_phones(
+                            row['customer_id'],
+                            str(row[field_name]),
+                            field_name
+                        )
+                        total_processed += processed
+                        total_stored += stored
+            
+            # Display summary
+            click.echo("\nPhone Processing Summary:")
+            click.echo(f"Total Phone Numbers Processed: {total_processed}")
+            click.echo(f"Valid Phone Numbers Stored: {total_stored}")
+            
+            # Save detailed results if requested
+            if output:
+                results = {
+                    'stats': {
+                        'total_processed': total_processed,
+                        'total_stored': total_stored
+                    }
+                }
+                with open(output, 'w') as f:
+                    json.dump(results, f, indent=2)
+                click.echo(f"\nDetailed results saved to {output}")
+                
+        finally:
+            session.close()
+            
+    except Exception as e:
+        click.secho(f"Phone processing failed: {str(e)}", fg='red')
         raise click.Abort()
 
 if __name__ == '__main__':

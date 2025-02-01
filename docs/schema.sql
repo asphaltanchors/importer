@@ -57,7 +57,7 @@ CREATE TABLE "Address" (
 );
 
 -- CustomerEmail table - Stores customer email addresses
-CREATE TYPE email_type AS ENUM ('BUSINESS', 'PERSONAL', 'OTHER');
+CREATE TYPE email_type AS ENUM ('MAIN', 'CC');
 CREATE TABLE "CustomerEmail" (
     id TEXT PRIMARY KEY,
     customerId TEXT REFERENCES "Customer"(id),
@@ -67,7 +67,7 @@ CREATE TABLE "CustomerEmail" (
 );
 
 -- CustomerPhone table - Stores customer phone numbers
-CREATE TYPE phone_type AS ENUM ('MOBILE', 'OFFICE', 'HOME', 'FAX', 'OTHER');
+CREATE TYPE phone_type AS ENUM ('MAIN', 'MOBILE', 'WORK', 'OTHER');
 CREATE TABLE "CustomerPhone" (
     id TEXT PRIMARY KEY,
     customerId TEXT REFERENCES "Customer"(id),
