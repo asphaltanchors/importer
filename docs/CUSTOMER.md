@@ -50,10 +50,11 @@ This document outlines the plan for processing customer data from CSV files into
    - Provide detailed feedback without blocking import
 
 4. Validation CLI:
-   - Command: `python3 -m importer.cli validate <file>`
+   - Command: `python3 -m importer.cli customers validate <file>`
    - Shows summary statistics
    - Color-coded output (red=critical, yellow=warning, blue=info)
    - Optional JSON output file for detailed results
+   - Part of the new modular CLI structure
 
 5. Key Learnings:
    - Real customer data often incomplete but still valuable
@@ -91,12 +92,12 @@ Note: Company records must exist before customer creation due to foreign key con
    - Statistics tracking essential for verification
 
 4. CLI Commands:
-   - `python3 -m importer.cli extract-domains <file>`: Process CSV files and create company records
+   - `python3 -m importer.cli customers extract-domains <file>`: Process CSV files and create company records
      * Shows summary statistics
      * Lists unique domains found
      * Optional JSON output for detailed results
      * Validates file before processing
-   - `python3 -m importer.cli list-companies --limit N`: View N most recent companies
+   - `python3 -m importer.cli customers list-companies --limit N`: View N most recent companies
      * Shows total count and most recent records
      * Helps verify company creation
      * Supports pagination for large datasets
@@ -144,7 +145,7 @@ Note: Address records must exist before customer creation due to foreign key con
    - Commits addresses in batches for performance
 
 4. CLI Support:
-   - Command: `python3 -m importer.cli process-addresses <file>`
+   - Command: `python3 -m importer.cli customers process-addresses <file>`
      * Shows detailed processing statistics
      * Reports unique vs duplicate addresses
      * Tracks billing/shipping address counts
@@ -196,7 +197,7 @@ Note: Address records must exist before customer creation due to foreign key con
    - Tracks detailed statistics
 
 4. CLI Support:
-   - Command: `python3 -m importer.cli process-customers <file>`
+   - Command: `python3 -m importer.cli customers process <file>`
      * Shows detailed processing statistics
      * Reports created/skipped records
      * Tracks relationship validation
@@ -258,11 +259,11 @@ Note: Customer records must exist before creating contact info due to foreign ke
    - First number per type is primary
 
 5. CLI Support:
-   - Command: `python3 -m importer.cli process-emails <file>`
+   - Command: `python3 -m importer.cli customers process-emails <file>`
      * Processes all email fields
      * Shows email processing statistics
      * Optional JSON output for detailed results
-   - Command: `python3 -m importer.cli process-phones <file>`
+   - Command: `python3 -m importer.cli customers process-phones <file>`
      * Processes all phone fields
      * Shows phone processing statistics
      * Optional JSON output for detailed results
@@ -303,7 +304,7 @@ Note: Customer records must exist before creating contact info due to foreign ke
    - Structured JSON output
 
 4. CLI Support:
-   - Command: `python3 -m importer.cli verify-import --output results.json`
+   - Command: `python3 -m importer.cli customers verify --output results.json`
      * Shows comprehensive verification summary
      * Reports relationship status
      * Lists orphaned records
