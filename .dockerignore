@@ -8,6 +8,7 @@ README.md
 .env
 *.ts
 !*.d.ts
+!docker-entrypoint.sh
 .gitignore
 *.md
 tests/

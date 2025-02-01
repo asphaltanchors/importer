@@ -1,10 +1,44 @@
 # Import Scripts
 
-This directory contains scripts for importing data from various sources.
+This directory contains scripts for importing data from various sources, with both local development and production Docker support.
+
+## Docker Build and Deployment
+
+The project includes a Docker setup for both local development (M1/ARM64) and production (AMD64) environments.
+
+### Building the Docker Image
+
+The `build-and-push.sh` script supports different build modes:
+
+```bash
+# Local development build (native architecture)
+./build-and-push.sh --local --build-only
+
+# Production build (AMD64) and push
+./build-and-push.sh --prod
+
+# Additional options:
+--no-cache    Disable Docker build cache
+--build-only  Build without pushing to registry
+```
+
+The script automatically:
+- Validates environment setup
+- Checks for uncommitted changes
+- Builds for the correct architecture
+- Tags images with git hash and 'latest'
+- Pushes to registry (unless --build-only is specified)
 
 ## Daily Import Process
 
-The `process-daily-imports.ts` script handles automated daily imports of customer, invoice, and sales receipt data. It processes CSV files that are generated daily and maintains a history of imports.
+The `process-daily-imports.ts` script handles automated daily imports of customer, invoice, and sales receipt data. When running in Docker, it operates in a dual-mode:
+
+1. Initial Scan Mode: When the container starts, it immediately scans and processes any existing files in the import directory
+2. Scheduled Mode: After the initial scan, it switches to a daily schedule (runs at 5 AM) to process new files
+
+This ensures no files are missed during container restarts while maintaining regular daily processing.
+
+When running locally (outside Docker), the script processes CSV files that are generated daily and maintains a history of imports.
 
 ### Directory Structure
 
@@ -37,8 +71,8 @@ pnpx tsx dist/scripts/process-daily-imports.js
 # Run with custom directory
 pnpx tsx dist/scripts/process-daily-imports.js /path/to/csv/directory
 
-# Setup cron job (runs at 2 AM daily)
-0 2 * * * cd /path/to/project && /usr/local/bin/pnpx tsx dist/scripts/process-daily-imports.js
+# Setup cron job (runs at 5 AM daily to match Docker schedule)
+0 5 * * * cd /path/to/project && /usr/local/bin/pnpx tsx dist/scripts/process-daily-imports.js
 ```
 
 ### Import Process
@@ -86,4 +120,3 @@ Each script accepts these options:
 Example:
 ```bash
 pnpx tsx --expose-gc scripts/import-invoice.ts invoices.csv
-```

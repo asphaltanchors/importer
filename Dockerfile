@@ -25,7 +25,9 @@ RUN SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/${S
     chmod +x /usr/local/bin/supercronic && \
     apk del wget
 
-# Set up crontab
+# Set up crontab and entrypoint
 RUN echo "0 5 * * * cd /app && node dist/process-daily-imports.js" > /app/crontab
+COPY docker-entrypoint.sh /app/
+RUN chmod +x /app/docker-entrypoint.sh
 
-CMD ["/usr/local/bin/supercronic", "/app/crontab"]
+CMD ["/app/docker-entrypoint.sh"]
