@@ -160,17 +160,28 @@ async function validateDirectoryStructure(config: ImportConfig) {
 
   // Check if any matching files exist
   const files = await fs.readdir(config.importDir);
+  console.log('\nFiles in directory:', files);
+  
   const importTypes = ['customers', 'invoices', 'salesReceipts'] as const;
   let hasMatchingFiles = false;
 
+  console.log('\nLooking for files matching patterns:');
+  Object.entries(config.filePatterns).forEach(([type, pattern]) => {
+    console.log(`  ${type}: ${pattern}`);
+  });
+
   for (const importType of importTypes) {
     const pattern = config.filePatterns[importType];
+    const regexPattern = pattern
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // Escape special regex chars
+      .replace('\\*', '\\d{2}_\\d{2}_\\d{4}_\\d{1,2}_\\d{2}_\\d{2}');
+    
+    console.log(`\nChecking ${importType} with regex: ${regexPattern}`);
+    
     const matchingFiles = files.filter(f => {
-      // Convert pattern to regex, escaping special characters and handling the date format
-      const regexPattern = pattern
-        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // Escape special regex chars
-        .replace('\\*', '\\d{2}_\\d{2}_\\d{4}_\\d{1,2}_\\d{2}_\\d{2}');
-      return new RegExp(regexPattern).test(f);
+      const matches = new RegExp(regexPattern).test(f);
+      console.log(`  ${f}: ${matches ? 'MATCH' : 'no match'}`);
+      return matches;
     });
     if (matchingFiles.length > 0) {
       hasMatchingFiles = true;
@@ -180,10 +191,13 @@ async function validateDirectoryStructure(config: ImportConfig) {
 
   if (!hasMatchingFiles) {
     throw new Error(
-      `No matching CSV files found in ${config.importDir}. Expected files matching patterns:\n` +
+      `No matching CSV files found in ${config.importDir}.\n\n` +
+      `Current patterns:\n` +
       Object.entries(config.filePatterns)
         .map(([type, pattern]) => `  - ${pattern} (${type})`)
-        .join('\n')
+        .join('\n') +
+      `\n\nAvailable files:\n  - ` +
+      files.join('\n  - ')
     );
   }
 }
