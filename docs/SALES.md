@@ -97,43 +97,152 @@
      * All customers verified in database
      * All required fields present and valid
 
-#### Phase 3.2: Invoice Processing (Next)
+#### Phase 3.2: Invoice Processing ✓
 **Goal**: Create order records from validated invoices
 
-1. Planned Features:
-   - Invoice header processing
+1. Implementation Complete:
+   - Created Order and OrderItem models ✓
+   - Implemented invoice header processing ✓
      * Invoice number and date handling
-     * Customer billing/shipping assignment
-     * Payment terms and due dates
-   - Order totals management
-     * Subtotal calculations
-     * Tax handling
-     * Total amount verification
-   - Line item processing
-     * Link to existing products (from Phase 2)
-     * Quantity and pricing
+     * Customer validation and linking
+     * Status and payment status mapping
+     * Amount calculations from line items
+   - Line Item Processing ✓
+     * Product linking and validation
+     * Quantity and pricing handling
      * Amount calculations
-     * Service date handling
+     * Service date processing
+     * Error handling for invalid data
 
-2. Database Considerations:
-   - Use Order table for header information
-   - Use OrderItem table for line items
-   - Maintain relationships to:
-     * Customer records
-     * Product records
-     * Address records (billing/shipping)
+2. Key Findings:
+   - Order Status Values:
+     * Database uses "OPEN" and "CLOSED" enum values
+     * CSV "Paid" maps to CLOSED
+     * CSV "Open" and "Partially Paid" map to OPEN
+   - Payment Status Values:
+     * Database uses "PAID" and "UNPAID" enum values
+     * CSV "Paid" maps to PAID
+     * CSV "Open" and "Partially Paid" map to UNPAID
+   - Field Names:
+     * Database uses camelCase (e.g., "paymentStatus")
+     * Proper case handling is critical for enum values
+   - Customer Handling:
+     * Missing customers treated as errors
+     * No automatic customer creation
+     * Maintains data integrity
 
-3. Implementation Plan:
-   - Create invoice processor class
-   - Implement header processing first
-   - Add line item processing
-   - Add transaction management
-   - Implement rollback on errors
+3. Testing Results:
+   - Successfully processes invoice headers
+   - Correctly maps status values
+   - Properly calculates totals from line items
+   - Handles duplicate invoices (skips with warning)
+   - Reports missing customers as errors
 
-4. Validation Requirements:
-   - Verify all products exist
-   - Confirm customer addresses
-   - Validate total calculations
-   - Check for duplicate invoices
+4. Implementation Features:
+   - Line Item Processing:
+     * Links to existing products from Phase 2
+     * Handles quantity and unit price calculations
+     * Processes amounts and service dates
+     * Skips non-product items (shipping, tax, etc.)
+     * Updates existing line items
+     * Creates new line items as needed
+   - Database Integration:
+     * Populates OrderItem records
+     * Links to Product records
+     * Transaction management with rollback
+     * Session-based operations
+     * Updates existing orders
+   - Validation:
+     * Verifies product existence
+     * Validates amounts and quantities
+     * Checks service date formats
+     * Handles duplicate invoices
+     * Reports errors and warnings
+     * Graceful tax handling
+   - Testing Results:
+     * Successfully updates existing orders
+     * Processes line items correctly
+     * Handles missing tax gracefully
+     * Reports detailed statistics
 
-[Rest of the document remains unchanged]
+### Phase 4: Verification (Next)
+**Goal**: Ensure data integrity across all imported records
+- [ ] Reference integrity verification
+- [ ] Total reconciliation
+- [ ] Relationship validation
+- [ ] Orphaned record detection
+
+**Implementation Plan**:
+
+1. Command Structure:
+   ```
+   python3 -m importer.cli verify sales <file>
+   ```
+
+2. Verification Tasks:
+   - Product reference validation
+   - Order total reconciliation
+   - Customer relationship verification
+   - Address reference checks
+   - Orphaned record detection
+
+3. Validation Requirements:
+   - All orders link to valid customers
+   - All line items link to valid products
+   - Order totals match line item sums
+   - No duplicate transaction numbers
+   - No orphaned records exist
+
+## Progress Tracking
+
+Each import operation tracks:
+1. Records processed
+2. Success/failure counts
+3. Validation issues
+4. Processing statistics
+
+## Error Categories
+
+1. **Critical** (Stops Processing)
+   - Invalid transaction numbers
+   - Missing required relationships
+   - Product not found
+   - Customer not found
+
+2. **Warning** (Continues Processing)
+   - Non-standard product codes
+   - Unusual quantities or amounts
+   - Duplicate transactions
+   - Missing optional fields
+
+3. **Info** (Statistical)
+   - Processing metrics
+   - Performance data
+   - Record counts
+   - Success rates
+
+## Performance Modes
+
+1. **Bulk Import**
+   - Optimized for ~50,000 rows
+   - Batch processing
+   - Progress tracking
+   - Memory management
+   - Summary logging
+
+2. **Incremental Update**
+   - Handles ~100 rows
+   - Real-time processing
+   - Detailed feedback
+   - Full validation
+   - Interactive output
+
+## Completion Requirements
+
+An import is considered successful when:
+1. All phases complete without critical errors
+2. Order totals reconcile with line items
+3. All relationships are verified
+4. No orphaned records exist
+5. All required fields are populated
+6. Data integrity is maintained

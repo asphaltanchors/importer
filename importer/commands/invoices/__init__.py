@@ -5,13 +5,14 @@ from typing import Optional
 
 from ...cli.base import FileInputCommand
 from ...cli.config import Config
+from ...processors.invoice import InvoiceProcessor
 from ...processors.invoice_validator import validate_invoice_file
 
 class ValidateInvoiceCommand(FileInputCommand):
-    """Command to validate invoice CSV files."""
+    """Validate an invoice file before processing."""
     
     name = 'validate-invoice'
-    help = 'Validate an invoice CSV file'
+    help = 'Validate an invoice file before processing'
 
     def __init__(self, config: Config, input_file: Path, output_file: Optional[Path] = None):
         """Initialize command.
@@ -19,41 +20,85 @@ class ValidateInvoiceCommand(FileInputCommand):
         Args:
             config: Application configuration
             input_file: Path to input CSV file
-            output_file: Optional path to save validation results
+            output_file: Optional path to save results
         """
         super().__init__(config, input_file, output_file)
 
     def execute(self) -> Optional[int]:
-        """Execute the validation command.
+        """Execute the command.
         
         Returns:
             Optional exit code
         """
-        self.logger.info(f"Validating invoice file: {self.input_file}")
-        
-        # Run invoice-specific validation
         results = validate_invoice_file(self.input_file, self.config.database_url)
         
         # Print summary
         stats = results['summary']['stats']
-        self.logger.info(f"\nValidation Summary:")
-        self.logger.info(f"Total Rows: {stats['total_rows']}")
-        self.logger.info(f"Valid Rows: {stats['valid_rows']}")
-        self.logger.info(f"Rows with Warnings: {stats['rows_with_warnings']}")
-        self.logger.info(f"Rows with Errors: {stats['rows_with_errors']}")
+        self.logger.info(f"Validated {stats['total_rows']} rows:")
+        self.logger.info(f"  Valid rows: {stats['valid_rows']}")
+        if stats['rows_with_warnings'] > 0:
+            self.logger.info(f"  Rows with warnings: {stats['rows_with_warnings']}")
+        if stats['rows_with_errors'] > 0:
+            self.logger.info(f"  Rows with errors: {stats['rows_with_errors']}")
         
         if results['summary']['errors']:
-            self.logger.warning("\nValidation Issues:")
+            self.logger.warning("Issues found:")
             for error in results['summary']['errors']:
-                severity = error['severity']
-                message = (f"[{severity}] Row {error['row']}, "
-                         f"Field: {error['field']} - {error['message']}")
-                if severity == 'CRITICAL':
-                    self.logger.error(message)
+                if error['severity'] == 'WARNING':
+                    self.logger.warning(f"  {error['message']}")
                 else:
-                    self.logger.warning(message)
+                    self.logger.error(f"  {error['message']}")
             
+            # Only return error code for actual errors, not warnings
             if not results['is_valid']:
                 return 1
+            
+        return 0
+
+class ProcessInvoicesCommand(FileInputCommand):
+    """Process invoices from a sales data file."""
+    
+    name = 'process-invoices'
+    help = 'Process invoices from a sales data file'
+
+    def __init__(self, config: Config, input_file: Path, output_file: Optional[Path] = None):
+        """Initialize command.
         
+        Args:
+            config: Application configuration
+            input_file: Path to input CSV file
+            output_file: Optional path to save results
+        """
+        super().__init__(config, input_file, output_file)
+
+    def execute(self) -> Optional[int]:
+        """Execute the command.
+        
+        Returns:
+            Optional exit code
+        """
+        processor = InvoiceProcessor(self.config.database_url)
+        results = processor.process(self.input_file)
+        
+        # Print summary
+        stats = results['summary']['stats']
+        self.logger.info(f"Processed {stats['total_invoices']} invoices:")
+        self.logger.info(f"  Created: {stats['created']}")
+        self.logger.info(f"  Updated: {stats.get('updated', 0)}")
+        self.logger.info(f"  Line items: {stats.get('line_items', 0)}")
+        self.logger.info(f"  Errors: {stats['errors']}")
+        
+        if results['summary']['errors']:
+            self.logger.warning("Errors encountered:")
+            for error in results['summary']['errors']:
+                severity = error.get('severity', 'ERROR')
+                if severity == 'WARNING':
+                    self.logger.warning(f"  {error['message']}")
+                else:
+                    self.logger.error(f"  {error['message']}")
+            
+            # Only return error code for actual errors, not warnings
+            if stats['errors'] > 0:
+                return 1
+            
         return 0
