@@ -24,11 +24,43 @@ This document outlines the plan for processing customer data from CSV files into
 
 ## Processing Phases
 
-### Phase 1: Initial Data Validation
+### Phase 1: Initial Data Validation ✓
 **Goal**: Ensure input data quality before processing
-- [ ] Validate CSV structure and required fields
-- [ ] Pre-validate foreign key relationships
-- [ ] Log validation issues
+- [x] Validate CSV structure and required fields
+- [x] Pre-validate foreign key relationships
+- [x] Log validation issues
+
+**Implementation Notes**:
+1. Required Fields:
+   - Only Customer Name and QuickBooks Internal Id are strictly required
+   - All other fields are optional to handle real-world data variations
+   - Email addresses tracked but not required (logged as warnings if missing)
+
+2. Address Handling:
+   - All address fields are optional
+   - Incomplete addresses logged as warnings
+   - Identical billing/shipping addresses detected for optimization
+   - No strict validation of international addresses
+   - US/Canada address formats logged but not enforced
+
+3. Data Quality Approach:
+   - Focus on importing as much valid data as possible
+   - Use warnings instead of errors for non-critical issues
+   - Track validation statistics for monitoring
+   - Provide detailed feedback without blocking import
+
+4. Validation CLI:
+   - Command: `python3 -m importer.cli validate <file>`
+   - Shows summary statistics
+   - Color-coded output (red=critical, yellow=warning, blue=info)
+   - Optional JSON output file for detailed results
+
+5. Key Learnings:
+   - Real customer data often incomplete but still valuable
+   - Better to warn about issues than block import
+   - Address validation should be lenient (human-readable display)
+   - Multiple email formats and locations in input data
+   - Identical addresses common (optimization opportunity)
 
 ### Phase 2: Email Domain Extraction & Company Creation
 **Goal**: Establish company records (required for customer foreign keys)

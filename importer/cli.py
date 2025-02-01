@@ -1,10 +1,12 @@
 import click
 import os
 import logging
+import json
 from pathlib import Path
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from .importer import CSVImporter
+from .processors.validator import validate_customer_file
 from dataclasses import dataclass
 
 @dataclass
@@ -79,6 +81,47 @@ def import_csv(directory: Path, log_level: str):
     except Exception as e:
         logger.error(f"Import failed: {e}")
         click.echo(f"Import failed. Check logs for details: {e}")
+        raise click.Abort()
+
+@cli.command()
+@click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
+@click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save validation results to file')
+def validate(file: Path, output: Path | None):
+    """Validate a customer CSV file before importing."""
+    try:
+        click.echo(f"Validating {file}...")
+        results = validate_customer_file(file)
+        
+        # Display summary
+        summary = results['summary']
+        stats = summary['stats']
+        click.echo("\nValidation Summary:")
+        click.echo(f"Total Rows: {stats['total_rows']}")
+        click.echo(f"Valid Rows: {stats['valid_rows']}")
+        click.echo(f"Rows with Warnings: {stats['rows_with_warnings']}")
+        click.echo(f"Rows with Errors: {stats['rows_with_errors']}")
+        
+        # Display errors and warnings
+        if summary['errors']:
+            click.echo("\nIssues Found:")
+            for error in summary['errors']:
+                color = 'red' if error['severity'] == 'CRITICAL' else 'yellow' if error['severity'] == 'WARNING' else 'blue'
+                click.secho(
+                    f"[{error['severity']}] Row {error['row']}, Field: {error['field']} - {error['message']}",
+                    fg=color
+                )
+        
+        # Save to file if requested
+        if output:
+            with open(output, 'w') as f:
+                json.dump(results, f, indent=2)
+            click.echo(f"\nDetailed results saved to {output}")
+        
+        if not results['is_valid']:
+            raise click.Abort()
+            
+    except Exception as e:
+        click.secho(f"Validation failed: {str(e)}", fg='red')
         raise click.Abort()
 
 if __name__ == '__main__':
