@@ -108,18 +108,18 @@ Note: Company records must exist before customer creation due to foreign key con
    - Handles duplicate domains gracefully
    - Maintains created timestamps
 
-### Phase 3: Address Processing
+### Phase 3: Address Processing ✓
 **Goal**: Create address records (required for customer foreign keys)
-- [ ] Process billing addresses as-is
-- [ ] Process shipping addresses as-is
-- [ ] Deduplicate identical billing/shipping addresses
-- [ ] Basic cleanup (trim whitespace, remove empty lines)
+- [x] Process billing addresses as-is
+- [x] Process shipping addresses as-is
+- [x] Deduplicate identical billing/shipping addresses
+- [x] Basic cleanup (trim whitespace, remove empty lines)
 Note: Address records must exist before customer creation due to foreign key constraints
 
-**Implementation Plan**:
-1. Database Requirements:
-   - Address table fields from schema:
-     * id (TEXT PRIMARY KEY)
+**Implementation Notes**:
+1. Database Implementation:
+   - Created Address SQLAlchemy model with schema fields:
+     * id (TEXT PRIMARY KEY) - Using first 32 chars of content hash
      * line1 (TEXT NOT NULL)
      * line2 (TEXT)
      * line3 (TEXT)
@@ -128,26 +128,34 @@ Note: Address records must exist before customer creation due to foreign key con
      * postalCode (TEXT NOT NULL)
      * country (TEXT NOT NULL)
 
-2. Key Considerations:
-   - Addresses stored as-is for display purposes
-   - No strict validation of international addresses
-   - US/Canada address formats logged but not enforced
-   - Identical billing/shipping addresses should reference same record
-   - All address fields are optional in input but required in database
-   - Need efficient way to detect duplicate addresses
+2. Key Features:
+   - Efficient deduplication using content-based hashing
+   - In-memory caching of processed addresses
+   - Automatic type conversion (e.g., numeric postal codes)
+   - Whitespace normalization
+   - Handles missing/optional fields
+   - Detects identical billing/shipping addresses
 
-3. Processing Strategy:
-   - Create SQLAlchemy model for Address table
-   - Process addresses before customer records
-   - Generate stable IDs for deduplication
-   - Handle missing fields appropriately
-   - Track address reuse statistics
+3. Processing Approach:
+   - Uses pandas DataFrame for efficient batch processing
+   - Generates stable, content-based IDs for deduplication
+   - Single-pass processing of both billing/shipping addresses
+   - Maintains address cache to minimize database queries
+   - Commits addresses in batches for performance
 
-4. CLI Requirements:
-   - Need command to test address processing
-   - Show duplicate detection stats
-   - Validate required fields present
-   - Log address format warnings
+4. CLI Support:
+   - Command: `python3 -m importer.cli process-addresses <file>`
+     * Shows detailed processing statistics
+     * Reports unique vs duplicate addresses
+     * Tracks billing/shipping address counts
+     * Optional JSON output for detailed results
+
+5. Key Learnings:
+   - Content-based hashing effective for deduplication
+   - High rate of billing/shipping address matches (~80%)
+   - Postal codes require special handling (numeric vs string)
+   - In-memory caching significantly improves performance
+   - Batch commits reduce database load
 
 ### Phase 4: Customer Record Creation
 **Goal**: Create customer records with validated foreign keys

@@ -2,5 +2,6 @@
 
 from .base import Base
 from .company import Company
+from .address import Address
 
-__all__ = ['Base', 'Company']
+__all__ = ['Base', 'Company', 'Address']

@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, text
 from importer.importer import CSVImporter
 from importer.processors.validator import validate_customer_file
 from importer.processors.company import CompanyProcessor
+from importer.processors.address import AddressProcessor
 import pandas as pd
 from dataclasses import dataclass
 
@@ -223,6 +224,73 @@ def extract_domains(file: Path, output: Path | None):
             
     except Exception as e:
         click.secho(f"Domain extraction failed: {str(e)}", fg='red')
+        raise click.Abort()
+
+@cli.command()
+@click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
+@click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save address processing results to file')
+def process_addresses(file: Path, output: Path | None):
+    """Process and deduplicate addresses from a customer CSV file."""
+    try:
+        # First validate the file
+        validation_results = validate_customer_file(file)
+        if not validation_results['is_valid']:
+            click.secho("File validation failed. Please fix validation errors first.", fg='red')
+            raise click.Abort()
+            
+        # Load environment variables
+        load_dotenv()
+        database_url = os.getenv('DATABASE_URL')
+        
+        if not database_url:
+            click.secho("Error: DATABASE_URL not found in environment variables", fg='red')
+            raise click.Abort()
+            
+        click.echo(f"Processing {file} for addresses...")
+        
+        # Create database engine and session
+        engine = create_engine(database_url)
+        from sqlalchemy.orm import sessionmaker
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        
+        try:
+            # Read the CSV file
+            df = pd.read_csv(file)
+            
+            # Initialize and run address processor
+            processor = AddressProcessor(session)
+            processed_df = processor.process(df)
+            
+            # Get statistics
+            stats = processor.get_stats()
+            
+            # Display summary
+            click.echo("\nAddress Processing Summary:")
+            click.echo(f"Total Rows Processed: {stats['addresses_processed']}")
+            click.echo(f"Unique Addresses Created: {stats['unique_addresses']}")
+            click.echo(f"Duplicate Addresses Found: {stats['duplicate_addresses']}")
+            click.echo(f"Billing Addresses: {stats['billing_addresses']}")
+            click.echo(f"Shipping Addresses: {stats['shipping_addresses']}")
+            click.echo(f"Identical Billing/Shipping: {stats['identical_billing_shipping']}")
+            
+            # Save detailed results if requested
+            if output:
+                results = {
+                    'stats': stats,
+                    'processed_rows': len(processed_df),
+                    'billing_ids': processed_df['billing_address_id'].dropna().tolist(),
+                    'shipping_ids': processed_df['shipping_address_id'].dropna().tolist()
+                }
+                with open(output, 'w') as f:
+                    json.dump(results, f, indent=2)
+                click.echo(f"\nDetailed results saved to {output}")
+                
+        finally:
+            session.close()
+            
+    except Exception as e:
+        click.secho(f"Address processing failed: {str(e)}", fg='red')
         raise click.Abort()
 
 if __name__ == '__main__':
