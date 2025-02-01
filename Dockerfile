@@ -5,25 +5,32 @@ FROM python:3.11-slim
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    POETRY_VERSION=1.7.1 \
-    POETRY_HOME="/opt/poetry" \
+    POETRY_VERSION=2.0.1 \
     POETRY_VIRTUALENVS_CREATE=false
-
-# Add Poetry to PATH
-ENV PATH="$POETRY_HOME/bin:$PATH"
 
 # Install system dependencies
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        cron \
         curl \
         gcc \
         python3-dev \
         libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Install supercronic
+# Latest releases available at https://github.com/aptible/supercronic/releases
+ENV SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/v0.2.33/supercronic-linux-amd64 \
+    SUPERCRONIC_SHA1SUM=71b0d58cc53f6bd72cf2f293e09e294b79c666d8 \
+    SUPERCRONIC=supercronic-linux-amd64
+
+RUN curl -fsSLO "$SUPERCRONIC_URL" \
+ && echo "${SUPERCRONIC_SHA1SUM}  ${SUPERCRONIC}" | sha1sum -c - \
+ && chmod +x "$SUPERCRONIC" \
+ && mv "$SUPERCRONIC" "/usr/local/bin/${SUPERCRONIC}" \
+ && ln -s "/usr/local/bin/${SUPERCRONIC}" /usr/local/bin/supercronic
+
 # Install Poetry
-RUN curl -sSL https://install.python-poetry.org | python3 -
+RUN pip install poetry==${POETRY_VERSION}
 
 # Set working directory
 WORKDIR /app
@@ -33,24 +40,22 @@ COPY pyproject.toml ./
 COPY importer ./importer
 COPY scripts ./scripts
 
+# Ensure scripts are executable
+RUN chmod -R +x /app/scripts
+
 # Install Python dependencies
-RUN poetry install --no-interaction --no-ansi --no-root
+RUN poetry install --no-interaction --no-ansi 
 
 # Set up cron job and startup script
-COPY scripts/run_import.sh /etc/cron.daily/run_import
+COPY scripts/run_import.sh /app/scripts/run_import.sh
 COPY scripts/startup.sh /app/startup.sh
-RUN chmod +x /etc/cron.daily/run_import /app/startup.sh
+COPY crontab.txt /app/crontab.txt
+RUN chmod +x /app/scripts/run_import.sh /app/startup.sh
 
-# Create directory for logs
-RUN mkdir -p /var/log/importer \
+# Create directory for logs and input files
+RUN mkdir -p /var/log/importer /data/input \
     && touch /var/log/importer/import.log \
     && chmod 666 /var/log/importer/import.log
-
-# Create directory for input files
-RUN mkdir -p /data/input
-
-# Add cron job to crontab
-RUN echo "0 0 * * * /etc/cron.daily/run_import >> /var/log/importer/import.log 2>&1" > /etc/crontab
 
 # Create non-root user
 RUN useradd -m -u 1000 importer_user \

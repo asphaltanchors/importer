@@ -1,8 +1,14 @@
 #!/bin/bash
 set -e
 
-# Start cron service
-service cron start
-
-# Keep container running
-tail -f /var/log/importer/import.log
+if [ $# -gt 0 ]; then
+    # If arguments are passed, execute them
+    exec "$@"
+else
+    # No arguments - first process existing files, then start cron
+    echo "Processing existing CSV files..."
+    /app/scripts/run_import.sh
+    
+    echo "Starting cron scheduler..."
+    cd /app && exec /usr/local/bin/supercronic -debug /app/crontab.txt
+fi

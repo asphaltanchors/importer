@@ -30,17 +30,23 @@ poetry run importer test-connection
 
 1. Build the Docker image:
 ```bash
-docker build -t csv-importer .
+docker build -t py-importer .
 ```
 
 2. Run the container:
+
+```bash
+docker run --rm \
+  --env-file .env.docker \
+  py-importer poetry run importer test-connection
+```
+
 ```bash
 docker run -d \
-  --name csv-importer \
+  --name py-importer \
   -v $(pwd)/data/input:/data/input \
-  -v $(pwd)/data/logs:/var/log/importer \
   --env-file .env \
-  csv-importer
+  py-importer
 ```
 
 The container will:
