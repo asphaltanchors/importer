@@ -62,12 +62,51 @@ This document outlines the plan for processing customer data from CSV files into
    - Multiple email formats and locations in input data
    - Identical addresses common (optimization opportunity)
 
-### Phase 2: Email Domain Extraction & Company Creation
+### Phase 2: Email Domain Extraction & Company Creation ✓
 **Goal**: Establish company records (required for customer foreign keys)
-- [ ] Extract and validate email domains
-- [ ] Create/update Company records with domains
-- [ ] Verify company existence before proceeding
+- [x] Extract and validate email domains
+- [x] Create/update Company records with domains
+- [x] Verify company existence before proceeding
 Note: Company records must exist before customer creation due to foreign key constraint
+
+**Implementation Notes**:
+1. Email Domain Extraction:
+   - Successfully extracts domains from multiple email fields
+   - Handles various email formats (semicolon/comma separated lists)
+   - Searches beyond standard email fields (notes, phone fields)
+   - First valid email domain is used for company association
+   - Basic domain validation (requires @ and valid TLD)
+
+2. Domain Processing Approach:
+   - Process domains before company creation
+   - Track unique domains across all records
+   - Maintain statistics for monitoring and verification
+   - Log rows without valid domains for review
+
+3. Key Learnings:
+   - Emails often found in unexpected fields
+   - Multiple email formats need normalization
+   - Some customers may lack valid email domains
+   - Domain extraction should be separate from company creation
+   - Statistics tracking essential for verification
+
+4. CLI Commands:
+   - `python3 -m importer.cli extract-domains <file>`: Process CSV files and create company records
+     * Shows summary statistics
+     * Lists unique domains found
+     * Optional JSON output for detailed results
+     * Validates file before processing
+   - `python3 -m importer.cli list-companies --limit N`: View N most recent companies
+     * Shows total count and most recent records
+     * Helps verify company creation
+     * Supports pagination for large datasets
+
+5. Company Creation:
+   - Uses SQLAlchemy models for database interaction
+   - Generates UUIDs for company IDs
+   - Creates simple company names from domains
+   - Handles duplicate domains gracefully
+   - Maintains created timestamps
 
 ### Phase 3: Address Processing
 **Goal**: Create address records (required for customer foreign keys)
@@ -76,6 +115,39 @@ Note: Company records must exist before customer creation due to foreign key con
 - [ ] Deduplicate identical billing/shipping addresses
 - [ ] Basic cleanup (trim whitespace, remove empty lines)
 Note: Address records must exist before customer creation due to foreign key constraints
+
+**Implementation Plan**:
+1. Database Requirements:
+   - Address table fields from schema:
+     * id (TEXT PRIMARY KEY)
+     * line1 (TEXT NOT NULL)
+     * line2 (TEXT)
+     * line3 (TEXT)
+     * city (TEXT NOT NULL)
+     * state (TEXT NOT NULL)
+     * postalCode (TEXT NOT NULL)
+     * country (TEXT NOT NULL)
+
+2. Key Considerations:
+   - Addresses stored as-is for display purposes
+   - No strict validation of international addresses
+   - US/Canada address formats logged but not enforced
+   - Identical billing/shipping addresses should reference same record
+   - All address fields are optional in input but required in database
+   - Need efficient way to detect duplicate addresses
+
+3. Processing Strategy:
+   - Create SQLAlchemy model for Address table
+   - Process addresses before customer records
+   - Generate stable IDs for deduplication
+   - Handle missing fields appropriately
+   - Track address reuse statistics
+
+4. CLI Requirements:
+   - Need command to test address processing
+   - Show duplicate detection stats
+   - Validate required fields present
+   - Log address format warnings
 
 ### Phase 4: Customer Record Creation
 **Goal**: Create customer records with validated foreign keys

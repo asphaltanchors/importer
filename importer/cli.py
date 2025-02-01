@@ -5,8 +5,10 @@ import json
 from pathlib import Path
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
-from .importer import CSVImporter
-from .processors.validator import validate_customer_file
+from importer.importer import CSVImporter
+from importer.processors.validator import validate_customer_file
+from importer.processors.company import CompanyProcessor
+import pandas as pd
 from dataclasses import dataclass
 
 @dataclass
@@ -34,6 +36,46 @@ def setup_logging(log_dir: Path, level: str) -> None:
 def cli():
     """CSV Importer CLI tool"""
     pass
+
+@cli.command()
+@click.option('--limit', type=int, default=10, help='Number of most recent companies to show')
+def list_companies(limit: int):
+    """List most recent companies in the database."""
+    # Load environment variables
+    load_dotenv()
+    database_url = os.getenv('DATABASE_URL')
+    
+    if not database_url:
+        click.echo("Error: DATABASE_URL not found in environment variables")
+        return
+    
+    try:
+        # Create engine and query companies
+        engine = create_engine(database_url)
+        with engine.connect() as connection:
+            # Get total count
+            count_result = connection.execute(text('SELECT COUNT(*) FROM "Company"'))
+            total_count = count_result.scalar()
+            
+            # Get limited companies
+            companies_result = connection.execute(text("""
+                SELECT domain, name, "createdAt" 
+                FROM "Company" 
+                ORDER BY "createdAt" DESC
+                LIMIT :limit
+            """), {"limit": limit})
+            companies = companies_result.fetchall()
+            
+        if not companies:
+            click.echo("No companies found in database")
+            return
+            
+        click.echo(f"\nMost recent {limit} of {total_count} companies in database:")
+        for company in companies:
+            click.echo(f"  - {company.domain} ({company.name})")
+        
+    except Exception as e:
+        click.echo(f"Error querying database: {str(e)}")
 
 @cli.command()
 def test_connection():
@@ -122,6 +164,65 @@ def validate(file: Path, output: Path | None):
             
     except Exception as e:
         click.secho(f"Validation failed: {str(e)}", fg='red')
+        raise click.Abort()
+
+@cli.command()
+@click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
+@click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save domain extraction results to file')
+def extract_domains(file: Path, output: Path | None):
+    """Extract and analyze email domains from a customer CSV file."""
+    try:
+        # First validate the file
+        validation_results = validate_customer_file(file)
+        if not validation_results['is_valid']:
+            click.secho("File validation failed. Please fix validation errors first.", fg='red')
+            raise click.Abort()
+            
+        # Load environment variables
+        load_dotenv()
+        database_url = os.getenv('DATABASE_URL')
+        
+        if not database_url:
+            click.secho("Error: DATABASE_URL not found in environment variables", fg='red')
+            raise click.Abort()
+            
+        click.echo(f"Processing {file} for email domains...")
+        
+        # Read the CSV file
+        df = pd.read_csv(file)
+        
+        # Initialize and run company processor
+        processor = CompanyProcessor({'database_url': database_url})
+        processed_df = processor.process(df)
+        
+        # Get statistics
+        stats = processor.get_stats()
+        domains = processor.get_processed_domains()
+        
+        # Display summary
+        click.echo("\nDomain Extraction Summary:")
+        click.echo(f"Total Rows Processed: {stats['rows_processed']}")
+        click.echo(f"Rows With Domain: {stats['rows_with_domain']}")
+        click.echo(f"Unique Domains Found: {stats['domains_extracted']}")
+        
+        if domains:
+            click.echo("\nExtracted Domains:")
+            for domain in sorted(domains):
+                click.echo(f"  - {domain}")
+        
+        # Save detailed results if requested
+        if output:
+            results = {
+                'stats': stats,
+                'domains': list(domains),
+                'rows_with_domain': len(processed_df[processed_df['company_domain'].str.len() > 0])
+            }
+            with open(output, 'w') as f:
+                json.dump(results, f, indent=2)
+            click.echo(f"\nDetailed results saved to {output}")
+            
+    except Exception as e:
+        click.secho(f"Domain extraction failed: {str(e)}", fg='red')
         raise click.Abort()
 
 if __name__ == '__main__':
