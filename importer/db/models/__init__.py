@@ -6,5 +6,6 @@ from .address import Address
 from .customer import Customer
 from .customer_email import CustomerEmail
 from .customer_phone import CustomerPhone
+from .product import Product
 
-__all__ = ['Base', 'Company', 'Address', 'Customer', 'CustomerEmail', 'CustomerPhone']
+__all__ = ['Base', 'Company', 'Address', 'Customer', 'CustomerEmail', 'CustomerPhone', 'Product']

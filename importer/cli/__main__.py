@@ -9,6 +9,7 @@ from .config import Config
 from .logging import setup_logging
 from ..commands.validate import ValidateCustomersCommand, ValidateSalesCommand
 from ..commands.utils import TestConnectionCommand
+from ..commands.products import ProcessProductsCommand
 from ..commands.customers import (
     ListCompaniesCommand,
     ExtractDomainsCommand,
@@ -163,6 +164,30 @@ def verify_import(output: Path | None):
     try:
         config = Config.from_env()
         command = VerifyImportCommand(config, output)
+        command.execute()
+    except Exception as e:
+        click.secho(f"Error: {str(e)}", fg='red')
+        raise click.Abort()
+
+# Products Commands Group
+@cli.group()
+def products():
+    """Product data management commands"""
+    pass
+
+@products.command('process')
+@click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
+@click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save product processing results to file')
+@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), default='INFO')
+def process_products(file: Path, output: Path | None, log_level: str):
+    """Process products from a sales data file."""
+    try:
+        # Setup logging
+        setup_logging(level=log_level)
+        
+        # Initialize and run command
+        config = Config.from_env()
+        command = ProcessProductsCommand(config, file, output)
         command.execute()
     except Exception as e:
         click.secho(f"Error: {str(e)}", fg='red')
