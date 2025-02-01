@@ -1,6 +1,6 @@
 # Build stage
 FROM node:22-alpine AS builder
-RUN apk add --no-cache libc6-compat openssl wget
+RUN apk add --no-cache openssl wget
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
