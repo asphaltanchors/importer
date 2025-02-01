@@ -1,3 +1,7 @@
+# Git
+.git
+.gitignore
+
 # Python
 __pycache__/
 *.py[cod]
@@ -27,9 +31,6 @@ env/
 venv/
 ENV/
 
-# Poetry
-poetry.lock
-
 # IDE
 .idea/
 .vscode/
@@ -39,3 +40,8 @@ poetry.lock
 # OS
 .DS_Store
 Thumbs.db
+
+# Project specific
+/data/
+/logs/
+*.log
