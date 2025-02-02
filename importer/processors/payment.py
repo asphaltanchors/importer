@@ -9,6 +9,11 @@ from sqlalchemy.orm import Session
 
 from ..db.models import Order, OrderStatus, PaymentStatus
 from ..utils import generate_uuid
+from ..utils.csv_normalization import (
+    normalize_dataframe_columns, 
+    validate_required_columns,
+    validate_json_data
+)
 from .base import BaseProcessor
 
 class PaymentProcessor(BaseProcessor):
@@ -64,20 +69,25 @@ class PaymentProcessor(BaseProcessor):
         
         return None
     
-    def process_file(self, file_path: Path, order_ids: List[str], is_sales_receipt: bool = False) -> Dict[str, Any]:
+    def process_file(self, file_path: Path, is_sales_receipt: bool = False) -> Dict[str, Any]:
         """Process payments from a CSV file.
         
         Args:
             file_path: Path to CSV file
-            order_ids: List of valid order IDs to process payments for
             is_sales_receipt: Whether this is a sales receipt vs invoice
             
         Returns:
             Dict containing processing results
         """
         try:
-            # Read CSV into DataFrame
+            # Read CSV into DataFrame and normalize column names
             df = pd.read_csv(file_path)
+            df = normalize_dataframe_columns(df)
+            
+            # Validate required columns
+            required_columns = ['Invoice No', 'Sales Receipt No']
+            if not any(col in df.columns for col in required_columns):
+                raise ValueError("Missing required invoice number column in CSV file")
             
             # Map CSV headers to our standardized field names
             header_mapping = {}
@@ -107,14 +117,14 @@ class PaymentProcessor(BaseProcessor):
                 current_batch.append((invoice_number, invoice_df.iloc[0]))  # Use first row for payment info
                 
                 if len(current_batch) >= self.batch_size:
-                    self._process_batch(current_batch, order_ids, is_sales_receipt)
+                    self._process_batch(current_batch, is_sales_receipt)
                     print(f"Batch {batch_num} complete ({len(current_batch)} invoices)", flush=True)
                     current_batch = []
                     batch_num += 1
             
             # Process final batch if any
             if current_batch:
-                self._process_batch(current_batch, order_ids, is_sales_receipt)
+                self._process_batch(current_batch, is_sales_receipt)
                 print(f"Final batch complete ({len(current_batch)} invoices)", flush=True)
             
             return {
@@ -133,20 +143,18 @@ class PaymentProcessor(BaseProcessor):
                 }
             }
     
-    def _process_batch(self, batch: List[tuple[str, pd.Series]], order_ids: List[str], 
-                      is_sales_receipt: bool) -> None:
+    def _process_batch(self, batch: List[tuple[str, pd.Series]], is_sales_receipt: bool) -> None:
         """Process a batch of payments.
         
         Args:
             batch: List of (invoice_number, row) tuples
-            order_ids: List of valid order IDs
             is_sales_receipt: Whether these are sales receipts
         """
         try:
             with self.session_manager as session:
                 for invoice_number, row in batch:
                     try:
-                        result = self._process_payment(row, order_ids, is_sales_receipt, session)
+                        result = self._process_payment(row, is_sales_receipt, session)
                         if result['success'] and result['order']:
                             self.processed_orders.add(invoice_number)
                             self.stats['orders_processed'] += 1
@@ -164,8 +172,7 @@ class PaymentProcessor(BaseProcessor):
             self.stats['total_errors'] += 1
             logging.error(f"Error processing batch: {str(e)}")
     
-    def _process_payment(self, row: pd.Series, order_ids: List[str], is_sales_receipt: bool, 
-                        session: Session) -> Dict[str, Any]:
+    def _process_payment(self, row: pd.Series, is_sales_receipt: bool, session: Session) -> Dict[str, Any]:
         """Process a single payment."""
         result = {
             'success': True,
@@ -186,8 +193,7 @@ class PaymentProcessor(BaseProcessor):
             
             # Find order
             order = session.query(Order).filter(
-                Order.orderNumber == invoice_number,
-                Order.id.in_(order_ids)
+                Order.orderNumber == invoice_number
             ).first()
             
             if not order:
@@ -236,6 +242,7 @@ class PaymentProcessor(BaseProcessor):
             order.dueDate = due_date
             order.paymentMethod = self.get_mapped_field(row, 'payment_method') or 'Invoice'
             order.modifiedAt = datetime.utcnow()
+            order.sourceData = validate_json_data(row.to_dict())
             
             result['order'] = order
             return result

@@ -1,7 +1,12 @@
 """Invoice processing commands."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
+
+from .products import ProcessProductsCommand
+from .line_items import ProcessLineItemsCommand
+from .orders import ProcessOrdersCommand
+from .payments import ProcessPaymentsCommand
 
 from ...cli.base import FileInputCommand
 from ...cli.config import Config
@@ -53,6 +58,58 @@ class ValidateInvoiceCommand(FileInputCommand):
             if not results['is_valid']:
                 return 1
             
+        return 0
+
+class SalesProcessCommand(FileInputCommand):
+    """Process a sales data file in the correct sequence."""
+    
+    name = 'process'
+    help = 'Process a sales data file (products, line items, orders, payments)'
+
+    def __init__(self, config: Config, input_file: Path, output_file: Optional[Path] = None):
+        """Initialize command.
+        
+        Args:
+            config: Application configuration
+            input_file: Path to input CSV file
+            output_file: Optional path to save results
+        """
+        super().__init__(config, input_file, output_file)
+
+    def execute(self) -> Optional[int]:
+        """Execute the command sequence.
+        
+        Returns:
+            Optional exit code
+        """
+        # Process products first
+        self.logger.info("Running process-products...")
+        products_command = ProcessProductsCommand(self.config, self.input_file, self.output_file)
+        result = products_command.execute()
+        if result is not None and result != 0:
+            return result
+
+        # Process orders
+        self.logger.info("Running process-orders...")
+        orders_command = ProcessOrdersCommand(self.config, self.input_file, self.output_file)
+        result = orders_command.execute()
+        if result is not None and result != 0:
+            return result
+
+        # Process line items
+        self.logger.info("Running process-line-items...")
+        line_items_command = ProcessLineItemsCommand(self.config, self.input_file, self.output_file)
+        result = line_items_command.execute()
+        if result is not None and result != 0:
+            return result
+
+        # Process payments
+        self.logger.info("Running process-payments...")
+        payments_command = ProcessPaymentsCommand(self.config, self.input_file, self.output_file)
+        result = payments_command.execute()
+        if result is not None and result != 0:
+            return result
+
         return 0
 
 class ProcessInvoicesCommand(FileInputCommand):

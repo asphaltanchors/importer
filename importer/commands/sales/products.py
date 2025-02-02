@@ -25,6 +25,7 @@ class ProcessProductsCommand(FileInputCommand):
         """
         super().__init__(config, input_file, output_file)
         self.batch_size = batch_size
+        self.session_manager = SessionManager(config.database_url)
 
     def execute(self) -> Optional[int]:
         """Execute the command.
@@ -32,8 +33,7 @@ class ProcessProductsCommand(FileInputCommand):
         Returns:
             Optional exit code
         """
-        session_manager = SessionManager(self.config.database_url)
-        processor = ProductProcessor(session_manager, self.batch_size)
+        processor = ProductProcessor(self.session_manager, self.batch_size)
         
         self.logger.info(f"Processing products from {self.input_file}")
         self.logger.info(f"Batch size: {self.batch_size}")

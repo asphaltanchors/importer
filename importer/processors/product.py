@@ -8,6 +8,7 @@ import pandas as pd
 
 from ..db.session import SessionManager
 from ..utils import generate_uuid
+from ..utils.system_products import initialize_system_products, is_system_product
 from ..db.models import Product
 from .base import BaseProcessor
 
@@ -51,6 +52,12 @@ class ProductProcessor(BaseProcessor):
             Dict containing processing results
         """
         try:
+            # Initialize system products first
+            with self.session_manager as session:
+                self.logger.debug("Initializing system products...")
+                initialize_system_products(session)
+                self.logger.debug("System products initialized")
+            
             # Read CSV into DataFrame
             df = pd.read_csv(file_path)
             
@@ -119,14 +126,11 @@ class ProductProcessor(BaseProcessor):
         if not product_code:
             return
             
-        # Skip special items and duplicates
-        if (product_code.lower() == 'shipping' or
-            'tax' in product_code.lower() or
-            'discount' in product_code.lower() or
-            'handling' in product_code.lower()):
-            return
-            
+        # Skip duplicates and system products (already initialized)
         if product_code in self.processed_codes:
+            return
+        if is_system_product(product_code):
+            self.stats['skipped'] += 1
             return
         self.processed_codes.add(product_code)
         

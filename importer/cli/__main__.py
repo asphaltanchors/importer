@@ -9,11 +9,14 @@ from .config import Config
 from .logging import setup_logging
 from ..commands.validate import ValidateCustomersCommand, ValidateSalesCommand
 from ..commands.utils import TestConnectionCommand
-from ..commands.sales import ValidateInvoiceCommand, ProcessInvoicesCommand
-from ..commands.sales.products import ProcessProductsCommand
-from ..commands.sales.line_items import ProcessLineItemsCommand
-from ..commands.sales.orders import ProcessOrdersCommand
-from ..commands.sales.payments import ProcessPaymentsCommand
+from ..commands.sales import (
+    ValidateInvoiceCommand,
+    SalesProcessCommand,
+    ProcessOrdersCommand,
+    ProcessProductsCommand,
+    ProcessLineItemsCommand,
+    ProcessPaymentsCommand
+)
 from ..commands.verify import VerifyCommand
 from ..commands.customers import (
     ListCompaniesCommand,
@@ -248,13 +251,11 @@ def process_line_items(file: Path, output: Path | None, log_level: str):
 @sales.command('process-orders')
 @click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
 @click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save processing results to file')
-@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), default='INFO')
-def process_orders(file: Path, output: Path | None, log_level: str):
+@click.pass_context
+def process_orders(ctx, file: Path, output: Path | None):
     """Process orders from a sales data file."""
     try:
-        # Setup logging
-        setup_logging(level=log_level)
-        
+        # Debug flag is already handled by root cli command
         # Initialize and run command
         config = Config.from_env()
         command = ProcessOrdersCommand(config, file, output)
@@ -285,15 +286,15 @@ def process_payments(file: Path, output: Path | None, log_level: str):
 @click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
 @click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save processing results to file')
 @click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), default='INFO')
-def process_invoices(file: Path, output: Path | None, log_level: str):
-    """Process invoices from a sales data file."""
+def process_sales(file: Path, output: Path | None, log_level: str):
+    """Process a sales data file (products, line items, orders, payments)."""
     try:
         # Setup logging
         setup_logging(level=log_level)
         
         # Initialize and run command
         config = Config.from_env()
-        command = ProcessInvoicesCommand(config, file, output)
+        command = SalesProcessCommand(config, file, output)
         command.execute()
     except Exception as e:
         click.secho(f"Error: {str(e)}", fg='red')

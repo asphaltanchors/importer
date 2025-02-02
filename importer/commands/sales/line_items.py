@@ -17,7 +17,7 @@ class ProcessLineItemsCommand(FileInputCommand):
     help = 'Process line items from a sales data file'
 
     def __init__(self, config: Config, input_file: Path, output_file: Optional[Path] = None, 
-                 batch_size: int = 100, order_ids: Optional[List[str]] = None):
+                 batch_size: int = 100):
         """Initialize command.
         
         Args:
@@ -25,11 +25,9 @@ class ProcessLineItemsCommand(FileInputCommand):
             input_file: Path to input CSV file
             output_file: Optional path to save results
             batch_size: Number of orders to process per batch
-            order_ids: Optional list of order IDs to process line items for
         """
         super().__init__(config, input_file, output_file)
         self.batch_size = batch_size
-        self.order_ids = order_ids or []
         self.session_manager = SessionManager(config.database_url)
 
     def execute(self) -> Optional[int]:
@@ -39,17 +37,12 @@ class ProcessLineItemsCommand(FileInputCommand):
             Optional exit code
         """
         try:
-            if not self.order_ids:
-                self.logger.error("No order IDs provided - must process orders first")
-                return 1
-            
             self.logger.info(f"Processing line items from {self.input_file}")
             self.logger.info(f"Batch size: {self.batch_size}")
-            self.logger.info(f"Processing line items for {len(self.order_ids)} orders")
             
             # Process line items
             processor = LineItemProcessor(self.session_manager, self.batch_size)
-            results = processor.process_file(self.input_file, self.order_ids)
+            results = processor.process_file(self.input_file)
             
             # Print final summary
             stats = results['summary']['stats']

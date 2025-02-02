@@ -39,7 +39,26 @@ class CompanyProcessor(BaseProcessor):
             return result
 
     def extract_email_domain(self, row: pd.Series) -> str:
-        """Extract the first valid email domain from a row's email fields."""
+        """Extract domain from row data.
+        
+        Tries the following in order:
+        1. Billing email domain if present
+        2. Email fields for domain extraction
+        3. Phone fields that might contain misplaced emails
+        """
+        # First check if we have a billing email domain
+        if 'Billing Address Email' in row and pd.notna(row['Billing Address Email']):
+            email = str(row['Billing Address Email']).strip()
+            if '@' in email:
+                try:
+                    raw_domain = email.split('@')[1].strip()
+                    domain = normalize_domain(raw_domain)
+                    if domain:
+                        return domain
+                except IndexError:
+                    pass
+
+        # Then check email fields
         for field in self.EMAIL_FIELDS:
             if field not in row:
                 continue
@@ -64,7 +83,7 @@ class CompanyProcessor(BaseProcessor):
                     except IndexError:
                         continue
 
-        # Check other fields that might contain misplaced emails
+        # Finally check other fields that might contain misplaced emails
         for field in ['Main Phone', 'Alt. Phone', 'Work Phone', 'Mobile', 'Fax']:
             if field not in row:
                 continue
@@ -78,6 +97,21 @@ class CompanyProcessor(BaseProcessor):
                         return domain
                 except IndexError:
                     continue
+
+        # If no email domain found, try to extract from company name
+        if 'Customer' in row and pd.notna(row['Customer']):
+            company_name = str(row['Customer']).strip()
+            # Try to find domain-like parts in the company name
+            parts = company_name.lower().replace(',', ' ').replace('(', ' ').replace(')', ' ').split()
+            for part in parts:
+                # Add protocol to help tld module parse correctly
+                potential_domain = f"http://{part}"
+                domain = normalize_domain(potential_domain)
+                if domain:
+                    self.logger.debug(f"Extracted domain '{domain}' from company name part '{part}'")
+                    return domain
+                
+            self.logger.debug(f"No valid domain found in company name: {company_name}")
 
         return ''
 

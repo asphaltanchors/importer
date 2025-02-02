@@ -20,6 +20,12 @@ class BaseCommand(ABC):
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         self._session_factory = None
+        
+        # Set debug level if root logger is in debug mode
+        root_logger = logging.getLogger()
+        if root_logger.getEffectiveLevel() == logging.DEBUG:
+            self.logger.setLevel(logging.DEBUG)
+            self.logger.debug(f"Debug logging enabled for {self.__class__.__name__}")
     
     @property
     def session_factory(self) -> sessionmaker:

@@ -7,7 +7,7 @@ from sqlalchemy import select, func
 
 from ..db.models import Customer, Company, Address
 from .base import BaseProcessor
-from ..utils.normalization import normalize_customer_name
+from ..utils.normalization import normalize_customer_name, find_customer_by_name
 
 class CustomerProcessor(BaseProcessor):
     """Processes customer data from CSV imports."""
@@ -53,27 +53,8 @@ class CustomerProcessor(BaseProcessor):
         return address_id is None or address_id in self.address_ids
 
     def _find_customer_by_name(self, name: str) -> Tuple[Optional[Customer], bool]:
-        """Find a customer by name, trying both exact and normalized matching.
-        
-        Returns:
-            Tuple of (customer, used_normalization) where used_normalization indicates
-            if the match was found using name normalization.
-        """
-        # Try exact match first
-        customer = self.session.query(Customer).filter_by(customerName=name).first()
-        if customer:
-            return customer, False
-            
-        # Try normalized match with SQL
-        normalized_name = normalize_customer_name(name)
-        customer = self.session.query(Customer).filter(
-            func.lower(Customer.customerName) == normalized_name.lower()
-        ).first()
-        if customer:
-            self.logger.info(f"Found normalized name match: '{name}' -> '{customer.customerName}'")
-            return customer, True
-            
-        return None, False
+        """Find a customer by name using the shared matching logic."""
+        return find_customer_by_name(self.session, name)
 
     def _process_batch(self, batch_df: pd.DataFrame) -> pd.DataFrame:
         """Process a batch of customer rows."""
@@ -81,13 +62,21 @@ class CustomerProcessor(BaseProcessor):
         
         for idx, row in batch_df.iterrows():
             try:
-                # Extract and validate required fields
-                name = row['Customer Name']
-                if pd.isna(name):
-                    self.logger.warning(f"Skipping row with NaN customer name, QuickBooks ID: {row.get('QuickBooks Internal Id', 'unknown')}")
+                # Try both possible column names
+                customer_name = None
+                for column in ['Customer Name', 'Customer']:
+                    if column in row and not pd.isna(row[column]):
+                        customer_name = row[column]
+                        if column == 'Customer':
+                            self.logger.debug(f"Using 'Customer' column instead of 'Customer Name'")
+                        break
+
+                if customer_name is None:
+                    self.logger.warning(f"Skipping row with missing or NaN customer name, QuickBooks ID: {row.get('QuickBooks Internal Id', 'unknown')}")
                     continue
+
+                name = str(customer_name)  # Convert to string after NaN check
                     
-                name = str(name)  # Convert to string after NaN check
                 quickbooks_id = str(row['QuickBooks Internal Id'])
                 
                 # Extract and verify company domain

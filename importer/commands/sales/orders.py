@@ -1,14 +1,15 @@
 """Order processing command for sales data."""
 
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional
 import json
 import logging
+import pandas as pd
 
 from ...cli.base import FileInputCommand
 from ...cli.config import Config
-from ...db.session import SessionManager
-from ...processors.order import OrderProcessor
+from ...processors.invoice import InvoiceProcessor
+from ...utils.csv_normalization import normalize_dataframe_columns
 
 class ProcessOrdersCommand(FileInputCommand):
     """Process orders from a sales data file."""
@@ -27,7 +28,7 @@ class ProcessOrdersCommand(FileInputCommand):
         """
         super().__init__(config, input_file, output_file)
         self.batch_size = batch_size
-        self.session_manager = SessionManager(config.database_url)
+        self.logger.debug("Initializing ProcessOrdersCommand")
 
     def execute(self) -> Optional[int]:
         """Execute the command.
@@ -36,45 +37,46 @@ class ProcessOrdersCommand(FileInputCommand):
             Optional exit code
         """
         try:
-            # Determine if this is a sales receipt file by checking first line
-            with open(self.input_file, 'r') as f:
-                header = f.readline()
-                is_sales_receipt = 'Sales Receipt No' in header
-            
             self.logger.info(f"Processing orders from {self.input_file}")
-            self.logger.info(f"File type: {'Sales Receipt' if is_sales_receipt else 'Invoice'}")
-            self.logger.info(f"Batch size: {self.batch_size}")
             
-            # Process orders
-            processor = OrderProcessor(self.session_manager, self.batch_size)
-            results = processor.process_file(self.input_file, is_sales_receipt)
+            # Read and normalize CSV
+            df = pd.read_csv(self.input_file)
+            df = normalize_dataframe_columns(df)
             
-            # Print final summary
-            stats = results['summary']['stats']
-            self.logger.info("\nProcessing complete:")
-            self.logger.info(f"Total orders: {stats['total_orders']}")
-            self.logger.info(f"Created: {stats['created']}")
-            self.logger.info(f"Updated: {stats['updated']}")
-            self.logger.info(f"Successful batches: {stats['successful_batches']}")
-            
-            if stats['failed_batches'] > 0:
-                self.logger.error(f"Failed batches: {stats['failed_batches']}")
-                self.logger.error(f"Total errors: {stats['total_errors']}")
-            
-            if stats['customers_not_found'] > 0:
-                self.logger.warning(f"Customers not found: {stats['customers_not_found']}")
-            
-            if stats['invalid_addresses'] > 0:
-                self.logger.warning(f"Invalid addresses: {stats['invalid_addresses']}")
-            
-            # Save results if output file specified
-            if self.output_file:
-                with open(self.output_file, 'w') as f:
-                    json.dump(results, f, indent=2)
-                self.logger.info(f"\nDetailed results saved to {self.output_file}")
-            
-            # Return success if no failed batches
-            return 1 if stats['failed_batches'] > 0 else 0
+            # Process orders using session
+            session = self.get_session()
+            try:
+                processor = InvoiceProcessor(session, self.batch_size)
+                processed_df = processor.process(df)
+                
+                # Get statistics
+                stats = processor.get_stats()
+                
+                # Print final summary
+                self.logger.info("\nProcessing complete:")
+                self.logger.info(f"Total orders: {stats['total_invoices']}")
+                self.logger.info(f"Created: {stats['created']}")
+                self.logger.info(f"Updated: {stats['updated']}")
+                
+                if stats['errors'] > 0:
+                    self.logger.error(f"Total errors: {stats['errors']}")
+                
+                # Save results if output file specified
+                if self.output_file:
+                    results = {
+                        'stats': stats,
+                        'processed_rows': len(processed_df),
+                        'order_ids': processed_df['order_id'].dropna().tolist()
+                    }
+                    with open(self.output_file, 'w') as f:
+                        json.dump(results, f, indent=2)
+                    self.logger.info(f"\nDetailed results saved to {self.output_file}")
+                
+                # Return success if no errors
+                return 1 if stats['errors'] > 0 else 0
+                
+            finally:
+                session.close()
             
         except Exception as e:
             self.logger.error(f"Failed to process file: {str(e)}")
