@@ -2,52 +2,34 @@
 
 ## Overview
 
-We need to handle customer name variations between QuickBooks CSV files and our database. The main variations we'll handle are:
+We need to handle customer name variations between QuickBooks CSV files and our database. The main variations we handle are:
 - Case differences (e.g., "ACME Corp" vs "Acme Corp")
 - Commas (e.g., "Smith, John" vs "John Smith")
 - Common business suffixes (e.g., "ACME LLC" vs "ACME")
 
+## Implementation Status
+
+✅ Core normalization functionality is implemented in `importer.utils.normalization.normalize_customer_name()`.
+
 ## Normalization Strategy
 
-Instead of storing normalized versions of names, we'll use a runtime normalization function that is applied both during import and lookup operations. This ensures consistent matching without requiring database schema changes.
+Instead of storing normalized versions of names in the database, we use a runtime normalization function that is applied both during import and lookup operations. This ensures consistent matching without requiring database schema changes.
 
 ## Normalization Rules
 
-The normalize_customer_name() function applies the following rules in order:
+The normalize_customer_name() function applies these transformations in order:
 
-1. Convert to uppercase
+1. Convert to uppercase and normalize whitespace
 2. Handle comma-based individual names:
    - Split on comma (e.g., "Peterson, Chris" -> "CHRIS PETERSON")
    - Only if no colon present (preserves percentage notations)
-3. Remove common business suffixes: LLC, INC, CORP, LTD, CO
-4. Remove extra whitespace
-5. Preserve special notations:
+3. Remove common business suffixes if they appear at the end:
+   - LLC, INC, CORP, CORP., LTD, CO, CO., CORPORATION, LIMITED
+   - Note: "COMPANY" is not removed as it's too common in real business names
+4. Preserve special notations:
    - Percentage notations (e.g., "White Cap 30%:Whitecap Edmonton Canada")
    - Parent/child relationships with colons
-
-## Implementation Example
-
-```python
-def normalize_customer_name(name: str) -> str:
-    # Convert to uppercase
-    name = name.upper()
-    
-    # Handle comma-based names (e.g. "Peterson, Chris" -> "CHRIS PETERSON")
-    if "," in name and ":" not in name:  # Avoid splitting percentage notations
-        last, first = name.split(",", 1)
-        name = f"{first.strip()} {last.strip()}"
-    
-    # Remove common business suffixes
-    suffixes = [" LLC", " INC", " CORP", " LTD", " CO"]
-    for suffix in suffixes:
-        if name.endswith(suffix):
-            name = name[:-len(suffix)]
-    
-    # Remove extra whitespace
-    name = " ".join(name.split())
-    
-    return name
-```
+   - Special characters (e.g., "&", "-")
 
 ## Matching Process
 
@@ -69,11 +51,40 @@ Peterson, Chris                               | CHRIS PETERSON
 EISEN GROUP LLC                              | EISEN GROUP
 White Cap 30%:Whitecap Edmonton Canada       | WHITE CAP 30%:WHITECAP EDMONTON CANADA
 advanced Tri-Star Development LLC            | ADVANCED TRI-STAR DEVELOPMENT
+shore transit                                | SHORE TRANSIT
+Pierce Manufacturing                         | PIERCE MANUFACTURING
+Smith, John LLC                              | JOHN SMITH
 ```
 
-## Edge Cases Preserved
+## Next Steps
 
-We explicitly preserve these variations to maintain data integrity:
-- Parent/child relationships with colons
-- Percentage notations
-- Special characters beyond commas
+1. Update Customer Processor:
+   - Import normalize_customer_name
+   - Modify customer lookup to use normalization
+   - Add logging for normalized matches
+
+2. Update Invoice Processor:
+   - Import normalize_customer_name
+   - Apply same lookup pattern for finding customers
+   - Add logging when normalized match is found
+
+3. Update Sales Receipt Processor:
+   - Mirror changes from invoice processor
+   - Ensure consistent customer lookup behavior
+
+4. Add Integration Tests:
+   - Test customer import with various name formats
+   - Test invoice import with normalized customer matching
+   - Test sales receipt import with normalized matching
+   - Include edge cases (percentage notation, colons)
+
+5. Manual Testing:
+   - Import sample customer list
+   - Import invoices with name variations
+   - Verify correct matching
+   - Document any edge cases found
+
+6. Monitoring Plan:
+   - Log when normalized matching is used
+   - Track success rate of normalized matches
+   - Identify patterns in unmatched customers
