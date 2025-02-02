@@ -1,6 +1,7 @@
 """Line item processor for sales data."""
 
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Dict, Any, List, Set
 from pathlib import Path
 import logging
@@ -163,26 +164,47 @@ class LineItemProcessor(BaseProcessor):
                         # Clear existing line items before processing new ones
                         self._clear_existing_line_items(order.id, session)
                         
+                        # Initialize running totals
+                        subtotal = Decimal('0')
+                        tax_amount = Decimal('0')
+                        
                         # Process each line item
-                        line_items = []
                         for _, row in invoice_df.iterrows():
+                            self.logger.debug(f"Processing row: {row.to_dict()}")
                             result = self._process_line_item(row, order.id, session)
                             if result['success'] and result['line_item']:
-                                line_items.append(result['line_item'])
+                                item = result['line_item']
                                 self.stats['total_line_items'] += 1
+                                
+                                # Skip NaN amounts
+                                if item.amount is None or pd.isna(item.amount):
+                                    self.logger.debug(f"Skipping NaN amount for {item.productCode}")
+                                    continue
+                                
+                                # Add to running totals
+                                if is_tax_product(item.productCode):
+                                    tax_amount += item.amount
+                                    self.logger.debug(f"Added tax amount: {item.amount}")
+                                else:
+                                    # Everything else (including shipping) goes to subtotal
+                                    subtotal += item.amount
+                                    self.logger.debug(f"Added to subtotal: {item.amount}")
                         
-                        if line_items:
-                            # Calculate totals using all line items for the order
-                            all_line_items = session.query(OrderItem).filter(
-                                OrderItem.orderId == order.id
-                            ).all()
-                            totals = self._calculate_totals(all_line_items)
-                            order.subtotal = totals['subtotal']
-                            order.taxAmount = totals['tax_amount']
-                            order.totalAmount = totals['subtotal'] + totals['tax_amount'] + totals['shipping_amount']
-                            
-                            self.processed_orders.add(invoice_number)
-                            self.stats['orders_processed'] += 1
+                        # Update order totals
+                        order.subtotal = subtotal
+                        order.taxAmount = tax_amount
+                        order.totalAmount = subtotal + tax_amount  # Shipping is included in subtotal
+                        
+                        self.logger.info(f"Updated order {order.orderNumber} totals:")
+                        self.logger.info(f"  Subtotal: {order.subtotal}")
+                        self.logger.info(f"  Tax: {order.taxAmount}")
+                        self.logger.info(f"  Total: {order.totalAmount}")
+                        
+                        # Ensure changes are flushed to DB
+                        session.flush()
+                        
+                        self.processed_orders.add(invoice_number)
+                        self.stats['orders_processed'] += 1
                             
                     except Exception as e:
                         logging.error(f"Error processing invoice {invoice_number}: {str(e)}")
@@ -234,21 +256,34 @@ class LineItemProcessor(BaseProcessor):
             
             # Parse quantity and amount
             # Parse quantity and amount
-            quantity = 1.0
+            quantity = Decimal('1')
             quantity_str = self.get_mapped_field(row, 'quantity')
             if quantity_str:
                 try:
-                    quantity = float(quantity_str.strip() or '1')
-                except ValueError:
+                    quantity = Decimal(quantity_str.strip() or '1')
+                except (ValueError, InvalidOperation):
                     self.logger.warning(f"Invalid quantity for {product_code}: {quantity_str}")
-                    quantity = 1.0
+                    quantity = Decimal('1')
 
-            amount = 0.0
+            # Debug all available fields
+            self.logger.debug("Available fields in row:")
+            for col in row.index:
+                self.logger.debug(f"  {col}: {row[col]}")
+
+            amount = Decimal('0')
             amount_str = self.get_mapped_field(row, 'amount')
+            self.logger.debug(f"Looking for amount using mapping: {self.field_mappings['amount']}")
+            self.logger.debug(f"Raw amount for {product_code}: {amount_str}")
+            
             if amount_str:
                 try:
-                    amount = float(amount_str.replace('$', '').replace(',', ''))
-                except ValueError:
+                    # Clean and parse amount
+                    cleaned_amount = amount_str.replace('$', '').replace(',', '')
+                    self.logger.debug(f"Cleaned amount: {cleaned_amount}")
+                    amount = Decimal(cleaned_amount)
+                    self.logger.debug(f"Parsed amount: {amount}")
+                except (ValueError, InvalidOperation) as e:
+                    self.logger.error(f"Failed to parse amount '{amount_str}' for {product_code}: {str(e)}")
                     result['success'] = False
                     result['error'] = {
                         'severity': 'ERROR',
@@ -256,7 +291,7 @@ class LineItemProcessor(BaseProcessor):
                     }
                     return result
             
-            unit_price = amount / quantity if quantity != 0 else 0
+            unit_price = amount / quantity if quantity != 0 else Decimal('0')
             
             # Parse service date if present
             service_date = None
@@ -284,6 +319,10 @@ class LineItemProcessor(BaseProcessor):
             )
             
             session.add(line_item)
+            self.logger.debug(f"Created line item for {product_code}:")
+            self.logger.debug(f"  Quantity: {quantity}")
+            self.logger.debug(f"  Unit Price: {unit_price}")
+            self.logger.debug(f"  Amount: {amount}")
             result['line_item'] = line_item
             return result
             
@@ -306,27 +345,44 @@ class LineItemProcessor(BaseProcessor):
             Field value if found, empty string otherwise
         """
         if field not in self.field_mappings:
+            self.logger.debug(f"Field {field} not in mappings")
             return ''
             
         for possible_name in self.field_mappings[field]:
+            self.logger.debug(f"Looking for {possible_name} in row")
             if possible_name in row:
-                return str(row[possible_name]).strip()
+                value = str(row[possible_name]).strip()
+                self.logger.debug(f"Found value: {value}")
+                return value
+            else:
+                self.logger.debug(f"{possible_name} not found in row")
         
+        self.logger.debug(f"No mapping found for {field}")
         return ''
 
-    def _calculate_totals(self, line_items: List[OrderItem]) -> Dict[str, float]:
+    def _calculate_totals(self, line_items: List[OrderItem]) -> Dict[str, Decimal]:
         """Calculate order totals from line items."""
-        subtotal = 0.0
-        tax_amount = 0.0
-        shipping_amount = 0.0
+        subtotal = Decimal('0')
+        tax_amount = Decimal('0')
+        shipping_amount = Decimal('0')
         
         for item in line_items:
+            # Skip items with NaN or None amounts
+            if item.amount is None or pd.isna(item.amount):
+                self.logger.debug(f"Skipping line item with NaN/None amount: {item.productCode}")
+                continue
+                
             if is_tax_product(item.productCode):
                 tax_amount += item.amount
+                self.logger.debug(f"Added tax amount: {item.amount}")
             elif is_shipping_product(item.productCode):
                 shipping_amount += item.amount
+                self.logger.debug(f"Added shipping amount: {item.amount}")
             else:
                 subtotal += item.amount
+                self.logger.debug(f"Added to subtotal: {item.amount}")
+        
+        self.logger.info(f"Calculated totals - Subtotal: {subtotal}, Tax: {tax_amount}, Shipping: {shipping_amount}")
         
         return {
             'subtotal': subtotal,
