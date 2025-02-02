@@ -10,7 +10,7 @@ from .logging import setup_logging
 from ..commands.validate import ValidateCustomersCommand, ValidateSalesCommand
 from ..commands.utils import TestConnectionCommand
 from ..commands.products import ProcessProductsCommand
-from ..commands.invoices import ValidateInvoiceCommand, ProcessInvoicesCommand
+from ..commands.sales import ValidateInvoiceCommand, ProcessInvoicesCommand
 from ..commands.verify import VerifyCommand
 from ..commands.customers import (
     ListCompaniesCommand,
@@ -195,13 +195,13 @@ def process_products(file: Path, output: Path | None, log_level: str):
         click.secho(f"Error: {str(e)}", fg='red')
         raise click.Abort()
 
-# Invoices Commands Group
+# Sales Commands Group
 @cli.group()
-def invoices():
-    """Invoice data management commands"""
+def sales():
+    """Sales data management commands"""
     pass
 
-@invoices.command('validate')
+@sales.command('validate')
 @click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
 @click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save validation results to file')
 @click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), default='INFO')
@@ -219,7 +219,7 @@ def validate_invoice(file: Path, output: Path | None, log_level: str):
         click.secho(f"Error: {str(e)}", fg='red')
         raise click.Abort()
 
-@invoices.command('process')
+@sales.command('process')
 @click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
 @click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save processing results to file')
 @click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), default='INFO')
