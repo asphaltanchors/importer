@@ -77,6 +77,11 @@ CREATE TABLE "CustomerPhone" (
 );
 
 -- Product table - Stores product catalog information
+-- System products:
+--   * SYS-SHIPPING: All shipping and handling charges (FedEx, UPS, etc.)
+--   * SYS-TAX: Sales tax
+--   * SYS-NJ-TAX: New Jersey sales tax
+--   * SYS-DISCOUNT: Discounts
 CREATE TABLE "Product" (
     id TEXT PRIMARY KEY,
     productCode TEXT UNIQUE NOT NULL,
@@ -117,6 +122,10 @@ CREATE TABLE "Order" (
 );
 
 -- OrderItem table - Stores order line items
+-- For SYS-SHIPPING items:
+--   * description field contains the original shipping method (e.g., "Fed Ex Ground", "UPS Collect")
+--   * amount may be 0 for collect shipments where shipping is billed separately
+--   * shipping costs may still be included in the order total even if amount is 0
 CREATE TABLE "OrderItem" (
     id TEXT PRIMARY KEY,
     orderId TEXT REFERENCES "Order"(id),

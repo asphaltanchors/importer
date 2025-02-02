@@ -56,13 +56,13 @@ The import process is broken down into several focused commands:
 ### Product Processing
 - Product codes standardized to uppercase
 - Special items mapped to system codes:
-  * SYS-SHIPPING: Shipping charges
-  * SYS-HANDLING: Handling fees
+  * SYS-SHIPPING: All shipping and handling charges (FedEx, UPS, etc.)
   * SYS-TAX: Sales tax
   * SYS-NJ-TAX: New Jersey sales tax
   * SYS-DISCOUNT: Discounts
 - Descriptions preserved and updated
 - Creation/modification timestamps maintained
+- Shipping carrier details stored in line item descriptions
 
 ### Line Item Processing
 - Validates product existence
@@ -70,7 +70,13 @@ The import process is broken down into several focused commands:
 - Validates unit prices
 - Calculates line item amounts
 - Processes service dates (optional)
-- Handles special items appropriately
+- Special item handling:
+  * Shipping: All shipping/handling charges use SYS-SHIPPING product code
+    - Original shipping method (e.g., "Fed Ex Ground", "UPS Collect") preserved in description
+    - Handles collect shipments with zero amounts
+    - Shipping costs may be included in total even if amount is 0
+  * Tax: Uses appropriate tax product code based on jurisdiction
+  * Discounts: Allows negative amounts for discount items
 
 ### Order Processing
 - Validates customer existence

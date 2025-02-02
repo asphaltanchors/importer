@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..db.models import Product, OrderItem
 from ..utils import generate_uuid
+from ..utils.product_mapping import map_product_code
 
 class LineItemProcessor:
     """Process line items from sales data."""
@@ -45,20 +46,11 @@ class LineItemProcessor:
             if not product_code:
                 return result  # Skip empty rows
             
-            # Map special items to system product codes
-            product_code_lower = product_code.lower()
-            if product_code_lower == 'shipping':
-                mapped_code = 'SYS-SHIPPING'
-            elif product_code_lower == 'handling fee':
-                mapped_code = 'SYS-HANDLING'
-            elif product_code_lower == 'tax':
-                mapped_code = 'SYS-TAX'
-            elif product_code_lower == 'nj sales tax':
-                mapped_code = 'SYS-NJ-TAX'
-            elif product_code_lower == 'discount':
-                mapped_code = 'SYS-DISCOUNT'
-            else:
-                mapped_code = product_code.upper()
+            # Map product code using common utility
+            mapped_code = map_product_code(
+                product_code,
+                row.get('Product/Service Description', '')
+            )
             
             # Look up product
             product = self.session.query(Product).filter(
@@ -132,20 +124,29 @@ class LineItemProcessor:
         Returns:
             Dict containing:
             {
-                'subtotal': float,  # Sum of non-tax items
-                'tax_amount': float  # Sum of tax items
+                'subtotal': float,  # Sum of regular items (excluding tax, shipping, handling)
+                'tax_amount': float,  # Sum of tax items
+                'shipping_amount': float  # Sum of shipping and handling items
             }
         """
         subtotal = 0.0
         tax_amount = 0.0
+        shipping_amount = 0.0
+        
+        # Define product categories
+        tax_codes = ['SYS-TAX', 'SYS-NJ-TAX']
+        shipping_codes = ['SYS-SHIPPING', 'SYS-HANDLING']
         
         for item in line_items:
-            if item.productCode in ['SYS-TAX', 'SYS-NJ-TAX']:
+            if item.productCode in tax_codes:
                 tax_amount += item.amount
+            elif item.productCode in shipping_codes:
+                shipping_amount += item.amount
             else:
                 subtotal += item.amount
         
         return {
             'subtotal': subtotal,
-            'tax_amount': tax_amount
+            'tax_amount': tax_amount,
+            'shipping_amount': shipping_amount
         }

@@ -10,6 +10,7 @@ from datetime import datetime
 from ..db.session import SessionManager
 from ..utils import generate_uuid
 from ..utils.normalization import normalize_customer_name
+from ..utils.product_mapping import map_product_code
 from ..db.models import Order, OrderStatus, PaymentStatus, Customer, Product, OrderItem
 from .address import AddressProcessor
 
@@ -78,8 +79,7 @@ class InvoiceProcessor:
             # Initialize system products
             with self.session_manager as session:
                 system_products = [
-                    ('SYS-SHIPPING', 'Shipping', 'System product for shipping charges'),
-                    ('SYS-HANDLING', 'Handling', 'System product for handling fees'),
+                    ('SYS-SHIPPING', 'Shipping', 'System product for shipping and handling charges'),
                     ('SYS-TAX', 'Tax', 'System product for sales tax'),
                     ('SYS-NJ-TAX', 'NJ Sales Tax', 'System product for New Jersey sales tax'),
                     ('SYS-DISCOUNT', 'Discount', 'System product for discounts')
@@ -170,6 +170,7 @@ class InvoiceProcessor:
                             # Calculate totals and validate products
                             subtotal = 0
                             tax_amount = 0
+                            shipping_amount = 0  # Track shipping/handling separately
                             validation_errors = []
                             
                             for inv_row in invoice_rows:
@@ -177,20 +178,11 @@ class InvoiceProcessor:
                                 if not product_code:
                                     continue
                                 
-                                # Map special items to system product codes
-                                product_code_lower = product_code.lower()
-                                if product_code_lower == 'shipping':
-                                    mapped_code = 'SYS-SHIPPING'
-                                elif product_code_lower == 'handling fee':
-                                    mapped_code = 'SYS-HANDLING'
-                                elif product_code_lower == 'tax':
-                                    mapped_code = 'SYS-TAX'
-                                elif product_code_lower == 'nj sales tax':
-                                    mapped_code = 'SYS-NJ-TAX'
-                                elif product_code_lower == 'discount':
-                                    mapped_code = 'SYS-DISCOUNT'
-                                else:
-                                    mapped_code = product_code.upper()
+                                # Map product code using common utility
+                                mapped_code = map_product_code(
+                                    product_code,
+                                    inv_row.get('Product/Service Description', '')
+                                )
                                 
                                 product = session.query(Product).filter(
                                     Product.productCode == mapped_code
@@ -210,8 +202,12 @@ class InvoiceProcessor:
                                 if amount_str:
                                     try:
                                         amount = float(amount_str.replace('$', '').replace(',', ''))
-                                        # Add to subtotal if it's not a tax item
-                                        if not mapped_code in ['SYS-TAX', 'SYS-NJ-TAX']:
+                                        # Categorize amount based on product code
+                                        if mapped_code in ['SYS-TAX', 'SYS-NJ-TAX']:
+                                            tax_amount += amount
+                                        elif mapped_code == 'SYS-SHIPPING':
+                                            shipping_amount += amount  # Track all shipping charges
+                                        else:
                                             subtotal += amount
                                     except ValueError:
                                         validation_errors.append({
@@ -220,10 +216,6 @@ class InvoiceProcessor:
                                             'message': f"Invalid amount for product {product_code}"
                                         })
                                         continue
-                                
-                                # Add to tax amount if it's a tax item
-                                if mapped_code in ['SYS-TAX', 'SYS-NJ-TAX']:
-                                    tax_amount += amount
                             
                             # Add validation errors to results
                             for error in validation_errors:
@@ -240,7 +232,7 @@ class InvoiceProcessor:
                             try:
                                 total_amount = float(total_amount_str.replace('$', '').replace(',', ''))
                             except ValueError:
-                                total_amount = subtotal + tax_amount  # Fallback to calculated total
+                                total_amount = subtotal + tax_amount + shipping_amount  # Include shipping in fallback total
                             now = datetime.utcnow()
                             
                             # Create addresses if provided
@@ -348,20 +340,11 @@ class InvoiceProcessor:
                                 if not product_code:
                                     continue
                                 
-                                # Map special items to system product codes
-                                product_code_lower = product_code.lower()
-                                if product_code_lower == 'shipping':
-                                    mapped_code = 'SYS-SHIPPING'
-                                elif product_code_lower == 'handling fee':
-                                    mapped_code = 'SYS-HANDLING'
-                                elif product_code_lower == 'tax':
-                                    mapped_code = 'SYS-TAX'
-                                elif product_code_lower == 'nj sales tax':
-                                    mapped_code = 'SYS-NJ-TAX'
-                                elif product_code_lower == 'discount':
-                                    mapped_code = 'SYS-DISCOUNT'
-                                else:
-                                    mapped_code = product_code.upper()
+                                # Map product code using common utility
+                                mapped_code = map_product_code(
+                                    product_code,
+                                    inv_row.get('Product/Service Description', '')
+                                )
                                 
                                 # Look up product
                                 product = session.query(Product).filter(
@@ -407,11 +390,21 @@ class InvoiceProcessor:
                                         })
                                 
                                 # Create new line item
+                                description = inv_row.get('Product/Service Description', '').strip()
+                                
+                                # For shipping items, include both the shipping method and any description
+                                if mapped_code == 'SYS-SHIPPING':
+                                    shipping_method = inv_row.get('Product/Service', '').strip()
+                                    if description:
+                                        description = f"{shipping_method} - {description}"
+                                    else:
+                                        description = shipping_method
+                                
                                 order_item = OrderItem(
                                     id=generate_uuid(),
                                     orderId=order.id,
                                     productCode=product.productCode,
-                                    description=inv_row.get('Product/Service Description', '').strip(),
+                                    description=description,
                                     quantity=quantity,
                                     unitPrice=unit_price,
                                     amount=amount,

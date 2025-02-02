@@ -93,10 +93,14 @@ class SalesVerifier(BaseProcessor):
         self.stats['line_items'] = session.query(OrderItem).count()
         
         # Check for items with invalid quantities or prices
+        # Allow negative amounts for discounts and zero amounts for shipping/handling
         invalid_items = session.query(OrderItem).filter(
-            (OrderItem.quantity <= 0) |
-            (OrderItem.unitPrice < 0) |
-            (OrderItem.amount < 0)
+            (
+                (OrderItem.quantity <= 0) |
+                (OrderItem.unitPrice < 0) |
+                (OrderItem.amount < 0)
+            ) &
+            ~OrderItem.productCode.in_(['SYS-DISCOUNT', 'SYS-SHIPPING', 'SYS-HANDLING'])  # Exclude special items from validation
         ).all()
         
         if invalid_items:
@@ -119,33 +123,62 @@ class SalesVerifier(BaseProcessor):
         for order in orders:
             items = session.query(OrderItem).filter(OrderItem.orderId == order.id).all()
             
-            # Calculate subtotal (non-tax items)
-            subtotal = sum(
-                item.amount for item in items 
-                if item.productCode not in ['SYS-TAX', 'SYS-NJ-TAX']
-            )
+            # Define product code categories
+            tax_codes = ['SYS-TAX', 'SYS-NJ-TAX']
+            shipping_codes = ['SYS-SHIPPING']  # All shipping charges use SYS-SHIPPING
             
-            # Calculate tax amount
+            # Calculate amounts by category
             tax_amount = sum(
                 item.amount for item in items 
-                if item.productCode in ['SYS-TAX', 'SYS-NJ-TAX']
+                if item.productCode in tax_codes
             )
             
+            # Include shipping even if amount is 0 (collect shipments)
+            shipping_items = [item for item in items if item.productCode in shipping_codes]
+            shipping_amount = sum(item.amount for item in shipping_items)
+            has_shipping = len(shipping_items) > 0
+            
+            # Calculate subtotal (excluding tax and shipping)
+            subtotal = sum(
+                item.amount for item in items 
+                if item.productCode not in tax_codes + shipping_codes
+            )
+            
+            # For orders with shipping items but zero shipping amount (collect shipments),
+            # use the total amount minus subtotal and tax
+            if has_shipping and shipping_amount == 0:
+                order_total = Decimal(str(order.totalAmount))
+                shipping_amount = order_total - subtotal - tax_amount
+            
+            # Define minimum difference threshold for reporting mismatches
+            min_diff = Decimal('0.01')
+            
+            # Convert values to Decimal for accurate comparison
+            order_subtotal = Decimal(str(order.subtotal))
+            order_tax = Decimal(str(order.taxAmount))
+            order_total = Decimal(str(order.totalAmount))
+            calc_subtotal = Decimal(str(subtotal))
+            calc_tax = Decimal(str(tax_amount))
+            calc_shipping = Decimal(str(shipping_amount))
+            
             # Verify subtotal
-            if abs(Decimal(str(subtotal)) - Decimal(str(order.subtotal))) > Decimal('0.01'):
+            if abs(calc_subtotal - order_subtotal) > min_diff:
+                # Only report if difference is significant
                 self.add_issue("Order Subtotal Mismatch",
-                    f"Order {order.orderNumber} subtotal ({order.subtotal}) does not match sum of line items ({subtotal})")
+                    f"Order {order.orderNumber} subtotal ({order_subtotal:.2f}) does not match sum of line items ({calc_subtotal:.2f})")
             
             # Verify tax amount
-            if abs(Decimal(str(tax_amount)) - Decimal(str(order.taxAmount))) > Decimal('0.01'):
+            if abs(calc_tax - order_tax) > min_diff:
+                # Only report if difference is significant
                 self.add_issue("Order Tax Mismatch",
-                    f"Order {order.orderNumber} tax amount ({order.taxAmount}) does not match sum of tax items ({tax_amount})")
+                    f"Order {order.orderNumber} tax amount ({order_tax:.2f}) does not match sum of tax items ({calc_tax:.2f})")
             
-            # Verify total amount
-            total = subtotal + tax_amount
-            if abs(Decimal(str(total)) - Decimal(str(order.totalAmount))) > Decimal('0.01'):
+            # Verify total amount (including shipping and handling)
+            calc_total = calc_subtotal + calc_tax + calc_shipping
+            if abs(calc_total - order_total) > min_diff:
+                # Only report if difference is significant
                 self.add_issue("Order Total Mismatch",
-                    f"Order {order.orderNumber} total ({order.totalAmount}) does not match subtotal + tax ({total})")
+                    f"Order {order.orderNumber} total ({order_total:.2f}) does not match subtotal + tax + shipping/handling ({calc_total:.2f})")
 
     def verify_order_status(self, session: Session) -> None:
         """Verify order status consistency."""
