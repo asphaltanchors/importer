@@ -1,11 +1,13 @@
 """Processor for handling customer data."""
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
+import logging
 import pandas as pd
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from ..db.models import Customer, Company, Address
 from .base import BaseProcessor
+from ..utils.normalization import normalize_customer_name
 
 class CustomerProcessor(BaseProcessor):
     """Processes customer data from CSV imports."""
@@ -44,6 +46,27 @@ class CustomerProcessor(BaseProcessor):
     def _verify_address_id(self, address_id: Optional[str]) -> bool:
         """Verify address ID exists if provided."""
         return address_id is None or address_id in self.address_ids
+
+    def _find_customer_by_name(self, name: str) -> Tuple[Optional[Customer], bool]:
+        """Find a customer by name, trying both exact and normalized matching.
+        
+        Returns:
+            Tuple of (customer, used_normalization) where used_normalization indicates
+            if the match was found using name normalization.
+        """
+        # Try exact match first
+        customer = self.session.query(Customer).filter_by(customerName=name).first()
+        if customer:
+            return customer, False
+            
+        # Try normalized match
+        normalized_name = normalize_customer_name(name)
+        for existing in self.session.query(Customer).all():
+            if normalize_customer_name(existing.customerName) == normalized_name:
+                logging.info(f"Found normalized name match: '{name}' -> '{existing.customerName}'")
+                return existing, True
+                
+        return None, False
 
     def process_row(self, row: pd.Series) -> Optional[str]:
         """Process a single customer row."""
@@ -85,8 +108,16 @@ class CustomerProcessor(BaseProcessor):
                 self.stats['invalid_shipping_addresses'] += 1
                 shipping_id = None
             
-            # Check if customer exists
+            # First try to find by QuickBooks ID
             existing_customer = self.session.query(Customer).filter_by(quickbooksId=quickbooks_id).first()
+            
+            # If not found by ID, try name matching
+            if not existing_customer:
+                existing_customer, used_normalization = self._find_customer_by_name(name)
+                if existing_customer and used_normalization:
+                    self.stats.setdefault('normalized_matches', 0)
+                    self.stats['normalized_matches'] += 1
+                    logging.info(f"Updating existing customer found by normalized name match: '{name}' -> '{existing_customer.customerName}'")
             
             if existing_customer:
                 # Update existing customer

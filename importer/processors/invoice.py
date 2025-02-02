@@ -1,21 +1,17 @@
 """Invoice data processor."""
 
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Tuple
 import csv
+import logging
+import pandas as pd
 from datetime import datetime
 
 from ..db.session import SessionManager
 from ..utils import generate_uuid
+from ..utils.normalization import normalize_customer_name
 from ..db.models import Order, OrderStatus, PaymentStatus, Customer, Product, OrderItem
-
-def normalize_customer_name(name: str) -> str:
-    """Normalize customer name by removing commas and standardizing spaces."""
-    # Remove commas and extra spaces
-    normalized = name.replace(',', '').strip()
-    # Replace multiple spaces with single space
-    normalized = ' '.join(normalized.split())
-    return normalized
+from .address import AddressProcessor
 
 class InvoiceProcessor:
     """Process invoices from sales data."""
@@ -27,6 +23,7 @@ class InvoiceProcessor:
             database_url: Database connection URL
         """
         self.session_manager = SessionManager(database_url)
+        self.address_processor = None  # Will be initialized per session
         
         # Field mappings from CSV to our schema
         self.field_mappings = {
@@ -53,11 +50,11 @@ class InvoiceProcessor:
                 'success': bool,
                 'summary': {
                     'stats': {
-                        'total_invoices': int,
-                        'created': int,
-                        'updated': int,
-                        'line_items': int,
-                        'errors': int
+                        'total_invoices': int,  # Total number of unique invoices processed
+                        'created': int,     # New orders created
+                        'updated': int,     # Existing orders updated
+                        'line_items': int,  # Total line items processed
+                        'errors': int       # Number of errors encountered
                     },
                     'errors': List[Dict]
                 }
@@ -78,6 +75,34 @@ class InvoiceProcessor:
         }
         
         try:
+            # Initialize system products
+            with self.session_manager as session:
+                system_products = [
+                    ('SYS-SHIPPING', 'Shipping', 'System product for shipping charges'),
+                    ('SYS-HANDLING', 'Handling', 'System product for handling fees'),
+                    ('SYS-TAX', 'Tax', 'System product for sales tax'),
+                    ('SYS-NJ-TAX', 'NJ Sales Tax', 'System product for New Jersey sales tax'),
+                    ('SYS-DISCOUNT', 'Discount', 'System product for discounts')
+                ]
+                
+                for code, name, description in system_products:
+                    product = session.query(Product).filter(
+                        Product.productCode == code
+                    ).first()
+                    
+                    if not product:
+                        product = Product(
+                            id=generate_uuid(),
+                            productCode=code,
+                            name=name,
+                            description=description,
+                            createdAt=datetime.utcnow(),
+                            modifiedAt=datetime.utcnow()
+                        )
+                        session.add(product)
+                
+                session.commit()
+            
             with open(file_path, 'r') as f:
                 reader = csv.DictReader(f)
                 
@@ -95,65 +120,80 @@ class InvoiceProcessor:
                 # Read all rows into memory
                 all_rows = list(reader)
                 
-                # Track processed invoice numbers to avoid duplicates
-                processed_invoices = set()
+                # Group rows by invoice number
+                invoices = {}
+                for row in all_rows:
+                    invoice_number = row[header_mapping['invoice_number']].strip()
+                    if invoice_number:
+                        if invoice_number not in invoices:
+                            invoices[invoice_number] = []
+                        invoices[invoice_number].append(row)
                 
-                with self.session_manager as session:
-                    current_invoice = None
-                    
-                    for row_num, row in enumerate(all_rows, start=1):
-                        invoice_number = row[header_mapping['invoice_number']].strip()
-                        if not invoice_number:
-                            continue
-                            
-                        # Skip if we've already processed this invoice
-                        if invoice_number in processed_invoices:
-                            continue
-                            
+                # Process each invoice
+                for invoice_number, invoice_rows in invoices.items():
+                    with self.session_manager as session:
                         try:
+                            row = invoice_rows[0]  # Use first row for header info
+                            row_num = all_rows.index(row) + 1
                             # Check if invoice already exists
                             existing_order = session.query(Order).filter(
                                 Order.orderNumber == invoice_number
-                            ).first()
-                            
-                            # Find all rows for this invoice
-                            invoice_rows = [r for r in all_rows if r[header_mapping['invoice_number']].strip() == invoice_number]
+                            ).with_for_update().first()
                             
                             # Get customer by name
                             customer_name = row[header_mapping['customer_id']].strip()
-                            # Normalize customer name and try to find a match
-                            normalized_name = normalize_customer_name(customer_name)
+                            
+                            # Try exact match first
                             customer = session.query(Customer).filter(
-                                Customer.customerName == normalized_name
+                                Customer.customerName == customer_name
                             ).first()
                             
-                            # If not found, try without normalization
+                            # If not found, try normalized match
                             if not customer:
-                                customer = session.query(Customer).filter(
-                                    Customer.customerName == customer_name
-                                ).first()
+                                normalized_name = normalize_customer_name(customer_name)
+                                for existing in session.query(Customer).all():
+                                    if normalize_customer_name(existing.customerName) == normalized_name:
+                                        customer = existing
+                                        logging.info(f"Found normalized name match: '{customer_name}' -> '{existing.customerName}'")
+                                        break
                             
-                            # Validate all data before processing
-                            validation_errors = []
-                            
+                            # Validate customer
                             if not customer:
-                                validation_errors.append({
+                                results['summary']['errors'].append({
                                     'row': row_num,
                                     'severity': 'ERROR',
                                     'message': f"Customer not found: {customer_name}"
                                 })
+                                results['summary']['stats']['errors'] += 1
+                                continue
                             
-                            # Validate products and calculate totals
+                            # Calculate totals and validate products
                             subtotal = 0
                             tax_amount = 0
+                            validation_errors = []
                             
                             for inv_row in invoice_rows:
                                 product_code = inv_row.get('Product/Service', '').strip()
-                                if not product_code or product_code.lower() in ['shipping', 'handling fee', 'tax', 'discount', 'nj sales tax']:
+                                if not product_code:
                                     continue
                                 
+                                # Map special items to system product codes
+                                product_code_lower = product_code.lower()
+                                if product_code_lower == 'shipping':
+                                    mapped_code = 'SYS-SHIPPING'
+                                elif product_code_lower == 'handling fee':
+                                    mapped_code = 'SYS-HANDLING'
+                                elif product_code_lower == 'tax':
+                                    mapped_code = 'SYS-TAX'
+                                elif product_code_lower == 'nj sales tax':
+                                    mapped_code = 'SYS-NJ-TAX'
+                                elif product_code_lower == 'discount':
+                                    mapped_code = 'SYS-DISCOUNT'
+                                else:
+                                    mapped_code = product_code.upper()
+                                
                                 product = session.query(Product).filter(
-                                    Product.productCode == product_code.upper()
+                                    Product.productCode == mapped_code
                                 ).first()
                                 
                                 if not product:
@@ -165,66 +205,110 @@ class InvoiceProcessor:
                                     continue
                                 
                                 # Calculate amounts
-                                amount_str = inv_row.get('Product/Service  Amount', '').strip()
+                                amount = 0.0
+                                amount_str = inv_row.get('Product/Service Amount', '').strip()
                                 if amount_str:
                                     try:
                                         amount = float(amount_str.replace('$', '').replace(',', ''))
-                                        subtotal += amount
+                                        # Add to subtotal if it's not a tax item
+                                        if not mapped_code in ['SYS-TAX', 'SYS-NJ-TAX']:
+                                            subtotal += amount
                                     except ValueError:
                                         validation_errors.append({
                                             'row': row_num,
                                             'severity': 'ERROR',
                                             'message': f"Invalid amount for product {product_code}"
                                         })
+                                        continue
                                 
-                                # Add tax if present
-                                tax_str = inv_row.get('Product/Service Sales Tax', '').strip()
-                                if tax_str:
-                                    try:
-                                        tax = float(tax_str.replace('$', '').replace(',', ''))
-                                        tax_amount += tax
-                                    except ValueError:
-                                        results['summary']['errors'].append({
-                                            'row': row_num,
-                                            'severity': 'WARNING',
-                                            'message': f"Invalid tax amount for product {product_code}, defaulting to 0"
-                                        })
+                                # Add to tax amount if it's a tax item
+                                if mapped_code in ['SYS-TAX', 'SYS-NJ-TAX']:
+                                    tax_amount += amount
                             
-                            # Add all validation errors to results
+                            # Add validation errors to results
                             for error in validation_errors:
                                 results['summary']['errors'].append(error)
                                 if error['severity'] == 'ERROR':
                                     results['summary']['stats']['errors'] += 1
                             
-                            # Skip processing if there are any errors
+                            # Skip if validation failed
                             if validation_errors:
                                 continue
                             
-                            total_amount = subtotal + tax_amount
+                            # Get total amount from CSV
+                            total_amount_str = row.get('Total Amount', '0').strip()
+                            try:
+                                total_amount = float(total_amount_str.replace('$', '').replace(',', ''))
+                            except ValueError:
+                                total_amount = subtotal + tax_amount  # Fallback to calculated total
                             now = datetime.utcnow()
+                            
+                            # Create addresses if provided
+                            if not self.address_processor:
+                                self.address_processor = AddressProcessor(session)
+                            
+                            # Create addresses if provided
+                            address_row = pd.Series({
+                                'Billing Address Line 1': row.get('Billing Address Line 1', ''),
+                                'Billing Address Line 2': row.get('Billing Address Line 2', ''),
+                                'Billing Address Line 3': row.get('Billing Address Line 3', ''),
+                                'Billing Address City': row.get('Billing Address City', ''),
+                                'Billing Address State': row.get('Billing Address State', ''),
+                                'Billing Address Postal Code': row.get('Billing Address Postal Code', ''),
+                                'Billing Address Country': row.get('Billing Address Country', ''),
+                                'Shipping Address Line 1': row.get('Shipping Address Line 1', ''),
+                                'Shipping Address Line 2': row.get('Shipping Address Line 2', ''),
+                                'Shipping Address Line 3': row.get('Shipping Address Line 3', ''),
+                                'Shipping Address City': row.get('Shipping Address City', ''),
+                                'Shipping Address State': row.get('Shipping Address State', ''),
+                                'Shipping Address Postal Code': row.get('Shipping Address Postal Code', ''),
+                                'Shipping Address Country': row.get('Shipping Address Country', '')
+                            })
+                            
+                            # Process addresses using DataFrame to ensure commit
+                            df = pd.DataFrame([address_row])
+                            df = self.address_processor.process(df)
+                            billing_id = df.at[0, 'billing_address_id']
+                            shipping_id = df.at[0, 'shipping_address_id']
+                            
+                            # Use customer's addresses as fallback
+                            billing_id = billing_id if billing_id else customer.billingAddressId
+                            shipping_id = shipping_id if shipping_id else customer.shippingAddressId
                             
                             if existing_order:
                                 # Update existing order
-                                # Sales receipts are always paid/closed, invoices use Status field
+                                logging.info(f"Updating existing order: {invoice_number}")
+                                
+                                # Delete existing line items first
+                                session.query(OrderItem).filter(
+                                    OrderItem.orderId == existing_order.id
+                                ).delete(synchronize_session=False)
+                                
+                                # Update all fields
                                 is_sales_receipt = 'Sales Receipt No' in reader.fieldnames
                                 existing_order.status = OrderStatus.CLOSED if is_sales_receipt or row.get('Status') == 'Paid' else OrderStatus.OPEN
                                 existing_order.paymentStatus = PaymentStatus.PAID if is_sales_receipt or row.get('Status') == 'Paid' else PaymentStatus.UNPAID
                                 existing_order.subtotal = subtotal
                                 existing_order.taxAmount = tax_amount
                                 existing_order.totalAmount = total_amount
+                                existing_order.customerId = customer.id
+                                existing_order.billingAddressId = billing_id
+                                existing_order.shippingAddressId = shipping_id
+                                existing_order.terms = row.get(header_mapping.get('payment_terms', ''), '')
+                                existing_order.dueDate = datetime.strptime(row[header_mapping['due_date']], '%m-%d-%Y') if header_mapping.get('due_date') and row.get(header_mapping['due_date']) else None
+                                existing_order.poNumber = row.get(header_mapping.get('po_number', ''), '')
+                                existing_order.class_ = row.get(header_mapping.get('class', ''), '')
+                                existing_order.shippingMethod = row.get(header_mapping.get('shipping_method', ''), '')
+                                existing_order.paymentMethod = row.get(header_mapping.get('payment_method', ''), 'Invoice')
+                                existing_order.quickbooksId = row.get('QuickBooks Internal Id', '')
                                 existing_order.modifiedAt = now
                                 existing_order.sourceData = row
-                                existing_order.paymentMethod = row.get(header_mapping.get('payment_method', ''), 'Invoice')  # Default to 'Invoice' for invoices
-                                
-                                # Get existing line items
-                                existing_items = {item.productCode: item for item in session.query(OrderItem).filter(
-                                    OrderItem.orderId == existing_order.id
-                                ).all()}
                                 
                                 order = existing_order
                                 results['summary']['stats']['updated'] += 1
                             else:
                                 # Create new order
+                                logging.info(f"Creating new order: {invoice_number}")
                                 order = Order(
                                     id=generate_uuid(),
                                     orderNumber=invoice_number,
@@ -237,14 +321,15 @@ class InvoiceProcessor:
                                     taxPercent=None,
                                     taxAmount=tax_amount,
                                     totalAmount=total_amount,
-                                    billingAddressId=customer.billingAddressId,
-                                    shippingAddressId=customer.shippingAddressId,
+                                    billingAddressId=billing_id,
+                                    shippingAddressId=shipping_id,
                                     terms=row.get(header_mapping.get('payment_terms', ''), ''),
                                     dueDate=datetime.strptime(row[header_mapping['due_date']], '%m-%d-%Y') if header_mapping.get('due_date') and row.get(header_mapping['due_date']) else None,
                                     poNumber=row.get(header_mapping.get('po_number', ''), ''),
                                     class_=row.get(header_mapping.get('class', ''), ''),
                                     shippingMethod=row.get(header_mapping.get('shipping_method', ''), ''),
                                     paymentMethod=row.get(header_mapping.get('payment_method', ''), 'Invoice'),  # Default to 'Invoice' for invoices
+                                    quickbooksId=row.get('QuickBooks Internal Id', ''),
                                     createdAt=now,
                                     modifiedAt=now,
                                     sourceData=row
@@ -253,34 +338,60 @@ class InvoiceProcessor:
                                 results['summary']['stats']['created'] += 1
                                 existing_items = {}
                             
+                            
                             # Process line items
                             line_items_processed = 0
-                            
                             for inv_row in invoice_rows:
                                 product_code = inv_row.get('Product/Service', '').strip()
                                 
-                                # Skip non-product rows
-                                if not product_code or product_code.lower() in ['shipping', 'handling fee', 'tax', 'discount']:
+                                # Map special items to system product codes
+                                if not product_code:
                                     continue
                                 
-                                # Get product from database
+                                # Map special items to system product codes
+                                product_code_lower = product_code.lower()
+                                if product_code_lower == 'shipping':
+                                    mapped_code = 'SYS-SHIPPING'
+                                elif product_code_lower == 'handling fee':
+                                    mapped_code = 'SYS-HANDLING'
+                                elif product_code_lower == 'tax':
+                                    mapped_code = 'SYS-TAX'
+                                elif product_code_lower == 'nj sales tax':
+                                    mapped_code = 'SYS-NJ-TAX'
+                                elif product_code_lower == 'discount':
+                                    mapped_code = 'SYS-DISCOUNT'
+                                else:
+                                    mapped_code = product_code.upper()
+                                
+                                # Look up product
                                 product = session.query(Product).filter(
-                                    Product.productCode == product_code.upper()
+                                    Product.productCode == mapped_code
                                 ).first()
                                 
-                                # Parse quantity and amount
-                                try:
-                                    quantity = float(inv_row.get('Qty', '1').strip() or '1')
-                                    amount_str = inv_row.get('Product/Service  Amount', '0').strip()
-                                    amount = float(amount_str.replace('$', '').replace(',', ''))
-                                    unit_price = amount / quantity
-                                except (ValueError, ZeroDivisionError):
+                                if not product:
                                     results['summary']['errors'].append({
                                         'row': row_num,
                                         'severity': 'ERROR',
-                                        'message': f"Invalid quantity or amount for product {product_code}"
+                                        'message': f"Product not found: {product_code} in invoice {invoice_number}"
                                     })
                                     continue
+                                
+                                # Parse quantity and amount
+                                quantity = float(inv_row.get('Product/Service Quantity', '1').strip() or '1')
+                                amount = 0.0
+                                amount_str = inv_row.get('Product/Service Amount', '0').strip()
+                                if amount_str:
+                                    try:
+                                        amount = float(amount_str.replace('$', '').replace(',', ''))
+                                    except ValueError:
+                                        results['summary']['errors'].append({
+                                            'row': row_num,
+                                            'severity': 'ERROR',
+                                            'message': f"Invalid amount for {product_code}"
+                                        })
+                                        continue
+                                
+                                unit_price = amount / quantity if quantity != 0 else 0
                                 
                                 # Parse service date if present
                                 service_date = None
@@ -292,40 +403,29 @@ class InvoiceProcessor:
                                         results['summary']['errors'].append({
                                             'row': row_num,
                                             'severity': 'WARNING',
-                                            'message': f"Invalid service date format for product {product_code}"
+                                            'message': f"Invalid service date format for {product_code}"
                                         })
                                 
-                                # Update or create order item
-                                if product_code.upper() in existing_items:
-                                    # Update existing item
-                                    item = existing_items[product_code.upper()]
-                                    item.description = inv_row.get('Product/Service Description', '').strip()
-                                    item.quantity = quantity
-                                    item.unitPrice = unit_price
-                                    item.amount = amount
-                                    item.serviceDate = service_date
-                                    item.sourceData = inv_row
-                                else:
-                                    # Create new item
-                                    order_item = OrderItem(
-                                        id=generate_uuid(),
-                                        orderId=order.id,
-                                        productCode=product.productCode,
-                                        description=inv_row.get('Product/Service Description', '').strip(),
-                                        quantity=quantity,
-                                        unitPrice=unit_price,
-                                        amount=amount,
-                                        serviceDate=service_date,
-                                        sourceData=inv_row
-                                    )
-                                    session.add(order_item)
-                                
+                                # Create new line item
+                                order_item = OrderItem(
+                                    id=generate_uuid(),
+                                    orderId=order.id,
+                                    productCode=product.productCode,
+                                    description=inv_row.get('Product/Service Description', '').strip(),
+                                    quantity=quantity,
+                                    unitPrice=unit_price,
+                                    amount=amount,
+                                    serviceDate=service_date,
+                                    sourceData=inv_row
+                                )
+                                session.add(order_item)
                                 line_items_processed += 1
                             
-                            processed_invoices.add(invoice_number)
                             results['summary']['stats']['line_items'] += line_items_processed
+                            session.commit()
                             
                         except Exception as e:
+                            session.rollback()
                             results['success'] = False
                             results['summary']['errors'].append({
                                 'row': row_num,
@@ -333,9 +433,8 @@ class InvoiceProcessor:
                                 'message': f"Failed to process invoice {invoice_number}: {str(e)}"
                             })
                             results['summary']['stats']['errors'] += 1
-                    
-                    results['summary']['stats']['total_invoices'] = len(processed_invoices)
-                    
+                            
+                results['summary']['stats']['total_invoices'] = len(invoices)
         except Exception as e:
             results['success'] = False
             results['summary']['errors'].append({
