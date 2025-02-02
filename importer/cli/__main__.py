@@ -9,14 +9,7 @@ from .config import Config
 from .logging import setup_logging
 from ..commands.validate import ValidateCustomersCommand, ValidateSalesCommand
 from ..commands.utils import TestConnectionCommand
-from ..commands.sales import (
-    ValidateInvoiceCommand,
-    SalesProcessCommand,
-    ProcessOrdersCommand,
-    ProcessProductsCommand,
-    ProcessLineItemsCommand,
-    ProcessPaymentsCommand
-)
+from ..commands.sales import sales
 from ..commands.verify import VerifyCommand
 from ..commands.customers import (
     ListCompaniesCommand,
@@ -38,6 +31,14 @@ def cli(ctx, debug: bool):
     ctx.obj['debug'] = debug
     if debug:
         setup_logging(level='DEBUG')
+        
+    # Initialize config and store in context
+    try:
+        config = Config.from_env()
+        ctx.obj['config'] = config
+    except Exception as e:
+        click.echo(f"Error initializing configuration: {str(e)}", err=True)
+        ctx.exit(1)
 
 @cli.command()
 def test_connection():
@@ -188,117 +189,8 @@ def verify_import(output: Path | None):
         click.secho(f"Error: {str(e)}", fg='red')
         raise click.Abort()
 
-# Sales Commands Group
-@cli.group()
-def sales():
-    """Sales data management commands"""
-    pass
-
-@sales.command('validate')
-@click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
-@click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save validation results to file')
-@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), default='INFO')
-def validate_invoice(file: Path, output: Path | None, log_level: str):
-    """Validate an invoice CSV file before importing."""
-    try:
-        # Setup logging
-        setup_logging(level=log_level)
-        
-        # Initialize and run command
-        config = Config.from_env()
-        command = ValidateInvoiceCommand(config, file, output)
-        command.execute()
-    except Exception as e:
-        click.secho(f"Error: {str(e)}", fg='red')
-        raise click.Abort()
-
-@sales.command('process-products')
-@click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
-@click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save processing results to file')
-@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), default='INFO')
-def process_products(file: Path, output: Path | None, log_level: str):
-    """Process products from a sales data file."""
-    try:
-        # Setup logging
-        setup_logging(level=log_level)
-        
-        # Initialize and run command
-        config = Config.from_env()
-        command = ProcessProductsCommand(config, file, output)
-        command.execute()
-    except Exception as e:
-        click.secho(f"Error: {str(e)}", fg='red')
-        raise click.Abort()
-
-@sales.command('process-line-items')
-@click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
-@click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save processing results to file')
-@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), default='INFO')
-def process_line_items(file: Path, output: Path | None, log_level: str):
-    """Process line items from a sales data file."""
-    try:
-        # Setup logging
-        setup_logging(level=log_level)
-        
-        # Initialize and run command
-        config = Config.from_env()
-        command = ProcessLineItemsCommand(config, file, output)
-        command.execute()
-    except Exception as e:
-        click.secho(f"Error: {str(e)}", fg='red')
-        raise click.Abort()
-
-@sales.command('process-orders')
-@click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
-@click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save processing results to file')
-@click.pass_context
-def process_orders(ctx, file: Path, output: Path | None):
-    """Process orders from a sales data file."""
-    try:
-        # Debug flag is already handled by root cli command
-        # Initialize and run command
-        config = Config.from_env()
-        command = ProcessOrdersCommand(config, file, output)
-        command.execute()
-    except Exception as e:
-        click.secho(f"Error: {str(e)}", fg='red')
-        raise click.Abort()
-
-@sales.command('process-payments')
-@click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
-@click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save processing results to file')
-@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), default='INFO')
-def process_payments(file: Path, output: Path | None, log_level: str):
-    """Process payments from a sales data file."""
-    try:
-        # Setup logging
-        setup_logging(level=log_level)
-        
-        # Initialize and run command
-        config = Config.from_env()
-        command = ProcessPaymentsCommand(config, file, output)
-        command.execute()
-    except Exception as e:
-        click.secho(f"Error: {str(e)}", fg='red')
-        raise click.Abort()
-
-@sales.command('process')
-@click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
-@click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save processing results to file')
-@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), default='INFO')
-def process_sales(file: Path, output: Path | None, log_level: str):
-    """Process a sales data file (products, line items, orders, payments)."""
-    try:
-        # Setup logging
-        setup_logging(level=log_level)
-        
-        # Initialize and run command
-        config = Config.from_env()
-        command = SalesProcessCommand(config, file, output)
-        command.execute()
-    except Exception as e:
-        click.secho(f"Error: {str(e)}", fg='red')
-        raise click.Abort()
+# Register sales commands
+cli.add_command(sales)
 
 # Register verify commands
 verify_command = VerifyCommand()

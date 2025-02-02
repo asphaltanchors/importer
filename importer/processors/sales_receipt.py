@@ -1,9 +1,10 @@
-"""Invoice data processor."""
+"""Sales receipt data processor."""
 
 from typing import Dict, Any, List, Optional, Tuple
 import logging
 import pandas as pd
 from datetime import datetime
+from pathlib import Path
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -20,8 +21,8 @@ from ..db.models import Order, OrderStatus, PaymentStatus, Customer, Product, Or
 from .address import AddressProcessor
 from .base import BaseProcessor
 
-class InvoiceProcessor(BaseProcessor):
-    """Process invoices from sales data."""
+class SalesReceiptProcessor(BaseProcessor):
+    """Process sales receipts from sales data."""
     
     def __init__(self, session: Session, batch_size: int = 100):
         """Initialize the processor.
@@ -33,27 +34,24 @@ class InvoiceProcessor(BaseProcessor):
         super().__init__(session, batch_size)
         self.address_processor = None  # Will be initialized per session
         self.stats.update({
-            'total_invoices': 0,
+            'total_receipts': 0,
             'created': 0,
             'updated': 0,
             'errors': 0
         })
         
-        # Field mappings specific to invoices
+        # Field mappings specific to sales receipts
         self.field_mappings = {
-            'invoice_number': ['Invoice No'],
-            'invoice_date': ['Invoice Date'],
+            'receipt_number': ['Sales Receipt No'],
+            'receipt_date': ['Sales Receipt Date'],
             'customer_id': ['Customer'],
-            'payment_terms': ['Terms'],
-            'due_date': ['Due Date'],
-            'po_number': ['PO Number'],
-            'shipping_method': ['Ship Via'],
+            'payment_method': ['Payment Method'],
             'class': ['Class'],
-            'payment_method': ['Payment Method']
+            'shipping_method': ['Ship Via']
         }
         
     def _process_batch(self, batch_df: pd.DataFrame) -> pd.DataFrame:
-        """Process a batch of invoice rows.
+        """Process a batch of sales receipt rows.
         
         Args:
             batch_df: DataFrame containing batch of rows to process
@@ -72,26 +70,26 @@ class InvoiceProcessor(BaseProcessor):
                     self.logger.debug(f"Mapped {std_field} -> {name}")
                     break
         
-        if 'invoice_number' not in header_mapping:
-            raise ValueError("Could not find invoice number column")
+        if 'receipt_number' not in header_mapping:
+            raise ValueError("Could not find sales receipt number column")
             
-        # Group rows by invoice number
-        invoices = {}
+        # Group rows by receipt number
+        receipts = {}
         for idx, row in batch_df.iterrows():
-            invoice_number = str(row[header_mapping['invoice_number']]).strip()
-            if invoice_number:
-                if invoice_number not in invoices:
-                    invoices[invoice_number] = []
-                invoices[invoice_number].append((idx, row))
+            receipt_number = str(row[header_mapping['receipt_number']]).strip()
+            if receipt_number:
+                if receipt_number not in receipts:
+                    receipts[receipt_number] = []
+                receipts[receipt_number].append((idx, row))
         
-        # Process each invoice
-        for invoice_number, invoice_rows in invoices.items():
+        # Process each receipt
+        for receipt_number, receipt_rows in receipts.items():
             try:
-                idx, row = invoice_rows[0]  # Use first row for header info
+                idx, row = receipt_rows[0]  # Use first row for header info
                 
-                # Check if invoice already exists
+                # Check if receipt already exists
                 existing_order = self.session.query(Order).filter(
-                    Order.orderNumber == invoice_number
+                    Order.orderNumber == receipt_number
                 ).with_for_update().first()
                 
                 # Get customer by name
@@ -154,23 +152,20 @@ class InvoiceProcessor(BaseProcessor):
                 
                 if existing_order:
                     # Update existing order
-                    self.logger.info(f"Updating existing order: {invoice_number}")
+                    self.logger.info(f"Updating existing order: {receipt_number}")
                     
                     # Update all fields
-                    existing_order.status = OrderStatus.OPEN if row.get('Status') != 'Paid' else OrderStatus.CLOSED
-                    existing_order.paymentStatus = PaymentStatus.UNPAID if row.get('Status') != 'Paid' else PaymentStatus.PAID
+                    existing_order.status = OrderStatus.CLOSED  # Sales receipts are always closed
+                    existing_order.paymentStatus = PaymentStatus.PAID  # Sales receipts are always paid
                     existing_order.subtotal = subtotal
                     existing_order.taxAmount = tax_amount
                     existing_order.totalAmount = total_amount
                     existing_order.customerId = customer.id
                     existing_order.billingAddressId = billing_id
                     existing_order.shippingAddressId = shipping_id
-                    existing_order.terms = row.get(header_mapping.get('payment_terms', ''), '')
-                    existing_order.dueDate = datetime.strptime(row[header_mapping['due_date']], '%m-%d-%Y') if header_mapping.get('due_date') and row.get(header_mapping['due_date']) else None
-                    existing_order.poNumber = row.get(header_mapping.get('po_number', ''), '')
                     existing_order.class_ = row.get(header_mapping.get('class', ''), '')
                     existing_order.shippingMethod = row.get(header_mapping.get('shipping_method', ''), '')
-                    existing_order.paymentMethod = row.get(header_mapping.get('payment_method', ''), 'Invoice')  # Default to Invoice
+                    existing_order.paymentMethod = row.get(header_mapping.get('payment_method', ''), 'Cash')  # Default to Cash for sales receipts
                     existing_order.quickbooksId = row.get('QuickBooks Internal Id', '')
                     existing_order.modifiedAt = now
                     existing_order.sourceData = validate_json_data(row.to_dict())
@@ -179,26 +174,23 @@ class InvoiceProcessor(BaseProcessor):
                     self.stats['updated'] += 1
                 else:
                     # Create new order
-                    self.logger.info(f"Creating new order: {invoice_number}")
+                    self.logger.info(f"Creating new order: {receipt_number}")
                     order = Order(
                         id=generate_uuid(),
-                        orderNumber=invoice_number,
+                        orderNumber=receipt_number,
                         customerId=customer.id,
-                        orderDate=datetime.strptime(row[header_mapping['invoice_date']], '%m-%d-%Y'),
-                        status=OrderStatus.OPEN if row.get('Status') != 'Paid' else OrderStatus.CLOSED,
-                        paymentStatus=PaymentStatus.UNPAID if row.get('Status') != 'Paid' else PaymentStatus.PAID,
+                        orderDate=datetime.strptime(row[header_mapping['receipt_date']], '%m-%d-%Y'),
+                        status=OrderStatus.CLOSED,  # Sales receipts are always closed
+                        paymentStatus=PaymentStatus.PAID,  # Sales receipts are always paid
                         subtotal=subtotal,
                         taxPercent=None,
                         taxAmount=tax_amount,
                         totalAmount=total_amount,
                         billingAddressId=billing_id,
                         shippingAddressId=shipping_id,
-                        terms=row.get(header_mapping.get('payment_terms', ''), ''),
-                        dueDate=datetime.strptime(row[header_mapping['due_date']], '%m-%d-%Y') if header_mapping.get('due_date') and row.get(header_mapping['due_date']) else None,
-                        poNumber=row.get(header_mapping.get('po_number', ''), ''),
                         class_=row.get(header_mapping.get('class', ''), ''),
                         shippingMethod=row.get(header_mapping.get('shipping_method', ''), ''),
-                        paymentMethod=row.get(header_mapping.get('payment_method', ''), 'Invoice'),  # Default to Invoice
+                        paymentMethod=row.get(header_mapping.get('payment_method', ''), 'Cash'),  # Default to Cash for sales receipts
                         quickbooksId=row.get('QuickBooks Internal Id', ''),
                         createdAt=now,
                         modifiedAt=now,
@@ -208,13 +200,13 @@ class InvoiceProcessor(BaseProcessor):
                     self.stats['created'] += 1
                 
                 # Update order ID in DataFrame
-                for idx, _ in invoice_rows:
+                for idx, _ in receipt_rows:
                     batch_df.at[idx, 'order_id'] = order.id
                 
-                self.stats['total_invoices'] += 1
+                self.stats['total_receipts'] += 1
                 
             except Exception as e:
-                self.logger.error(f"Failed to process invoice {invoice_number}: {str(e)}")
+                self.logger.error(f"Failed to process sales receipt {receipt_number}: {str(e)}")
                 self.stats['errors'] += 1
                 continue
         
