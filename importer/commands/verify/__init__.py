@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from ...processors.verifier import SalesVerifier
+from ...processors.sales_verifier import SalesVerifier
 from ...cli.base import BaseCommand
 
 
@@ -30,11 +30,21 @@ class VerifyCommand(BaseCommand):
     @verify.command()
     @click.argument("file", type=click.Path(exists=True, path_type=Path))
     @click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), default='INFO')
+    @click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save verification results to file')
     @staticmethod
-    def sales(file: Path, log_level: str):
-        """Verify sales data integrity for the given file."""
+    def sales(file: Path, log_level: str, output: Path | None):
+        """Verify sales data integrity for the given file.
+        
+        This command performs comprehensive verification of sales data:
+        - Validates customer and product references
+        - Verifies line item integrity and calculations
+        - Checks order totals and payment status
+        - Detects orphaned records
+        - Ensures data consistency across all related records
+        """
         from ...cli.config import Config
         from ...cli.logging import setup_logging
+        import json
 
         try:
             # Setup logging
@@ -44,6 +54,22 @@ class VerifyCommand(BaseCommand):
             config = Config.from_env()
             verifier = SalesVerifier({'database_url': config.database_url})
             verifier.verify(file)
+            
+            # Save results if output file specified
+            if output and verifier.issues:
+                results = {
+                    'success': len(verifier.issues) == 0,
+                    'stats': verifier.stats,
+                    'issues': [
+                        {
+                            'type': issue['type'],
+                            'message': issue['message']
+                        }
+                        for issue in verifier.issues
+                    ]
+                }
+                with open(output, 'w') as f:
+                    json.dump(results, f, indent=2)
             
         except Exception as e:
             click.secho(f"Error: {str(e)}", fg='red')

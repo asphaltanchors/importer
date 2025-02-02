@@ -1,237 +1,124 @@
 # Sales Data Import Plan
 
-[Previous content remains unchanged until Phase 2]
+## Overview
+This document outlines the multi-pass approach for processing sales data. Each phase focuses on a specific aspect of the data, allowing for better error handling, performance, and data integrity.
 
-### Phase 2: Product Processing ✓
-**Goal**: Create and update product records
-- [x] Product extraction and validation
-- [x] Product record creation/updates
-- [x] Product code management
+## Command Structure
 
-**Implementation Complete**:
+The import process is broken down into several focused commands:
 
-1. Command Structure:
+1. Product Processing:
+   ```bash
+   python3 -m importer.cli sales process-products <file>
    ```
-   python3 -m importer.cli products process <file>
+   - Extracts and processes unique products
+   - Updates existing product descriptions
+   - Handles special items (shipping, tax, etc.)
+
+2. Line Item Processing:
+   ```bash
+   python3 -m importer.cli sales process-line-items <file>
    ```
+   - Validates product references
+   - Processes quantities and pricing
+   - Calculates line item amounts
+   - Handles service dates
 
-2. Field Mapping System:
-   - Maps "Product/Service" to productCode
-   - Maps "Product/Service Description" to description
-   - Handles both Invoice and Sales Receipt formats
-   - Case-sensitive field name handling
-
-3. Product Processing Features:
-   - Extracts unique products from line items
-   - Standardizes product codes to uppercase
-   - Uses product code as initial product name
-   - Maintains creation/modification timestamps
-   - Handles duplicate products across files
-   - Updates descriptions for existing products
-
-4. Special Item Handling:
-   - Skips shipping-related items
-   - Skips tax-related items
-   - Skips discount items
-   - Skips handling fee items
-   - Skips empty/formatting rows
-
-5. Database Integration:
-   - Uses proper PostgreSQL schema
-   - Maintains referential integrity
-   - Handles case-sensitive column names
-   - Proper transaction management
-   - Session-based operations
-
-6. Key Findings:
-   - Product codes are consistently formatted
-   - Descriptions provide valuable product details
-   - Some products appear in multiple files
-   - Special items need consistent filtering
-   - Case sensitivity is critical for database operations
-
-7. Testing Results:
-   - Successfully processed Invoice file:
-     * 11 new products created
-   - Successfully processed Sales Receipt file:
-     * 8 new products created
-     * 7 existing products updated
-   - Total unique products: 19
-
-8. Next Phase Considerations:
-   - Products now available for order line items
-   - Product codes validated and standardized
-   - Description updates preserved
-   - Ready for order processing integration
-
-### Phase 3: Invoice Processing
-**Goal**: Process invoice data into order records
-
-#### Phase 3.1: Invoice Validation ✓
-**Implementation Complete**:
-
-1. Command Structure:
+3. Order Processing:
+   ```bash
+   python3 -m importer.cli sales process-orders <file>
    ```
-   python3 -m importer.cli invoices validate <file>
+   - Creates/updates order headers
+   - Validates customer references
+   - Processes order metadata
+   - Links to billing/shipping addresses
+
+4. Payment Processing:
+   ```bash
+   python3 -m importer.cli sales process-payments <file>
    ```
+   - Updates payment status
+   - Processes payment terms
+   - Validates payment dates
+   - Reconciles payment amounts
 
-2. Validation Features:
-   - Verifies file is invoice format
-   - Validates all required fields present
-   - Confirms customer existence in database
-   - Validates numeric fields and calculations
-   - Checks payment terms format
-   - Builds on existing sales validation
-
-3. Database Integration:
-   - Uses SessionManager for database access
-   - Validates against Customer records
-   - Proper transaction handling
-   - Session-based operations
-
-4. Testing Results:
-   - Successfully validated Invoice_01_29_2025_23_06_44.csv:
-     * 56 total rows processed
-     * All rows passed validation
-     * No warnings or errors found
-     * All customers verified in database
-     * All required fields present and valid
-
-#### Phase 3.2: Invoice Processing ✓
-**Goal**: Create order records from validated invoices
-
-1. Implementation Complete:
-   - Created Order and OrderItem models ✓
-   - Implemented invoice header processing ✓
-     * Invoice number and date handling
-     * Customer validation and linking
-     * Status and payment status mapping
-     * Amount calculations from line items
-   - Line Item Processing ✓
-     * Product linking and validation
-     * Quantity and pricing handling
-     * Amount calculations
-     * Service date processing
-     * Error handling for invalid data
-
-2. Key Findings:
-   - Order Status Values:
-     * Database uses "OPEN" and "CLOSED" enum values
-     * CSV "Paid" maps to CLOSED
-     * CSV "Open" and "Partially Paid" map to OPEN
-   - Payment Status Values:
-     * Database uses "PAID" and "UNPAID" enum values
-     * CSV "Paid" maps to PAID
-     * CSV "Open" and "Partially Paid" map to UNPAID
-   - Field Names:
-     * Database uses camelCase (e.g., "paymentStatus")
-     * Proper case handling is critical for enum values
-   - Customer Handling:
-     * Missing customers treated as errors
-     * No automatic customer creation
-     * Maintains data integrity
-
-3. Testing Results:
-   - Successfully processes invoice headers
-   - Correctly maps status values
-   - Properly calculates totals from line items
-   - Handles duplicate invoices (skips with warning)
-   - Reports missing customers as errors
-
-4. Implementation Features:
-   - Line Item Processing:
-     * Links to existing products from Phase 2
-     * Handles quantity and unit price calculations
-     * Processes amounts and service dates
-     * Skips non-product items (shipping, tax, etc.)
-     * Updates existing line items
-     * Creates new line items as needed
-   - Database Integration:
-     * Populates OrderItem records
-     * Links to Product records
-     * Transaction management with rollback
-     * Session-based operations
-     * Updates existing orders
-   - Validation:
-     * Verifies product existence
-     * Validates amounts and quantities
-     * Checks service date formats
-     * Handles duplicate invoices
-     * Reports errors and warnings
-     * Graceful tax handling
-   - Testing Results:
-     * Successfully updates existing orders
-     * Processes line items correctly
-     * Handles missing tax gracefully
-     * Reports detailed statistics
-
-### Phase 4: Verification ✓
-**Goal**: Ensure data integrity across all imported records
-- [x] Reference integrity verification
-- [x] Total reconciliation
-- [x] Relationship validation
-- [x] Orphaned record detection
-
-**Implementation Complete**:
-
-1. Command Structure:
+5. Verification:
+   ```bash
+   python3 -m importer.cli verify sales <file> [--output results.json]
    ```
-   python3 -m importer.cli verify sales <file>
-   ```
+   - Validates all relationships
+   - Verifies calculations
+   - Checks data consistency
+   - Reports detailed statistics
 
-2. Verification Features:
-   - Customer Reference Validation
-     * Verifies all orders link to valid customers
-     * Reports orphaned orders
-     * Maintains data integrity
-   - Product Reference Validation
-     * Validates all line items link to products
-     * Reports invalid product references
-     * Ensures product data consistency
-   - Order Total Reconciliation
-     * Verifies order totals match line items
-     * Handles rounding differences
-     * Reports discrepancies
-   - Orphaned Record Detection
-     * Identifies orphaned order items
-     * Reports disconnected records
-     * Maintains referential integrity
+## Data Processing Rules
 
-3. Implementation Details:
-   - Database Integration:
-     * Uses SessionManager for transactions
-     * Proper session handling
-     * Efficient query optimization
-   - Validation Logic:
-     * Comprehensive reference checks
-     * Precise total calculations
-     * Thorough orphan detection
-   - Error Reporting:
-     * Clear issue categorization
-     * Detailed error messages
-     * Warning and critical levels
+### Product Processing
+- Product codes standardized to uppercase
+- Special items mapped to system codes:
+  * SYS-SHIPPING: Shipping charges
+  * SYS-HANDLING: Handling fees
+  * SYS-TAX: Sales tax
+  * SYS-NJ-TAX: New Jersey sales tax
+  * SYS-DISCOUNT: Discounts
+- Descriptions preserved and updated
+- Creation/modification timestamps maintained
 
-4. Testing Results:
-   - Successfully verified order references
-   - Validated product relationships
-   - Confirmed total calculations
-   - Detected and reported issues
-   - No orphaned records found
+### Line Item Processing
+- Validates product existence
+- Validates quantities (must be positive)
+- Validates unit prices
+- Calculates line item amounts
+- Processes service dates (optional)
+- Handles special items appropriately
 
-3. Validation Requirements:
-   - All orders link to valid customers
-   - All line items link to valid products
-   - Order totals match line item sums
-   - No duplicate transaction numbers
-   - No orphaned records exist
+### Order Processing
+- Validates customer existence
+- Links to customer addresses
+- Maps order status:
+  * CLOSED: For paid orders/sales receipts
+  * OPEN: For unpaid/partially paid orders
+- Processes order metadata:
+  * Order date (required)
+  * Due date (optional)
+  * PO number (optional)
+  * Shipping method (optional)
+  * Class (optional)
 
-## Progress Tracking
+### Payment Processing
+- Maps payment status:
+  * PAID: For paid orders/sales receipts
+  * UNPAID: For open/partially paid orders
+- Processes payment terms
+- Validates payment dates
+- Reconciles payment amounts
+- Updates order totals
 
-Each import operation tracks:
-1. Records processed
-2. Success/failure counts
-3. Validation issues
-4. Processing statistics
+### Verification Process
+1. Reference Validation:
+   - Customer references
+   - Product references
+   - Address references
+
+2. Line Item Validation:
+   - Quantity/price validation
+   - Amount calculations
+   - Service date formats
+
+3. Order Validation:
+   - Total calculations
+   - Tax amount verification
+   - Status consistency
+
+4. Payment Validation:
+   - Status consistency
+   - Amount reconciliation
+   - Terms validation
+
+5. Orphan Detection:
+   - Orphaned line items
+   - Orphaned orders
+   - Disconnected records
 
 ## Error Categories
 
@@ -240,12 +127,14 @@ Each import operation tracks:
    - Missing required relationships
    - Product not found
    - Customer not found
+   - Invalid calculations
 
 2. **Warning** (Continues Processing)
    - Non-standard product codes
    - Unusual quantities or amounts
    - Duplicate transactions
    - Missing optional fields
+   - Invalid dates
 
 3. **Info** (Statistical)
    - Processing metrics
@@ -253,28 +142,66 @@ Each import operation tracks:
    - Record counts
    - Success rates
 
-## Performance Modes
+## Performance Considerations
 
-1. **Bulk Import**
-   - Optimized for ~50,000 rows
-   - Batch processing
-   - Progress tracking
-   - Memory management
-   - Summary logging
+### Batch Processing
+- Each command optimized for large datasets
+- Memory-efficient processing
+- Batch database operations
+- Progress tracking
+- Summary statistics
 
-2. **Incremental Update**
-   - Handles ~100 rows
-   - Real-time processing
-   - Detailed feedback
-   - Full validation
-   - Interactive output
+### Transaction Management
+- Each phase uses independent transactions
+- Automatic rollback on errors
+- Session-based operations
+- Proper error handling
 
-## Completion Requirements
+### Caching Strategy
+- Product cache for lookups
+- Customer cache for validation
+- Address cache for linking
+- Memory-aware caching
+
+## Success Criteria
 
 An import is considered successful when:
 1. All phases complete without critical errors
-2. Order totals reconcile with line items
-3. All relationships are verified
+2. All relationships are properly established
+3. Calculations are accurate and verified
 4. No orphaned records exist
-5. All required fields are populated
-6. Data integrity is maintained
+5. Data integrity is maintained
+
+## Best Practices
+
+1. Process Order:
+   ```bash
+   # 1. Process products first
+   python3 -m importer.cli sales process-products input.csv
+   
+   # 2. Process line items
+   python3 -m importer.cli sales process-line-items input.csv
+   
+   # 3. Process orders
+   python3 -m importer.cli sales process-orders input.csv
+   
+   # 4. Process payments
+   python3 -m importer.cli sales process-payments input.csv
+   
+   # 5. Verify everything
+   python3 -m importer.cli verify sales input.csv --output results.json
+   ```
+
+2. Error Handling:
+   - Review verification results
+   - Address critical errors first
+   - Check warning patterns
+   - Validate calculations
+   - Ensure data consistency
+
+3. Performance Tips:
+   - Process in recommended order
+   - Use appropriate batch sizes
+   - Monitor memory usage
+   - Check verification results
+   - Save output for analysis

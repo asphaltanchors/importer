@@ -1,4 +1,4 @@
-"""Product processing commands."""
+"""Product processing command for sales data."""
 
 from pathlib import Path
 from typing import Optional
