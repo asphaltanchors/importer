@@ -76,8 +76,8 @@ class LineItemProcessor(BaseProcessor):
             is_sales_receipt = 'Sales Receipt No' in df.columns
             group_by_col = 'Sales Receipt No' if is_sales_receipt else 'Invoice No'
             
-            # Log column names for debugging
-            self.logger.info(f"CSV columns: {df.columns.tolist()}")
+            if self.debug:
+                self.logger.debug(f"CSV columns: {df.columns.tolist()}")
             
             # Convert invoice numbers to strings to match order lookup
             df[group_by_col] = df[group_by_col].astype(str).str.strip()
@@ -85,9 +85,12 @@ class LineItemProcessor(BaseProcessor):
             # Group by invoice/receipt number
             invoice_groups = df.groupby(group_by_col)
             total_invoices = len(invoice_groups)
-            self.logger.debug(f"Found {total_invoices} unique invoice numbers")
+            if self.debug:
+                self.logger.debug(f"Found {total_invoices} unique invoice numbers")
             
-            self.logger.info(f"\nProcessing line items for {total_invoices} invoices in batches of {self.batch_size}")
+            self.logger.info(f"Processing {total_invoices} invoices")
+            if self.debug:
+                self.logger.debug(f"Batch size: {self.batch_size}")
             
             # Process in batches
             current_batch = []
@@ -101,14 +104,16 @@ class LineItemProcessor(BaseProcessor):
                 
                 if len(current_batch) >= self.batch_size:
                     self._process_batch(current_batch)
-                    print(f"Batch {batch_num} complete ({len(current_batch)} invoices)", flush=True)
+                    if self.debug:
+                        self.logger.debug(f"Batch {batch_num} complete ({len(current_batch)} invoices)")
                     current_batch = []
                     batch_num += 1
             
             # Process final batch if any
             if current_batch:
                 self._process_batch(current_batch)
-                print(f"Final batch complete ({len(current_batch)} invoices)", flush=True)
+                if self.debug:
+                    self.logger.debug(f"Final batch complete ({len(current_batch)} invoices)")
             
             return {
                 'success': self.stats['failed_batches'] == 0,
@@ -133,7 +138,8 @@ class LineItemProcessor(BaseProcessor):
             order_id: Order ID to clear items for
             session: Database session
         """
-        self.logger.debug(f"Clearing existing line items for order {order_id}")
+        if self.debug:
+            self.logger.debug(f"Clearing existing line items for order {order_id}")
         session.query(OrderItem).filter(
             OrderItem.orderId == order_id
         ).delete()
@@ -149,9 +155,10 @@ class LineItemProcessor(BaseProcessor):
                 for invoice_number, invoice_df in batch:
                     try:
                         # Find order
-                        self.logger.debug(f"Looking for order {invoice_number}")
+                        if self.debug:
+                            self.logger.debug(f"Looking for order {invoice_number}")
                         order = session.query(Order).filter(
-                            Order.orderNumber == str(invoice_number)  # Convert to string in case invoice_number is numeric
+                            Order.orderNumber == str(invoice_number)
                         ).first()
                         
                         if not order:
@@ -159,7 +166,8 @@ class LineItemProcessor(BaseProcessor):
                             self.logger.error(f"Order not found for invoice {invoice_number}")
                             continue
                         
-                        self.logger.debug(f"Found order {order.id} for invoice {invoice_number}")
+                        if self.debug:
+                            self.logger.debug(f"Found order {order.id} for invoice {invoice_number}")
                         
                         # Clear existing line items before processing new ones
                         self._clear_existing_line_items(order.id, session)
@@ -170,7 +178,8 @@ class LineItemProcessor(BaseProcessor):
                         
                         # Process each line item
                         for _, row in invoice_df.iterrows():
-                            self.logger.debug(f"Processing row: {row.to_dict()}")
+                            if self.debug:
+                                self.logger.debug(f"Processing row: {row.to_dict()}")
                             result = self._process_line_item(row, order.id, session)
                             if result['success'] and result['line_item']:
                                 item = result['line_item']
@@ -178,27 +187,31 @@ class LineItemProcessor(BaseProcessor):
                                 
                                 # Skip NaN amounts
                                 if item.amount is None or pd.isna(item.amount):
-                                    self.logger.debug(f"Skipping NaN amount for {item.productCode}")
+                                    if self.debug:
+                                        self.logger.debug(f"Skipping NaN amount for {item.productCode}")
                                     continue
                                 
                                 # Add to running totals
                                 if is_tax_product(item.productCode):
                                     tax_amount += item.amount
-                                    self.logger.debug(f"Added tax amount: {item.amount}")
+                                    if self.debug:
+                                        self.logger.debug(f"Added tax amount: {item.amount}")
                                 else:
                                     # Everything else (including shipping) goes to subtotal
                                     subtotal += item.amount
-                                    self.logger.debug(f"Added to subtotal: {item.amount}")
+                                    if self.debug:
+                                        self.logger.debug(f"Added to subtotal: {item.amount}")
                         
                         # Update order totals
                         order.subtotal = subtotal
                         order.taxAmount = tax_amount
                         order.totalAmount = subtotal + tax_amount  # Shipping is included in subtotal
                         
-                        self.logger.info(f"Updated order {order.orderNumber} totals:")
-                        self.logger.info(f"  Subtotal: {order.subtotal}")
-                        self.logger.info(f"  Tax: {order.taxAmount}")
-                        self.logger.info(f"  Total: {order.totalAmount}")
+                        if self.debug:
+                            self.logger.debug(f"Updated order {order.orderNumber} totals:")
+                            self.logger.debug(f"  Subtotal: {order.subtotal}")
+                            self.logger.debug(f"  Tax: {order.taxAmount}")
+                            self.logger.debug(f"  Total: {order.totalAmount}")
                         
                         # Ensure changes are flushed to DB
                         session.flush()
@@ -235,14 +248,15 @@ class LineItemProcessor(BaseProcessor):
             # Map product code using common utility
             description = self.get_mapped_field(row, 'description')
             mapped_code = map_product_code(product_code, description)
-            self.logger.debug(f"Mapped product code '{product_code}' with description '{description}' to '{mapped_code}'")
+            if self.debug:
+                self.logger.debug(f"Mapped product code '{product_code}' with description '{description}' to '{mapped_code}'")
             
             # Look up product
             product = session.query(Product).filter(
                 Product.productCode == mapped_code
             ).first()
             
-            if product:
+            if self.debug and product:
                 self.logger.debug(f"Found product {product.productCode}")
             
             if not product:
@@ -255,33 +269,37 @@ class LineItemProcessor(BaseProcessor):
                 return result
             
             # Parse quantity and amount
-            # Parse quantity and amount
             quantity = Decimal('1')
             quantity_str = self.get_mapped_field(row, 'quantity')
             if quantity_str:
                 try:
                     quantity = Decimal(quantity_str.strip() or '1')
                 except (ValueError, InvalidOperation):
-                    self.logger.warning(f"Invalid quantity for {product_code}: {quantity_str}")
+                    if self.debug:
+                        self.logger.debug(f"Invalid quantity for {product_code}: {quantity_str}")
                     quantity = Decimal('1')
 
             # Debug all available fields
-            self.logger.debug("Available fields in row:")
-            for col in row.index:
-                self.logger.debug(f"  {col}: {row[col]}")
+            if self.debug:
+                self.logger.debug("Available fields in row:")
+                for col in row.index:
+                    self.logger.debug(f"  {col}: {row[col]}")
 
             amount = Decimal('0')
             amount_str = self.get_mapped_field(row, 'amount')
-            self.logger.debug(f"Looking for amount using mapping: {self.field_mappings['amount']}")
-            self.logger.debug(f"Raw amount for {product_code}: {amount_str}")
+            if self.debug:
+                self.logger.debug(f"Looking for amount using mapping: {self.field_mappings['amount']}")
+                self.logger.debug(f"Raw amount for {product_code}: {amount_str}")
             
             if amount_str:
                 try:
                     # Clean and parse amount
                     cleaned_amount = amount_str.replace('$', '').replace(',', '')
-                    self.logger.debug(f"Cleaned amount: {cleaned_amount}")
+                    if self.debug:
+                        self.logger.debug(f"Cleaned amount: {cleaned_amount}")
                     amount = Decimal(cleaned_amount)
-                    self.logger.debug(f"Parsed amount: {amount}")
+                    if self.debug:
+                        self.logger.debug(f"Parsed amount: {amount}")
                 except (ValueError, InvalidOperation) as e:
                     self.logger.error(f"Failed to parse amount '{amount_str}' for {product_code}: {str(e)}")
                     result['success'] = False
@@ -300,7 +318,8 @@ class LineItemProcessor(BaseProcessor):
                 try:
                     service_date = datetime.strptime(service_date_str, '%m-%d-%Y')
                 except ValueError:
-                    logging.warning(f"Invalid service date format for {product_code}")
+                    if self.debug:
+                        self.logger.debug(f"Invalid service date format for {product_code}")
             
             # Normalize source data for JSON serialization
             source_data = validate_json_data(row.to_dict())
@@ -319,10 +338,11 @@ class LineItemProcessor(BaseProcessor):
             )
             
             session.add(line_item)
-            self.logger.debug(f"Created line item for {product_code}:")
-            self.logger.debug(f"  Quantity: {quantity}")
-            self.logger.debug(f"  Unit Price: {unit_price}")
-            self.logger.debug(f"  Amount: {amount}")
+            if self.debug:
+                self.logger.debug(f"Created line item for {product_code}:")
+                self.logger.debug(f"  Quantity: {quantity}")
+                self.logger.debug(f"  Unit Price: {unit_price}")
+                self.logger.debug(f"  Amount: {amount}")
             result['line_item'] = line_item
             return result
             
@@ -345,19 +365,23 @@ class LineItemProcessor(BaseProcessor):
             Field value if found, empty string otherwise
         """
         if field not in self.field_mappings:
-            self.logger.debug(f"Field {field} not in mappings")
+            if self.debug:
+                self.logger.debug(f"Field {field} not in mappings")
             return ''
             
         for possible_name in self.field_mappings[field]:
-            self.logger.debug(f"Looking for {possible_name} in row")
+            if self.debug:
+                self.logger.debug(f"Looking for {possible_name} in row")
             if possible_name in row:
                 value = str(row[possible_name]).strip()
-                self.logger.debug(f"Found value: {value}")
+                if self.debug:
+                    self.logger.debug(f"Found value: {value}")
                 return value
-            else:
+            elif self.debug:
                 self.logger.debug(f"{possible_name} not found in row")
         
-        self.logger.debug(f"No mapping found for {field}")
+        if self.debug:
+            self.logger.debug(f"No mapping found for {field}")
         return ''
 
     def _calculate_totals(self, line_items: List[OrderItem]) -> Dict[str, Decimal]:
@@ -369,20 +393,25 @@ class LineItemProcessor(BaseProcessor):
         for item in line_items:
             # Skip items with NaN or None amounts
             if item.amount is None or pd.isna(item.amount):
-                self.logger.debug(f"Skipping line item with NaN/None amount: {item.productCode}")
+                if self.debug:
+                    self.logger.debug(f"Skipping line item with NaN/None amount: {item.productCode}")
                 continue
                 
             if is_tax_product(item.productCode):
                 tax_amount += item.amount
-                self.logger.debug(f"Added tax amount: {item.amount}")
+                if self.debug:
+                    self.logger.debug(f"Added tax amount: {item.amount}")
             elif is_shipping_product(item.productCode):
                 shipping_amount += item.amount
-                self.logger.debug(f"Added shipping amount: {item.amount}")
+                if self.debug:
+                    self.logger.debug(f"Added shipping amount: {item.amount}")
             else:
                 subtotal += item.amount
-                self.logger.debug(f"Added to subtotal: {item.amount}")
+                if self.debug:
+                    self.logger.debug(f"Added to subtotal: {item.amount}")
         
-        self.logger.info(f"Calculated totals - Subtotal: {subtotal}, Tax: {tax_amount}, Shipping: {shipping_amount}")
+        if self.debug:
+            self.logger.debug(f"Calculated totals - Subtotal: {subtotal}, Tax: {tax_amount}, Shipping: {shipping_amount}")
         
         return {
             'subtotal': subtotal,

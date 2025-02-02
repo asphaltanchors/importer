@@ -2,9 +2,10 @@
 
 ## Data Processing Phases
 The system processes data in distinct phases to maintain separation of concerns:
-1. Customer Processing (first to establish relationships)
-2. Receipt/Invoice Processing (uses customer relationships)
-3. Line Item Processing (uses order relationships)
+1. Company Processing (first to establish base relationships)
+2. Customer Processing (uses company relationships)
+3. Receipt/Invoice Processing (uses customer relationships)
+4. Line Item Processing (uses order relationships)
 
 ## Idempotency
 The system is designed to be idempotent - running the same import multiple times produces the same result:
@@ -16,8 +17,8 @@ The system is designed to be idempotent - running the same import multiple times
 
 2. Lookup Order:
    - First try external ID (most reliable)
-   - Then try exact name match
-   - Then try normalized name match
+   - Then try exact name/domain match
+   - Then try normalized name/domain match
    - Only create new if no match found
 
 3. Update vs Create:
@@ -27,6 +28,7 @@ The system is designed to be idempotent - running the same import multiple times
    - Preserve fields that shouldn't change (like creation date)
 
 4. Special Cases:
+   - Required companies (amazon-fba.com, unknown-domain.com)
    - Amazon FBA uses city-specific names
    - Normalized customer names for better matching
    - Domain handling (amazon-fba.com, email domain, unknown-domain.com)

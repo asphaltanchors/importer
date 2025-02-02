@@ -69,7 +69,8 @@ class InvoiceProcessor(BaseProcessor):
             for name in possible_names:
                 if name in batch_df.columns:
                     header_mapping[std_field] = name
-                    self.logger.debug(f"Mapped {std_field} -> {name}")
+                    if self.debug:
+                        self.logger.debug(f"Mapped {std_field} -> {name}")
                     break
         
         if 'invoice_number' not in header_mapping:
@@ -101,16 +102,19 @@ class InvoiceProcessor(BaseProcessor):
                     continue
                     
                 customer_name = str(customer_name).strip()
-                self.logger.debug(f"Looking up customer: {customer_name}")
+                if self.debug:
+                    self.logger.debug(f"Looking up customer: {customer_name}")
                 
                 # Use shared customer lookup logic
                 customer, used_normalization = find_customer_by_name(self.session, customer_name)
                 if customer and used_normalization:
-                    self.logger.info(f"Found normalized name match: '{customer_name}' -> '{customer.customerName}'")
-                elif customer:
+                    if self.debug:
+                        self.logger.debug(f"Found normalized name match: '{customer_name}' -> '{customer.customerName}'")
+                elif customer and self.debug:
                     self.logger.debug(f"Found exact match: '{customer.customerName}'")
-                else:
-                    self.logger.debug("No customer match found")
+                elif not customer:
+                    if self.debug:
+                        self.logger.debug("No customer match found")
                     self.stats['errors'] += 1
                     continue
                 
@@ -153,8 +157,8 @@ class InvoiceProcessor(BaseProcessor):
                 shipping_id = shipping_id if shipping_id else customer.shippingAddressId
                 
                 if existing_order:
-                    # Update existing order
-                    self.logger.info(f"Updating existing order: {invoice_number}")
+                    if self.debug:
+                        self.logger.debug(f"Updating existing order: {invoice_number}")
                     
                     # Update all fields
                     existing_order.status = OrderStatus.OPEN if row.get('Status') != 'Paid' else OrderStatus.CLOSED
@@ -178,8 +182,8 @@ class InvoiceProcessor(BaseProcessor):
                     order = existing_order
                     self.stats['updated'] += 1
                 else:
-                    # Create new order
-                    self.logger.info(f"Creating new order: {invoice_number}")
+                    if self.debug:
+                        self.logger.debug(f"Creating new order: {invoice_number}")
                     order = Order(
                         id=generate_uuid(),
                         orderNumber=invoice_number,

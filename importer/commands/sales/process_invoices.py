@@ -3,11 +3,11 @@
 from pathlib import Path
 import click
 import json
-import logging
 from typing import Optional
 import pandas as pd
 
 from ...cli.base import FileInputCommand, command_error_handler
+from ...cli.logging import get_logger
 from ...utils.csv_normalization import normalize_dataframe_columns
 from ...processors.invoice import InvoiceProcessor
 from ...processors.line_item import LineItemProcessor
@@ -27,6 +27,7 @@ class ProcessInvoicesCommand(FileInputCommand):
         """
         super().__init__(config, input_file, output_file)
         self.batch_size = batch_size
+        self.logger = get_logger(__name__)
     
     @command_error_handler
     def execute(self) -> None:
@@ -34,13 +35,25 @@ class ProcessInvoicesCommand(FileInputCommand):
         session_manager = SessionManager(self.config.database_url)
         
         try:
+            self.logger.info(f"Processing invoices from {self.input_file}")
+            self.logger.info(f"Batch size: {self.batch_size}")
+            
             # Process invoices first
             with session_manager.get_session() as session:
                 # Read CSV file
+                self.logger.info("Reading CSV file...")
+                if self.debug:
+                    self.logger.debug(f"Reading CSV from {self.input_file}")
                 df = pd.read_csv(self.input_file)
+                if self.debug:
+                    self.logger.debug("Normalizing dataframe columns")
                 df = normalize_dataframe_columns(df)
+                self.logger.info(f"Found {len(df)} rows")
                 
+                if self.debug:
+                    self.logger.debug("Initializing InvoiceProcessor")
                 invoice_processor = InvoiceProcessor(session, self.batch_size)
+                invoice_processor.debug = self.debug  # Pass debug flag from command
                 processed_df = invoice_processor.process(df)
                 
                 # Convert processor results to our standard format
@@ -52,41 +65,50 @@ class ProcessInvoicesCommand(FileInputCommand):
                 }
                 
                 if not invoice_result['success']:
-                    click.echo("Failed to process invoices")
+                    self.logger.error("Failed to process invoices")
+                    if self.debug:
+                        self.logger.debug(f"Failed batches: {invoice_processor.stats['failed_batches']}")
                     return
                 
-                click.echo("Invoice processing complete")
-                click.echo(f"Created: {invoice_result['summary']['stats']['created']}")
-                click.echo(f"Updated: {invoice_result['summary']['stats']['updated']}")
-                click.echo(f"Errors: {invoice_result['summary']['stats']['errors']}")
+                self.logger.info("Invoice processing complete")
+                if self.debug:
+                    self.logger.debug(f"Created: {invoice_result['summary']['stats']['created']}")
+                    self.logger.debug(f"Updated: {invoice_result['summary']['stats']['updated']}")
+                    self.logger.debug(f"Errors: {invoice_result['summary']['stats']['errors']}")
             
             # Then process line items
+            self.logger.info("Processing line items")
+            if self.debug:
+                self.logger.debug("Initializing LineItemProcessor")
             line_item_processor = LineItemProcessor(session_manager, self.batch_size)
+            line_item_processor.debug = self.debug  # Pass debug flag from command
             line_item_result = line_item_processor.process_file(str(self.input_file))
             
             if not line_item_result['success']:
-                click.echo("Failed to process line items")
+                self.logger.error("Failed to process line items")
                 return
                 
-            click.echo("Line item processing complete")
-            click.echo(f"Total line items: {line_item_result['summary']['stats']['total_line_items']}")
-            click.echo(f"Orders processed: {line_item_result['summary']['stats']['orders_processed']}")
-            click.echo(f"Products not found: {line_item_result['summary']['stats']['products_not_found']}")
-            click.echo(f"Orders not found: {line_item_result['summary']['stats']['orders_not_found']}")
+            self.logger.info("Line item processing complete")
+            if self.debug:
+                self.logger.debug(f"Total line items: {line_item_result['summary']['stats']['total_line_items']}")
+                self.logger.debug(f"Orders processed: {line_item_result['summary']['stats']['orders_processed']}")
+                self.logger.debug(f"Products not found: {line_item_result['summary']['stats']['products_not_found']}")
+                self.logger.debug(f"Orders not found: {line_item_result['summary']['stats']['orders_not_found']}")
             
             # Save results if output file specified
             if self.output_file:
+                if self.debug:
+                    self.logger.debug(f"Saving results to {self.output_file}")
                 results = {
                     'invoice_processing': invoice_result,
                     'line_item_processing': line_item_result
                 }
                 with open(self.output_file, 'w') as f:
                     json.dump(results, f, indent=2)
-                click.echo(f"\nDetailed results saved to {self.output_file}")
+                self.logger.info(f"Detailed results saved to {self.output_file}")
                 
         except Exception as e:
-            logging.error(f"Failed to process file: {str(e)}")
-            click.echo(f"Error: {str(e)}")
+            self.logger.error(f"Failed to process file: {str(e)}", exc_info=self.debug)
             return
 
 # Click command wrapper
@@ -99,7 +121,8 @@ def process_invoices(ctx, file_path: Path, output: Optional[Path], batch_size: i
     """Process invoices from a CSV file."""
     config = ctx.obj.get('config')
     if not config:
-        click.echo("Error: No configuration found in context")
+        logger = get_logger(__name__)
+        logger.error("No configuration found in context")
         return
         
     command = ProcessInvoicesCommand(config, file_path, output, batch_size)
