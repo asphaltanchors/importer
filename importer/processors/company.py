@@ -83,9 +83,15 @@ class CompanyProcessor(BaseProcessor):
         # Extract domains for each row
         batch_df['company_domain'] = batch_df.apply(self.extract_email_domain, axis=1)
         
-        # Get unique domains from this batch
-        domains = batch_df['company_domain'].unique()
-        valid_domains = [d for d in domains if d]
+        # Get unique domains and their QuickBooks IDs
+        domain_qb_map = {}
+        for _, row in batch_df.iterrows():
+            domain = row['company_domain']
+            if domain and domain not in domain_qb_map:
+                qb_id = str(row.get('QuickBooks Internal Id', '')) if pd.notna(row.get('QuickBooks Internal Id')) else None
+                domain_qb_map[domain] = qb_id
+        
+        valid_domains = [d for d in domain_qb_map.keys() if d]
         
         # Update statistics
         self.stats['domains_extracted'] += len(valid_domains)
@@ -102,7 +108,7 @@ class CompanyProcessor(BaseProcessor):
             ).first()
             
             if not existing:
-                company = Company.create_from_domain(domain)
+                company = Company.create_from_domain(domain, quickbooks_id=domain_qb_map[domain])
                 self.session.add(company)
                 self.stats['companies_created'] += 1
         

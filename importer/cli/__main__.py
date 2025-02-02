@@ -26,9 +26,15 @@ from ..commands.customers import (
 )
 
 @click.group()
-def cli():
+@click.option('--debug', is_flag=True, help='Enable debug logging')
+@click.pass_context
+def cli(ctx, debug: bool):
     """CSV Importer CLI tool"""
-    pass
+    # Store debug flag in context for subcommands
+    ctx.ensure_object(dict)
+    ctx.obj['debug'] = debug
+    if debug:
+        setup_logging(level='DEBUG')
 
 @cli.command()
 def test_connection():
@@ -126,9 +132,14 @@ def process_addresses(file: Path, output: Path | None):
 @customers.command('process')
 @click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
 @click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save customer processing results to file')
-def process_customers(file: Path, output: Path | None):
+@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), default='INFO')
+@click.pass_context
+def process_customers(ctx, file: Path, output: Path | None, log_level: str):
     """Process customer records from a CSV file."""
     try:
+        # Setup logging (use debug from context if set)
+        setup_logging(level='DEBUG' if ctx.obj.get('debug') else log_level)
+        
         config = Config.from_env()
         command = ProcessCustomersCommand(config, file, output)
         command.execute()

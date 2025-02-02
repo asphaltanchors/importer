@@ -86,8 +86,14 @@ def setup_logging(
         for handler in handlers:
             root_logger.addHandler(handler)
     
-    # Set library logging levels
-    logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
+    # Set library logging levels based on configured level
+    if level.upper() == 'DEBUG':
+        logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
+        logging.getLogger('sqlalchemy.pool').setLevel(logging.DEBUG)
+    else:
+        logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
+        logging.getLogger('sqlalchemy.pool').setLevel(logging.WARNING)
+    
     logging.getLogger('urllib3').setLevel(logging.WARNING)
 
 def get_logger(name: str) -> logging.Logger:

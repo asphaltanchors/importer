@@ -29,17 +29,24 @@ class CustomerProcessor(BaseProcessor):
 
     def _load_cached_data(self):
         """Load existing company domains and address IDs into cache."""
+        self.logger.debug("Loading cached data...")
+        
         # Cache company domains
         companies = self.session.execute(select(Company.domain)).scalars()
         self.company_domains.update(companies)
+        self.logger.debug(f"Cached {len(self.company_domains)} company domains")
         
         # Cache address IDs
         addresses = self.session.execute(select(Address.id)).scalars()
         self.address_ids.update(addresses)
+        self.logger.debug(f"Cached {len(self.address_ids)} address IDs")
 
     def _verify_company_domain(self, domain: str) -> bool:
         """Verify company domain exists."""
-        return domain.lower() in self.company_domains
+        domain = domain.lower()
+        exists = domain in self.company_domains
+        self.logger.debug(f"Verifying company domain '{domain}': {'exists' if exists else 'not found'}")
+        return exists
 
     def _verify_address_id(self, address_id: Optional[str]) -> bool:
         """Verify address ID exists if provided."""
@@ -116,20 +123,32 @@ class CustomerProcessor(BaseProcessor):
                 
                 # First try to find by QuickBooks ID if it exists and is valid
                 if not pd.isna(quickbooks_id):
+                    self.logger.debug(f"Searching for customer by QuickBooks ID: {quickbooks_id}")
                     existing_customer = self.session.query(Customer).filter_by(quickbooksId=quickbooks_id).first()
+                    if existing_customer:
+                        self.logger.debug(f"Found existing customer by QuickBooks ID: {existing_customer.customerName}")
                 else:
                     existing_customer = None
                 
                 # If not found by ID, try name matching (only if name is valid)
                 if not existing_customer and not pd.isna(name):
+                    self.logger.debug(f"Searching for customer by name: {name}")
                     existing_customer, used_normalization = self._find_customer_by_name(name)
-                    if existing_customer and used_normalization:
-                        self.stats.setdefault('normalized_matches', 0)
-                        self.stats['normalized_matches'] += 1
-                        self.logger.info(f"Updating existing customer found by normalized name match: '{name}' -> '{existing_customer.customerName}'")
+                    if existing_customer:
+                        if used_normalization:
+                            self.stats.setdefault('normalized_matches', 0)
+                            self.stats['normalized_matches'] += 1
+                            self.logger.info(f"Updating existing customer found by normalized name match: '{name}' -> '{existing_customer.customerName}'")
+                        else:
+                            self.logger.debug(f"Found existing customer by exact name match: {existing_customer.customerName}")
                 
                 if existing_customer:
                     # Update existing customer
+                    self.logger.debug(f"Updating existing customer: {name}")
+                    self.logger.debug(f"Company domain: {company_domain}")
+                    self.logger.debug(f"Billing address ID: {billing_id}")
+                    self.logger.debug(f"Shipping address ID: {shipping_id}")
+                    
                     existing_customer.customerName = name
                     existing_customer.companyDomain = company_domain.lower()
                     existing_customer.billingAddressId = billing_id
@@ -139,6 +158,11 @@ class CustomerProcessor(BaseProcessor):
                     self.stats['customers_updated'] += 1
                 else:
                     # Create new customer
+                    self.logger.debug(f"Creating new customer: {name}")
+                    self.logger.debug(f"Company domain: {company_domain}")
+                    self.logger.debug(f"Billing address ID: {billing_id}")
+                    self.logger.debug(f"Shipping address ID: {shipping_id}")
+                    
                     customer = Customer.create(
                         name=name,
                         quickbooks_id=quickbooks_id,

@@ -20,10 +20,15 @@ class Company(Base):
     createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
     
     @classmethod
-    def create_from_domain(cls, domain: str) -> 'Company':
-        """Create a new company record from a domain."""
+    def create_from_domain(cls, domain: str, quickbooks_id: str = None) -> 'Company':
+        """Create a new company record from a domain.
+        
+        Args:
+            domain: The email domain for the company
+            quickbooks_id: Optional QuickBooks ID to use as company ID
+        """
         return cls(
-            id=str(uuid.uuid4()),
+            id=quickbooks_id if quickbooks_id else str(uuid.uuid4()),
             name=domain.split('.')[0].title(),  # Simple name from domain
             domain=domain.lower()
         )
