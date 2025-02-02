@@ -147,33 +147,56 @@ class ProcessCustomersCommand(FileInputCommand):
         
         # Read the CSV file
         df = pd.read_csv(self.input_file)
+        total_rows = len(df)
         
-        # First run company processor to extract domains
+        print(f"\nProcessing {total_rows} rows in batches of 100", flush=True)
+        
+        # Step 1: Process Companies
+        print("\n=== Processing Companies ===", flush=True)
         company_processor = CompanyProcessor({'database_url': self.config.database_url})
         df = company_processor.process(df)
+        company_stats = company_processor.get_stats()
+        click.echo(f"Companies processed: {company_stats['total_processed']}")
+        click.echo(f"Successful batches: {company_stats['successful_batches']}")
+        click.echo(f"Failed batches: {company_stats['failed_batches']}")
+        click.echo(f"Total errors: {company_stats['total_errors']}")
         
-        # Then run customer processor
+        # Step 2: Process Addresses
+        print("\n=== Processing Addresses ===", flush=True)
         session = self.get_session()
         try:
-            processor = CustomerProcessor(session)
-            processed_df = processor.process(df)
+            address_processor = AddressProcessor(session)
+            df = address_processor.process(df)
+            address_stats = address_processor.get_stats()
+            click.echo(f"Addresses processed: {address_stats['total_processed']}")
+            click.echo(f"Successful batches: {address_stats['successful_batches']}")
+            click.echo(f"Failed batches: {address_stats['failed_batches']}")
+            click.echo(f"Total errors: {address_stats['total_errors']}")
             
-            # Get statistics
-            stats = processor.get_stats()
+            # Step 3: Process Customers
+            print("\n=== Processing Customers ===", flush=True)
+            customer_processor = CustomerProcessor(session)
+            processed_df = customer_processor.process(df)
+            customer_stats = customer_processor.get_stats()
             
-            # Display summary
+            # Display final summary
             click.echo("\nCustomer Processing Summary:")
-            click.echo(f"Total Rows Processed: {stats['customers_processed']}")
-            click.echo(f"Customers Created: {stats['customers_created']}")
-            click.echo(f"Missing Company Domains: {stats['missing_company_domains']}")
-            click.echo(f"Invalid Billing Addresses: {stats['invalid_billing_addresses']}")
-            click.echo(f"Invalid Shipping Addresses: {stats['invalid_shipping_addresses']}")
-            click.echo(f"Errors: {stats['errors']}")
+            click.echo(f"Total Rows Processed: {customer_stats['total_processed']}")
+            click.echo(f"Successful Batches: {customer_stats['successful_batches']}")
+            click.echo(f"Failed Batches: {customer_stats['failed_batches']}")
+            click.echo(f"Customers Created: {customer_stats['customers_created']}")
+            click.echo(f"Customers Updated: {customer_stats['customers_updated']}")
+            click.echo(f"Missing Company Domains: {customer_stats['missing_company_domains']}")
+            click.echo(f"Invalid Billing Addresses: {customer_stats['invalid_billing_addresses']}")
+            click.echo(f"Invalid Shipping Addresses: {customer_stats['invalid_shipping_addresses']}")
+            click.echo(f"Total Errors: {customer_stats['total_errors']}")
             
             # Save detailed results if requested
             if self.output_file:
                 results = {
-                    'stats': stats,
+                    'company_stats': company_stats,
+                    'address_stats': address_stats,
+                    'customer_stats': customer_stats,
                     'processed_rows': len(processed_df),
                     'customer_ids': processed_df['customer_id'].dropna().tolist()
                 }

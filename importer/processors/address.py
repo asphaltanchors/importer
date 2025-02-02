@@ -11,18 +11,17 @@ from .base import BaseProcessor
 class AddressProcessor(BaseProcessor):
     """Processes customer address data from CSV imports."""
     
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, batch_size: int = 100):
         """Initialize processor with database session."""
-        self.session = session
+        super().__init__(session, batch_size)
         self.address_cache: Dict[str, str] = {}  # Cache of address hash -> address id
-        self.stats = {
-            'addresses_processed': 0,
+        self.stats.update({
             'unique_addresses': 0,
             'duplicate_addresses': 0,
             'billing_addresses': 0,
             'shipping_addresses': 0,
             'identical_billing_shipping': 0
-        }
+        })
 
     def _clean_address_field(self, value: Optional[str | int]) -> str:
         """Clean an address field value."""
@@ -100,44 +99,40 @@ class AddressProcessor(BaseProcessor):
         
         return address.id
 
-    def process_row(self, row: pd.Series) -> Tuple[Optional[str], Optional[str]]:
-        """Process addresses for a single row."""
-        self.stats['addresses_processed'] += 1
+    def _process_batch(self, batch_df: pd.DataFrame) -> pd.DataFrame:
+        """Process a batch of addresses."""
+        # Add columns for address IDs if they don't exist
+        batch_df['billing_address_id'] = None
+        batch_df['shipping_address_id'] = None
         
-        # Extract and process billing address
-        billing_dict = self._extract_address(row, 'Billing Address')
-        billing_id = self._process_address(billing_dict) if billing_dict else None
-        if billing_id:
-            self.stats['billing_addresses'] += 1
-            
-        # Extract and process shipping address
-        shipping_dict = self._extract_address(row, 'Shipping Address')
-        shipping_id = self._process_address(shipping_dict) if shipping_dict else None
-        if shipping_id:
-            self.stats['shipping_addresses'] += 1
-            
-        # Check if addresses are identical
-        if billing_id and shipping_id and billing_id == shipping_id:
-            self.stats['identical_billing_shipping'] += 1
-            
-        return billing_id, shipping_id
-
-    def process(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Process all addresses in the dataframe."""
-        # Add columns for address IDs
-        df['billing_address_id'] = None
-        df['shipping_address_id'] = None
+        # Process each row in the batch
+        for idx, row in batch_df.iterrows():
+            try:
+                # Extract and process billing address
+                billing_dict = self._extract_address(row, 'Billing Address')
+                billing_id = self._process_address(billing_dict) if billing_dict else None
+                if billing_id:
+                    self.stats['billing_addresses'] += 1
+                    
+                # Extract and process shipping address
+                shipping_dict = self._extract_address(row, 'Shipping Address')
+                shipping_id = self._process_address(shipping_dict) if shipping_dict else None
+                if shipping_id:
+                    self.stats['shipping_addresses'] += 1
+                    
+                # Check if addresses are identical
+                if billing_id and shipping_id and billing_id == shipping_id:
+                    self.stats['identical_billing_shipping'] += 1
+                    
+                # Update the dataframe with address IDs
+                batch_df.at[idx, 'billing_address_id'] = billing_id
+                batch_df.at[idx, 'shipping_address_id'] = shipping_id
+                
+            except Exception as e:
+                self.logger.error(f"Error processing address: {e}")
+                continue
         
-        # Process each row
-        for idx, row in df.iterrows():
-            billing_id, shipping_id = self.process_row(row)
-            df.at[idx, 'billing_address_id'] = billing_id
-            df.at[idx, 'shipping_address_id'] = shipping_id
-            
-        # Commit all addresses
-        self.session.commit()
-        
-        return df
+        return batch_df
 
     def get_stats(self) -> Dict[str, int]:
         """Get processing statistics."""

@@ -18,17 +18,24 @@ class CompanyProcessor(BaseProcessor):
         'Additional Notes'
     ]
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], batch_size: int = 100):
         """Initialize the company processor."""
-        super().__init__(config)
+        super().__init__(None, batch_size)  # Initialize without session
+        self.session_manager = SessionManager(config['database_url'])
         self.processed_domains: Set[str] = set()
-        self.stats = {
+        self.stats.update({
             'domains_extracted': 0,
             'companies_created': 0,
-            'rows_processed': 0,
             'rows_with_domain': 0
-        }
-        self.session_manager = SessionManager(config['database_url'])
+        })
+        
+    def process(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Process the data in batches with session management."""
+        with self.session_manager as session:
+            self.session = session  # Set session for batch processing
+            result = super().process(data)  # Use parent's batch processing
+            self.session = None  # Clear session after processing
+            return result
 
     def extract_email_domain(self, row: pd.Series) -> str:
         """Extract the first valid email domain from a row's email fields."""
@@ -71,44 +78,38 @@ class CompanyProcessor(BaseProcessor):
 
         return ''
 
-    def create_companies(self, session: Session, domains: List[str]) -> None:
-        """Create company records for new domains."""
-        for domain in domains:
+    def _process_batch(self, batch_df: pd.DataFrame) -> pd.DataFrame:
+        """Process a batch of customer records."""
+        # Extract domains for each row
+        batch_df['company_domain'] = batch_df.apply(self.extract_email_domain, axis=1)
+        
+        # Get unique domains from this batch
+        domains = batch_df['company_domain'].unique()
+        valid_domains = [d for d in domains if d]
+        
+        # Update statistics
+        self.stats['domains_extracted'] += len(valid_domains)
+        self.stats['rows_with_domain'] += len(batch_df[batch_df['company_domain'].str.len() > 0])
+        
+        # Create companies for new domains
+        for domain in valid_domains:
             if not domain:  # Skip empty domains
                 continue
                 
             # Check if company exists
-            existing = session.query(Company).filter(
+            existing = self.session.query(Company).filter(
                 Company.domain == domain
             ).first()
             
             if not existing:
                 company = Company.create_from_domain(domain)
-                session.add(company)
+                self.session.add(company)
                 self.stats['companies_created'] += 1
-
-    def process(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Process the customer data to extract and create company records."""
-        self.stats['rows_processed'] = len(data)
-        
-        # Extract domains for each row
-        data['company_domain'] = data.apply(self.extract_email_domain, axis=1)
-        
-        # Update statistics
-        domains = data['company_domain'].unique()
-        valid_domains = [d for d in domains if d]
-        
-        self.stats['domains_extracted'] = len(valid_domains)
-        self.stats['rows_with_domain'] = len(data[data['company_domain'].str.len() > 0])
-        
-        # Create company records
-        with self.session_manager as session:
-            self.create_companies(session, valid_domains)
         
         # Track processed domains
         self.processed_domains.update(valid_domains)
         
-        return data
+        return batch_df
 
     def get_stats(self) -> Dict[str, int]:
         """Get processing statistics."""
