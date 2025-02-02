@@ -1,23 +1,39 @@
 """Payment processor for sales data."""
 
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Set
+from pathlib import Path
 import logging
+import pandas as pd
 from sqlalchemy.orm import Session
 
 from ..db.models import Order, OrderStatus, PaymentStatus
 from ..utils import generate_uuid
+from .base import BaseProcessor
 
-class PaymentProcessor:
+class PaymentProcessor(BaseProcessor):
     """Process payment information from sales data."""
     
-    def __init__(self, session: Session):
+    def __init__(self, session_manager, batch_size: int = 100):
         """Initialize the processor.
         
         Args:
-            session: SQLAlchemy session for database operations
+            session_manager: Database session manager
+            batch_size: Number of orders to process per batch
         """
-        self.session = session
+        self.session_manager = session_manager
+        super().__init__(None, batch_size)  # We'll manage sessions ourselves
+        
+        # Track processed payments
+        self.processed_orders: Set[str] = set()
+        
+        # Additional stats
+        self.stats.update({
+            'total_payments': 0,
+            'orders_processed': 0,
+            'orders_not_found': 0,
+            'invalid_amounts': 0
+        })
         
         # Field mappings from CSV to our schema
         self.field_mappings = {
@@ -29,7 +45,7 @@ class PaymentProcessor:
             'due_date': ['Due Date']
         }
     
-    def get_mapped_field(self, row: Dict[str, str], field: str) -> Optional[str]:
+    def get_mapped_field(self, row: pd.Series, field: str) -> Optional[str]:
         """Get value for a mapped field from the row.
         
         Args:
@@ -48,21 +64,109 @@ class PaymentProcessor:
         
         return None
     
-    def process_payment(self, row: Dict[str, str], is_sales_receipt: bool = False) -> Dict[str, Any]:
-        """Process payment information from a CSV row.
+    def process_file(self, file_path: Path, order_ids: List[str], is_sales_receipt: bool = False) -> Dict[str, Any]:
+        """Process payments from a CSV file.
         
         Args:
-            row: CSV row containing payment data
+            file_path: Path to CSV file
+            order_ids: List of valid order IDs to process payments for
             is_sales_receipt: Whether this is a sales receipt vs invoice
             
         Returns:
-            Dict containing processing results with structure:
-            {
-                'success': bool,
-                'order': Optional[Order],
-                'error': Optional[Dict]
-            }
+            Dict containing processing results
         """
+        try:
+            # Read CSV into DataFrame
+            df = pd.read_csv(file_path)
+            
+            # Map CSV headers to our standardized field names
+            header_mapping = {}
+            for std_field, possible_names in self.field_mappings.items():
+                for name in possible_names:
+                    if name in df.columns:
+                        header_mapping[std_field] = name
+                        break
+            
+            if not all(field in header_mapping for field in ['invoice_number']):
+                raise ValueError("Missing required columns in CSV file")
+            
+            # Group by invoice number
+            invoice_groups = df.groupby(header_mapping['invoice_number'])
+            total_invoices = len(invoice_groups)
+            
+            print(f"\nProcessing payments for {total_invoices} invoices in batches of {self.batch_size}", flush=True)
+            
+            # Process in batches
+            current_batch = []
+            batch_num = 1
+            
+            for invoice_number, invoice_df in invoice_groups:
+                if invoice_number in self.processed_orders:
+                    continue
+                    
+                current_batch.append((invoice_number, invoice_df.iloc[0]))  # Use first row for payment info
+                
+                if len(current_batch) >= self.batch_size:
+                    self._process_batch(current_batch, order_ids, is_sales_receipt)
+                    print(f"Batch {batch_num} complete ({len(current_batch)} invoices)", flush=True)
+                    current_batch = []
+                    batch_num += 1
+            
+            # Process final batch if any
+            if current_batch:
+                self._process_batch(current_batch, order_ids, is_sales_receipt)
+                print(f"Final batch complete ({len(current_batch)} invoices)", flush=True)
+            
+            return {
+                'success': self.stats['failed_batches'] == 0,
+                'summary': {
+                    'stats': self.stats
+                }
+            }
+            
+        except Exception as e:
+            logging.error(f"Failed to process file: {str(e)}")
+            return {
+                'success': False,
+                'summary': {
+                    'stats': self.stats
+                }
+            }
+    
+    def _process_batch(self, batch: List[tuple[str, pd.Series]], order_ids: List[str], 
+                      is_sales_receipt: bool) -> None:
+        """Process a batch of payments.
+        
+        Args:
+            batch: List of (invoice_number, row) tuples
+            order_ids: List of valid order IDs
+            is_sales_receipt: Whether these are sales receipts
+        """
+        try:
+            with self.session_manager as session:
+                for invoice_number, row in batch:
+                    try:
+                        result = self._process_payment(row, order_ids, is_sales_receipt, session)
+                        if result['success'] and result['order']:
+                            self.processed_orders.add(invoice_number)
+                            self.stats['orders_processed'] += 1
+                            self.stats['total_payments'] += 1
+                    except Exception as e:
+                        logging.error(f"Error processing invoice {invoice_number}: {str(e)}")
+                        continue
+                
+                # Commit batch
+                session.commit()
+                self.stats['successful_batches'] += 1
+                
+        except Exception as e:
+            self.stats['failed_batches'] += 1
+            self.stats['total_errors'] += 1
+            logging.error(f"Error processing batch: {str(e)}")
+    
+    def _process_payment(self, row: pd.Series, order_ids: List[str], is_sales_receipt: bool, 
+                        session: Session) -> Dict[str, Any]:
+        """Process a single payment."""
         result = {
             'success': True,
             'order': None,
@@ -81,11 +185,13 @@ class PaymentProcessor:
                 return result
             
             # Find order
-            order = self.session.query(Order).filter(
-                Order.orderNumber == invoice_number
+            order = session.query(Order).filter(
+                Order.orderNumber == invoice_number,
+                Order.id.in_(order_ids)
             ).first()
             
             if not order:
+                self.stats['orders_not_found'] += 1
                 result['success'] = False
                 result['error'] = {
                     'severity': 'ERROR',
@@ -100,6 +206,7 @@ class PaymentProcessor:
                 try:
                     payment_amount = float(amount_str.replace('$', '').replace(',', ''))
                 except ValueError:
+                    self.stats['invalid_amounts'] += 1
                     result['success'] = False
                     result['error'] = {
                         'severity': 'ERROR',

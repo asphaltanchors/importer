@@ -23,11 +23,11 @@ class AddressProcessor(BaseProcessor):
             'identical_billing_shipping': 0
         })
 
-    def _clean_address_field(self, value: Optional[str | int]) -> str:
+    def _clean_address_field(self, value: Optional[str | int | float]) -> str:
         """Clean an address field value."""
-        if value is None:
+        if pd.isna(value):
             return ""
-        # Convert to string first to handle numeric postal codes
+        # Convert to string first to handle numeric postal codes/floats
         return " ".join(str(value).strip().split())  # Remove extra whitespace
 
     def _generate_address_hash(self, address_dict: Dict[str, str]) -> str:
@@ -60,17 +60,29 @@ class AddressProcessor(BaseProcessor):
         }
         
         # Check if we have any address data
-        if not any(row.get(field) for field in fields.values()):
+        if not any(field in row and not pd.isna(row[field]) for field in fields.values()):
+            self.logger.debug(f"No address data found for prefix {prefix}")
             return None
             
+        # Log the extracted fields for debugging
+        self.logger.debug(f"Extracting {prefix} address fields:")
+        for key, field in fields.items():
+            value = row[field] if field in row else None
+            self.logger.debug(f"  {key}: {value}")
+            
         return {
-            key: self._clean_address_field(row.get(field))
+            key: self._clean_address_field(row[field] if field in row else None)
             for key, field in fields.items()
         }
 
     def _process_address(self, address_dict: Dict[str, str]) -> Optional[str]:
         """Process a single address and return its ID."""
-        if not address_dict or not address_dict['line1']:
+        if not address_dict:
+            self.logger.debug("Address dict is empty")
+            return None
+            
+        if not address_dict['line1']:
+            self.logger.debug(f"Missing line1 in address: {address_dict}")
             return None
             
         # Generate hash for deduplication

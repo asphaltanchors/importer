@@ -39,19 +39,20 @@ class BaseProcessor:
                 result_dfs.append(processed_batch)
                 self.stats['successful_batches'] += 1
                 
-                # Print minimal progress
-                print(f"Batch {batch_num}/{total_batches} ({len(batch_df)} rows)", flush=True)
+                # Log batch progress
+                self.logger.debug(f"Batch {batch_num}/{total_batches} ({len(batch_df)} rows)")
                 
             except Exception as e:
                 # Roll back failed batch
                 if self.session:
                     self.session.rollback()
-                print(f"\nError in batch {batch_num}:", flush=True)
-                print(f"Row index: {start_idx + batch_df.index.get_loc(batch_df.index[0])}", flush=True)
-                print(str(e), flush=True)
-                # Exit immediately for debugging
-                import sys
-                sys.exit(1)
+                self.logger.error(f"\nError in batch {batch_num}:")
+                self.logger.error(f"Row index: {start_idx + batch_df.index.get_loc(batch_df.index[0])}")
+                self.logger.error(str(e))
+                self.stats['failed_batches'] += 1
+                self.stats['total_errors'] += 1
+                # Continue processing remaining batches
+                continue
             
             self.stats['total_processed'] += len(batch_df)
         
