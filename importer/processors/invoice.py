@@ -9,6 +9,14 @@ from ..db.session import SessionManager
 from ..utils import generate_uuid
 from ..db.models import Order, OrderStatus, PaymentStatus, Customer, Product, OrderItem
 
+def normalize_customer_name(name: str) -> str:
+    """Normalize customer name by removing commas and standardizing spaces."""
+    # Remove commas and extra spaces
+    normalized = name.replace(',', '').strip()
+    # Replace multiple spaces with single space
+    normalized = ' '.join(normalized.split())
+    return normalized
+
 class InvoiceProcessor:
     """Process invoices from sales data."""
     
@@ -22,14 +30,15 @@ class InvoiceProcessor:
         
         # Field mappings from CSV to our schema
         self.field_mappings = {
-            'invoice_number': ['Invoice No'],
-            'invoice_date': ['Invoice Date'],
+            'invoice_number': ['Invoice No', 'Sales Receipt No'],
+            'invoice_date': ['Invoice Date', 'Sales Receipt Date'],
             'customer_id': ['Customer'],  # This will be the QuickBooks ID we map to our customer
             'payment_terms': ['Terms'],
             'due_date': ['Due Date'],
             'po_number': ['PO Number'],
             'shipping_method': ['Ship Via'],  # Changed back to Ship Via
-            'class': ['Class']
+            'class': ['Class'],
+            'payment_method': ['Payment Method']  # Added payment method mapping
         }
         
     def process(self, file_path: Path) -> Dict[str, Any]:
@@ -72,6 +81,9 @@ class InvoiceProcessor:
             with open(file_path, 'r') as f:
                 reader = csv.DictReader(f)
                 
+                # Determine if this is a sales receipt
+                is_sales_receipt = 'Sales Receipt No' in reader.fieldnames
+                
                 # Map CSV headers to our standardized field names
                 header_mapping = {}
                 for std_field, possible_names in self.field_mappings.items():
@@ -105,13 +117,21 @@ class InvoiceProcessor:
                             ).first()
                             
                             # Find all rows for this invoice
-                            invoice_rows = [r for r in all_rows if r['Invoice No'].strip() == invoice_number]
+                            invoice_rows = [r for r in all_rows if r[header_mapping['invoice_number']].strip() == invoice_number]
                             
                             # Get customer by name
                             customer_name = row[header_mapping['customer_id']].strip()
+                            # Normalize customer name and try to find a match
+                            normalized_name = normalize_customer_name(customer_name)
                             customer = session.query(Customer).filter(
-                                Customer.customerName == customer_name
+                                Customer.customerName == normalized_name
                             ).first()
+                            
+                            # If not found, try without normalization
+                            if not customer:
+                                customer = session.query(Customer).filter(
+                                    Customer.customerName == customer_name
+                                ).first()
                             
                             # Validate all data before processing
                             validation_errors = []
@@ -129,7 +149,7 @@ class InvoiceProcessor:
                             
                             for inv_row in invoice_rows:
                                 product_code = inv_row.get('Product/Service', '').strip()
-                                if not product_code or product_code.lower() in ['shipping', 'handling fee', 'tax', 'discount']:
+                                if not product_code or product_code.lower() in ['shipping', 'handling fee', 'tax', 'discount', 'nj sales tax']:
                                     continue
                                 
                                 product = session.query(Product).filter(
@@ -185,14 +205,16 @@ class InvoiceProcessor:
                             
                             if existing_order:
                                 # Update existing order
-                                existing_order.status = OrderStatus.CLOSED if row['Status'] == 'Paid' else OrderStatus.OPEN
-                                existing_order.paymentStatus = (PaymentStatus.PAID if row['Status'] == 'Paid'
-                                                            else PaymentStatus.UNPAID)
+                                # Sales receipts are always paid/closed, invoices use Status field
+                                is_sales_receipt = 'Sales Receipt No' in reader.fieldnames
+                                existing_order.status = OrderStatus.CLOSED if is_sales_receipt or row.get('Status') == 'Paid' else OrderStatus.OPEN
+                                existing_order.paymentStatus = PaymentStatus.PAID if is_sales_receipt or row.get('Status') == 'Paid' else PaymentStatus.UNPAID
                                 existing_order.subtotal = subtotal
                                 existing_order.taxAmount = tax_amount
                                 existing_order.totalAmount = total_amount
                                 existing_order.modifiedAt = now
                                 existing_order.sourceData = row
+                                existing_order.paymentMethod = row.get(header_mapping.get('payment_method', ''), 'Invoice')  # Default to 'Invoice' for invoices
                                 
                                 # Get existing line items
                                 existing_items = {item.productCode: item for item in session.query(OrderItem).filter(
@@ -208,9 +230,9 @@ class InvoiceProcessor:
                                     orderNumber=invoice_number,
                                     customerId=customer.id,
                                     orderDate=datetime.strptime(row[header_mapping['invoice_date']], '%m-%d-%Y'),
-                                    status=OrderStatus.CLOSED if row['Status'] == 'Paid' else OrderStatus.OPEN,
-                                    paymentStatus=(PaymentStatus.PAID if row['Status'] == 'Paid'
-                                                else PaymentStatus.UNPAID),
+                                    # Sales receipts are always paid/closed, invoices use Status field
+                                    status=OrderStatus.CLOSED if is_sales_receipt or row.get('Status') == 'Paid' else OrderStatus.OPEN,
+                                    paymentStatus=PaymentStatus.PAID if is_sales_receipt or row.get('Status') == 'Paid' else PaymentStatus.UNPAID,
                                     subtotal=subtotal,
                                     taxPercent=None,
                                     taxAmount=tax_amount,
@@ -222,6 +244,7 @@ class InvoiceProcessor:
                                     poNumber=row.get(header_mapping.get('po_number', ''), ''),
                                     class_=row.get(header_mapping.get('class', ''), ''),
                                     shippingMethod=row.get(header_mapping.get('shipping_method', ''), ''),
+                                    paymentMethod=row.get(header_mapping.get('payment_method', ''), 'Invoice'),  # Default to 'Invoice' for invoices
                                     createdAt=now,
                                     modifiedAt=now,
                                     sourceData=row

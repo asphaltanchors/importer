@@ -11,6 +11,7 @@ from ..commands.validate import ValidateCustomersCommand, ValidateSalesCommand
 from ..commands.utils import TestConnectionCommand
 from ..commands.products import ProcessProductsCommand
 from ..commands.invoices import ValidateInvoiceCommand, ProcessInvoicesCommand
+from ..commands.verify import VerifyCommand
 from ..commands.customers import (
     ListCompaniesCommand,
     ExtractDomainsCommand,
@@ -235,6 +236,11 @@ def process_invoices(file: Path, output: Path | None, log_level: str):
     except Exception as e:
         click.secho(f"Error: {str(e)}", fg='red')
         raise click.Abort()
+
+# Register verify commands
+verify_command = VerifyCommand()
+for command in verify_command.commands:
+    cli.add_command(command)
 
 if __name__ == '__main__':
     cli()
