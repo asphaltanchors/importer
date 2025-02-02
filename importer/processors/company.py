@@ -1,10 +1,11 @@
 """Company processor for handling email domain extraction and company creation."""
-from typing import Dict, Any, List, Set
+from typing import Dict, Any, List, Set, Optional
 import pandas as pd
 from sqlalchemy.orm import Session
 from ..db.models import Company
 from ..db.session import SessionManager
 from .base import BaseProcessor
+from ..utils.normalization import normalize_domain
 
 class CompanyProcessor(BaseProcessor):
     """Processes company-related data from customer records."""
@@ -56,9 +57,10 @@ class CompanyProcessor(BaseProcessor):
             for email in potential_emails:
                 if '@' in email:
                     try:
-                        domain = email.split('@')[1].strip()
-                        if '.' in domain:  # Basic domain validation
-                            return domain.lower()
+                        raw_domain = email.split('@')[1].strip()
+                        domain = normalize_domain(raw_domain)
+                        if domain:  # normalize_domain returns None for invalid domains
+                            return domain
                     except IndexError:
                         continue
 
@@ -70,9 +72,10 @@ class CompanyProcessor(BaseProcessor):
             value = str(row[field]).strip()
             if '@' in value:
                 try:
-                    domain = value.split('@')[1].strip()
-                    if '.' in domain:
-                        return domain.lower()
+                    raw_domain = value.split('@')[1].strip()
+                    domain = normalize_domain(raw_domain)
+                    if domain:
+                        return domain
                 except IndexError:
                     continue
 

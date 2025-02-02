@@ -5,7 +5,9 @@ consistent matching between variations of the same name, while preserving
 important notations like percentages and parent/child relationships.
 """
 
-from typing import List
+from typing import List, Optional
+from tld import get_fld
+from tld.exceptions import TldDomainNotFound, TldBadUrl
 
 
 def normalize_customer_name(name: str) -> str:
@@ -78,6 +80,31 @@ def normalize_customer_name(name: str) -> str:
         name = remove_suffixes(name)
     
     return name
+
+
+def normalize_domain(domain: str) -> Optional[str]:
+    """Extract the registrable domain from a full domain name.
+    
+    This function handles subdomains and country-specific TLDs correctly:
+    - foo.bar.com -> bar.com
+    - sub.example.co.uk -> example.co.uk
+    - app.staging.company.com -> company.com
+    
+    Args:
+        domain: The domain name to normalize
+        
+    Returns:
+        The normalized domain name, or None if the domain is invalid
+    """
+    if not domain or '@' in domain:
+        return None
+        
+    try:
+        # get_fld returns the "first level domain" - the registrable domain
+        # without subdomains but including the public suffix
+        return get_fld(domain.strip().lower(), fix_protocol=True)
+    except (TldDomainNotFound, TldBadUrl):
+        return None
 
 
 def _get_test_cases() -> List[tuple[str, str]]:
