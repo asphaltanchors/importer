@@ -56,9 +56,9 @@ class ImportVerifier:
     def _get_customer_stats(self) -> Dict[str, int]:
         """Get customer-related statistics."""
         total = self.session.query(Customer).count()
-        with_company = self.session.query(Customer).filter(Customer.company_id.isnot(None)).count()
-        with_billing = self.session.query(Customer).filter(Customer.billing_address_id.isnot(None)).count()
-        with_shipping = self.session.query(Customer).filter(Customer.shipping_address_id.isnot(None)).count()
+        with_company = self.session.query(Customer).filter(Customer.companyDomain.isnot(None)).count()
+        with_billing = self.session.query(Customer).filter(Customer.billingAddressId.isnot(None)).count()
+        with_shipping = self.session.query(Customer).filter(Customer.shippingAddressId.isnot(None)).count()
         with_emails = self.session.query(Customer).join(CustomerEmail).group_by(Customer.id).count()
         with_phones = self.session.query(Customer).join(CustomerPhone).group_by(Customer.id).count()
         
@@ -75,20 +75,20 @@ class ImportVerifier:
         """Get statistics about orphaned records."""
         orphaned_addresses = self.session.query(Address).filter(
             ~Address.id.in_(
-                self.session.query(Customer.billing_address_id).union(
-                    self.session.query(Customer.shipping_address_id)
+                self.session.query(Customer.billingAddressId).union(
+                    self.session.query(Customer.shippingAddressId)
                 )
             )
         ).count()
         
         orphaned_emails = self.session.query(CustomerEmail).filter(
-            ~CustomerEmail.customer_id.in_(
+            ~CustomerEmail.customerId.in_(
                 self.session.query(Customer.id)
             )
         ).count()
         
         orphaned_phones = self.session.query(CustomerPhone).filter(
-            ~CustomerPhone.customer_id.in_(
+            ~CustomerPhone.customerId.in_(
                 self.session.query(Customer.id)
             )
         ).count()
@@ -102,17 +102,17 @@ class ImportVerifier:
     def _get_relationship_stats(self) -> Dict[str, int]:
         """Get statistics about relationship issues."""
         invalid_company = self.session.query(Customer).filter(
-            Customer.company_id.isnot(None),
-            ~Customer.company_id.in_(
-                self.session.query(Company.id)
+            Customer.companyDomain.isnot(None),
+            ~Customer.companyDomain.in_(
+                self.session.query(Company.domain)
             )
         ).count()
         
         invalid_address = self.session.query(Customer).filter(
-            (Customer.billing_address_id.isnot(None) & 
-             ~Customer.billing_address_id.in_(self.session.query(Address.id))) |
-            (Customer.shipping_address_id.isnot(None) & 
-             ~Customer.shipping_address_id.in_(self.session.query(Address.id)))
+            (Customer.billingAddressId.isnot(None) & 
+             ~Customer.billingAddressId.in_(self.session.query(Address.id))) |
+            (Customer.shippingAddressId.isnot(None) & 
+             ~Customer.shippingAddressId.in_(self.session.query(Address.id)))
         ).count()
         
         return {
@@ -126,9 +126,9 @@ class ImportVerifier:
         
         # Check company references
         invalid_companies = self.session.query(Customer).filter(
-            Customer.company_id.isnot(None),
-            ~Customer.company_id.in_(
-                self.session.query(Company.id)
+            Customer.companyDomain.isnot(None),
+            ~Customer.companyDomain.in_(
+                self.session.query(Company.domain)
             )
         ).all()
         
@@ -136,32 +136,32 @@ class ImportVerifier:
             issues.append({
                 'type': 'Invalid Company Reference',
                 'customer_id': customer.id,
-                'details': f'Company ID {customer.company_id} not found'
+                'details': f'Company domain {customer.companyDomain} not found'
             })
         
         # Check address references
         invalid_addresses = self.session.query(Customer).filter(
-            (Customer.billing_address_id.isnot(None) & 
-             ~Customer.billing_address_id.in_(self.session.query(Address.id))) |
-            (Customer.shipping_address_id.isnot(None) & 
-             ~Customer.shipping_address_id.in_(self.session.query(Address.id)))
+            (Customer.billingAddressId.isnot(None) & 
+             ~Customer.billingAddressId.in_(self.session.query(Address.id))) |
+            (Customer.shippingAddressId.isnot(None) & 
+             ~Customer.shippingAddressId.in_(self.session.query(Address.id)))
         ).all()
         
         for customer in invalid_addresses:
-            if (customer.billing_address_id and 
-                not self.session.query(Address).get(customer.billing_address_id)):
+            if (customer.billingAddressId and 
+                not self.session.query(Address).get(customer.billingAddressId)):
                 issues.append({
                     'type': 'Invalid Billing Address',
                     'customer_id': customer.id,
-                    'details': f'Address ID {customer.billing_address_id} not found'
+                    'details': f'Address ID {customer.billingAddressId} not found'
                 })
             
-            if (customer.shipping_address_id and 
-                not self.session.query(Address).get(customer.shipping_address_id)):
+            if (customer.shippingAddressId and 
+                not self.session.query(Address).get(customer.shippingAddressId)):
                 issues.append({
                     'type': 'Invalid Shipping Address',
                     'customer_id': customer.id,
-                    'details': f'Address ID {customer.shipping_address_id} not found'
+                    'details': f'Address ID {customer.shippingAddressId} not found'
                 })
         
         return issues
@@ -173,8 +173,8 @@ class ImportVerifier:
         # Check for orphaned addresses
         orphaned_addresses = self.session.query(Address).filter(
             ~Address.id.in_(
-                self.session.query(Customer.billing_address_id).union(
-                    self.session.query(Customer.shipping_address_id)
+                self.session.query(Customer.billingAddressId).union(
+                    self.session.query(Customer.shippingAddressId)
                 )
             )
         ).all()
@@ -188,7 +188,7 @@ class ImportVerifier:
         
         # Check for orphaned emails
         orphaned_emails = self.session.query(CustomerEmail).filter(
-            ~CustomerEmail.customer_id.in_(
+            ~CustomerEmail.customerId.in_(
                 self.session.query(Customer.id)
             )
         ).all()
@@ -202,7 +202,7 @@ class ImportVerifier:
         
         # Check for orphaned phones
         orphaned_phones = self.session.query(CustomerPhone).filter(
-            ~CustomerPhone.customer_id.in_(
+            ~CustomerPhone.customerId.in_(
                 self.session.query(Customer.id)
             )
         ).all()
