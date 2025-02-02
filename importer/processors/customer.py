@@ -122,13 +122,22 @@ class CustomerProcessor(BaseProcessor):
                     shipping_id = None
                 
                 # First try to find by QuickBooks ID if it exists and is valid
-                if not pd.isna(quickbooks_id):
+                if not pd.isna(quickbooks_id) and quickbooks_id.strip():
                     self.logger.debug(f"Searching for customer by QuickBooks ID: {quickbooks_id}")
-                    existing_customer = self.session.query(Customer).filter_by(quickbooksId=quickbooks_id).first()
+                    # Try finding by both id and quickbooksId since we now use QB ID as primary key
+                    existing_customer = (
+                        self.session.query(Customer)
+                        .filter(
+                            (Customer.id == quickbooks_id) | 
+                            (Customer.quickbooksId == quickbooks_id)
+                        )
+                        .first()
+                    )
                     if existing_customer:
                         self.logger.debug(f"Found existing customer by QuickBooks ID: {existing_customer.customerName}")
                 else:
                     existing_customer = None
+                    quickbooks_id = None  # Ensure it's None if empty/invalid
                 
                 # If not found by ID, try name matching (only if name is valid)
                 if not existing_customer and not pd.isna(name):

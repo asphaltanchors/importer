@@ -36,9 +36,9 @@ class Customer(Base):
         """Create a new customer record."""
         now = datetime.utcnow()
         return cls(
-            id=str(uuid.uuid4()),
+            id=quickbooks_id if quickbooks_id and quickbooks_id.strip() else str(uuid.uuid4()),
             customerName=name,
-            quickbooksId=quickbooks_id,
+            quickbooksId=quickbooks_id if quickbooks_id and quickbooks_id.strip() else None,
             companyDomain=company_domain.lower(),
             status='ACTIVE',  # Default status
             billingAddressId=billing_address_id,

@@ -179,7 +179,6 @@ class ProcessCustomersCommand(FileInputCommand):
             processed_df = customer_processor.process(df)
             customer_stats = customer_processor.get_stats()
             
-            # Display final summary
             click.echo("\nCustomer Processing Summary:")
             click.echo(f"Total Rows Processed: {customer_stats['total_processed']}")
             click.echo(f"Successful Batches: {customer_stats['successful_batches']}")
@@ -190,6 +189,64 @@ class ProcessCustomersCommand(FileInputCommand):
             click.echo(f"Invalid Billing Addresses: {customer_stats['invalid_billing_addresses']}")
             click.echo(f"Invalid Shipping Addresses: {customer_stats['invalid_shipping_addresses']}")
             click.echo(f"Total Errors: {customer_stats['total_errors']}")
+
+            # Step 4: Process Emails
+            print("\n=== Processing Emails ===", flush=True)
+            email_processor = EmailProcessor(session)
+            total_emails_processed = 0
+            total_emails_stored = 0
+            
+            for _, row in processed_df.iterrows():
+                if pd.isna(row['customer_id']):
+                    continue
+                    
+                # Combine all email fields
+                email_fields = ['Main Email', 'CC Email', 'Work Email']
+                emails = []
+                for field in email_fields:
+                    if field in row and pd.notna(row[field]):
+                        emails.append(str(row[field]))
+                email_data = ';'.join(emails)
+                processed, stored = email_processor.process_customer_emails(row['customer_id'], email_data)
+                total_emails_processed += processed
+                total_emails_stored += stored
+            
+            click.echo("\nEmail Processing Summary:")
+            click.echo(f"Total Emails Processed: {total_emails_processed}")
+            click.echo(f"Valid Emails Stored: {total_emails_stored}")
+
+            # Step 5: Process Phones
+            print("\n=== Processing Phones ===", flush=True)
+            phone_processor = PhoneProcessor(session)
+            total_phones_processed = 0
+            total_phones_stored = 0
+            
+            for _, row in processed_df.iterrows():
+                if pd.isna(row['customer_id']):
+                    continue
+                    
+                # Process each phone field
+                phone_fields = [
+                    'Main Phone',
+                    'Alt. Phone',
+                    'Work Phone',
+                    'Mobile',
+                    'Fax'
+                ]
+                
+                for field_name in phone_fields:
+                    if field_name in row and pd.notna(row[field_name]):
+                        processed, stored = phone_processor.process_customer_phones(
+                            row['customer_id'],
+                            str(row[field_name]),
+                            field_name
+                        )
+                        total_phones_processed += processed
+                        total_phones_stored += stored
+            
+            click.echo("\nPhone Processing Summary:")
+            click.echo(f"Total Phone Numbers Processed: {total_phones_processed}")
+            click.echo(f"Valid Phone Numbers Stored: {total_phones_stored}")
             
             # Save detailed results if requested
             if self.output_file:
@@ -197,6 +254,14 @@ class ProcessCustomersCommand(FileInputCommand):
                     'company_stats': company_stats,
                     'address_stats': address_stats,
                     'customer_stats': customer_stats,
+                    'email_stats': {
+                        'total_processed': total_emails_processed,
+                        'total_stored': total_emails_stored
+                    },
+                    'phone_stats': {
+                        'total_processed': total_phones_processed,
+                        'total_stored': total_phones_stored
+                    },
                     'processed_rows': len(processed_df),
                     'customer_ids': processed_df['customer_id'].dropna().tolist()
                 }
