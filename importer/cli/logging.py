@@ -9,92 +9,39 @@ from pathlib import Path
 from typing import Optional, List
 from datetime import datetime
 
-class ColoredFormatter(logging.Formatter):
-    """Custom formatter adding colors to log levels."""
-    
-    COLORS = {
-        'DEBUG': '\033[0;36m',    # Cyan
-        'INFO': '\033[0;32m',     # Green
-        'WARNING': '\033[0;33m',  # Yellow
-        'ERROR': '\033[0;31m',    # Red
-        'CRITICAL': '\033[0;37;41m',  # White on Red
-        'RESET': '\033[0m'        # Reset
-    }
+class DebugFormatter(logging.Formatter):
+    """Custom formatter for debug output."""
     
     def format(self, record: logging.LogRecord) -> str:
-        """Format log record with colors."""
+        """Format log record with timestamp and source."""
         # Add color if output is to terminal
         if sys.stderr.isatty():  # Check if output is to terminal
-            record.levelname = (
-                f"{self.COLORS.get(record.levelname, '')}"
-                f"{record.levelname}"
-                f"{self.COLORS['RESET']}"
-            )
-        return super().format(record)
+            cyan = '\033[0;36m'
+            reset = '\033[0m'
+            return f"{cyan}[{record.created:.3f}] {record.name}: {record.getMessage()}{reset}"
+        return f"[{record.created:.3f}] {record.name}: {record.getMessage()}"
 
-def setup_logging(
-    log_dir: Optional[Path] = None,
-    level: str = 'INFO',
-    log_file_prefix: Optional[str] = None,
-    handlers: Optional[List[logging.Handler]] = None
-) -> None:
+def setup_logging(debug: bool = False) -> None:
     """Setup logging configuration.
     
     Args:
-        log_dir: Optional directory for log files
-        level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_file_prefix: Optional prefix for log file names
-        handlers: Optional list of additional handlers
+        debug: Enable debug logging
     """
-    # Create log directory if specified
-    if log_dir:
-        log_dir.mkdir(exist_ok=True, parents=True)
-        
-        # Generate log file name with timestamp
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        prefix = f"{log_file_prefix}_" if log_file_prefix else ""
-        log_file = log_dir / f"{prefix}{timestamp}.log"
-    
-    # Set up formatters
-    file_formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    console_formatter = ColoredFormatter(
-        '%(levelname)s - %(message)s'
-    )
-    
     # Configure root logger
     root_logger = logging.getLogger()
-    root_logger.setLevel(getattr(logging, level.upper()))
+    root_logger.setLevel(logging.DEBUG if debug else logging.INFO)
     
     # Clear any existing handlers
     root_logger.handlers.clear()
     
-    # Add console handler
+    # Add console handler with debug formatter
     console_handler = logging.StreamHandler()
-    console_handler.setFormatter(console_formatter)
+    console_handler.setFormatter(DebugFormatter())
     root_logger.addHandler(console_handler)
     
-    # Add file handler if log directory specified
-    if log_dir:
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setFormatter(file_formatter)
-        root_logger.addHandler(file_handler)
-    
-    # Add any additional handlers
-    if handlers:
-        for handler in handlers:
-            root_logger.addHandler(handler)
-    
-    # Set library logging levels based on configured level
-    if level.upper() == 'DEBUG':
-        logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
-        logging.getLogger('sqlalchemy.pool').setLevel(logging.DEBUG)
-    else:
-        logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
-        logging.getLogger('sqlalchemy.pool').setLevel(logging.WARNING)
-    
-    logging.getLogger('urllib3').setLevel(logging.WARNING)
+    # Always keep SQLAlchemy logging at WARNING level
+    logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
+    logging.getLogger('sqlalchemy.pool').setLevel(logging.WARNING)
 
 def get_logger(name: str) -> logging.Logger:
     """Get a logger with the specified name.
@@ -105,4 +52,12 @@ def get_logger(name: str) -> logging.Logger:
     Returns:
         logging.Logger: Configured logger instance
     """
-    return logging.getLogger(name)
+    logger = logging.getLogger(name)
+    
+    # Ensure handler uses debug formatter
+    if logger.handlers:
+        for handler in logger.handlers:
+            if isinstance(handler, logging.StreamHandler):
+                handler.setFormatter(DebugFormatter())
+    
+    return logger

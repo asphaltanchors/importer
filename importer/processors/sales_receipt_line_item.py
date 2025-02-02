@@ -2,11 +2,12 @@
 
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-from typing import Dict, Any, List, Set
+from typing import Dict, Any, List, Set, Tuple, Union
 from pathlib import Path
 import logging
 import pandas as pd
 from sqlalchemy.orm import Session
+import click
 
 from ..db.models import Product, OrderItem, Order
 from ..utils import generate_uuid
@@ -18,22 +19,26 @@ from ..utils.csv_normalization import (
     validate_json_data
 )
 from .base import BaseProcessor
+from .error_tracker import ErrorTracker
 
 class SalesReceiptLineItemProcessor(BaseProcessor):
     """Process line items from sales receipt data."""
     
-    def __init__(self, session_manager, batch_size: int = 100):
+    def __init__(self, session_manager, batch_size: int = 50, error_limit: int = 1000):
         """Initialize the processor.
         
         Args:
             session_manager: Database session manager
             batch_size: Number of orders to process per batch
+            error_limit: Maximum number of errors before stopping
         """
         self.session_manager = session_manager
         super().__init__(None, batch_size)  # We'll manage sessions ourselves
         
         # Track processed items
         self.processed_orders: Set[str] = set()
+        self.error_limit = error_limit
+        self.error_tracker = ErrorTracker()
         
         # Field mappings specific to sales receipts
         self.field_mappings = {
@@ -53,28 +58,114 @@ class SalesReceiptLineItemProcessor(BaseProcessor):
             'orders_not_found': 0,
             'skipped_items': 0
         })
-        
-    def process_file(self, file_path: Path) -> Dict[str, Any]:
-        """Process line items from a CSV file.
+    
+    def validate_data(self, df: pd.DataFrame) -> Tuple[List[str], List[str]]:
+        """Validate data before processing.
         
         Args:
-            file_path: Path to CSV file
+            df: DataFrame to validate
+            
+        Returns:
+            Tuple of (critical_issues, warnings)
+        """
+        critical_issues = []
+        warnings = []
+        
+        # Check required columns (critical)
+        required_columns = ['Product/Service', 'Sales Receipt No']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            critical_issues.append(f"Missing required columns: {', '.join(missing_columns)}")
+            return critical_issues, warnings
+        
+        # Check for rows to skip (empty or missing data)
+        empty_rows = df[df[['Product/Service', 'Sales Receipt No']].isna().all(axis=1)]
+        if not empty_rows.empty:
+            warnings.append(
+                f"Found {len(empty_rows)} empty rows that will be skipped. "
+                f"First few row numbers: {', '.join(map(str, empty_rows.index[:3]))}"
+            )
+        
+        # Check for rows with missing data
+        for col in ['Product/Service', 'Sales Receipt No']:
+            nan_rows = df[df[col].isna() & ~df[['Product/Service', 'Sales Receipt No']].isna().all(axis=1)]
+            if not nan_rows.empty:
+                warnings.append(
+                    f"Found {len(nan_rows)} rows with missing {col} that will be skipped. "
+                    f"First few: {', '.join(map(str, nan_rows.index[:3]))}"
+                )
+        
+        # Check for missing rates/amounts (warning)
+        for col in ['Product/Service Rate', 'Product/Service Amount']:
+            if col in df.columns:
+                nan_count = df[col].isna().sum()
+                if nan_count > 0:
+                    warnings.append(
+                        f"Found {nan_count} rows with missing {col} (will use defaults)"
+                    )
+        
+        # Check service date format (warning)
+        if 'Product/Service Service Date' in df.columns:
+            invalid_dates = []
+            for idx, date_str in df['Product/Service Service Date'].items():
+                if pd.notna(date_str):
+                    try:
+                        datetime.strptime(str(date_str), '%m-%d-%Y')
+                    except ValueError:
+                        invalid_dates.append(f"Row {idx}: {date_str}")
+                        if len(invalid_dates) >= 3:  # Limit samples
+                            break
+            if invalid_dates:
+                warnings.append(
+                    f"Found rows with invalid service dates (these will be skipped). "
+                    f"Examples: {', '.join(invalid_dates)}"
+                )
+        
+        return critical_issues, warnings
+        
+    def process_file(self, data: Union[Path, pd.DataFrame]) -> Dict[str, Any]:
+        """Process line items from a CSV file or DataFrame.
+        
+        Args:
+            data: Path to CSV file or DataFrame to process
             
         Returns:
             Dict containing processing results
         """
         try:
-            # Read CSV into DataFrame and normalize column names
-            df = pd.read_csv(file_path)
-            df = normalize_dataframe_columns(df)
+            # Handle both file path and DataFrame input
+            if isinstance(data, Path):
+                df = pd.read_csv(data, low_memory=False)
+                df = normalize_dataframe_columns(df)
+            else:
+                df = data
             
-            # Validate required columns
-            required_columns = ['Product/Service']
-            if not validate_required_columns(df, required_columns):
-                raise ValueError("Missing required columns in CSV file")
+            # Validate data
+            critical_issues, warnings = self.validate_data(df)
+            
+            # Show warnings but continue
+            if warnings:
+                self.logger.warning("\nValidation warnings:")
+                for warning in warnings:
+                    self.logger.warning(f"  - {warning}")
+                self.logger.warning("Continuing with processing...")
+            
+            # Stop on critical issues
+            if critical_issues:
+                self.logger.error("\nData validation failed:")
+                for issue in critical_issues:
+                    self.logger.error(f"  - {issue}")
+                self.stats['errors'] += len(critical_issues)
+                return {
+                    'success': False,
+                    'summary': {
+                        'stats': self.stats,
+                        'validation_issues': critical_issues
+                    }
+                }
             
             # Log column names for debugging
-            self.logger.info(f"CSV columns: {df.columns.tolist()}")
+            self.logger.debug(f"CSV columns: {df.columns.tolist()}")
             
             # Convert receipt numbers to strings to match order lookup
             df['Sales Receipt No'] = df['Sales Receipt No'].astype(str).str.strip()
@@ -82,46 +173,76 @@ class SalesReceiptLineItemProcessor(BaseProcessor):
             # Group by receipt number
             receipt_groups = df.groupby('Sales Receipt No')
             total_receipts = len(receipt_groups)
-            self.logger.debug(f"Found {total_receipts} unique receipt numbers")
+            self.logger.info(f"Found {total_receipts} unique receipt numbers")
             
-            self.logger.info(f"\nProcessing line items for {total_receipts} receipts in batches of {self.batch_size}")
-            
-            # Process in batches
-            current_batch = []
-            batch_num = 1
-            
-            for receipt_number, receipt_df in receipt_groups:
-                if receipt_number in self.processed_orders:
-                    continue
-                    
-                current_batch.append((receipt_number, receipt_df))
+            with click.progressbar(
+                length=total_receipts,
+                label='Processing receipts',
+                item_show_func=lambda x: f"Processed {self.stats['orders_processed']}/{total_receipts} receipts"
+            ) as bar:
+                # Process in batches
+                current_batch = []
+                batch_num = 1
                 
-                if len(current_batch) >= self.batch_size:
+                for receipt_number, receipt_df in receipt_groups:
+                    if receipt_number in self.processed_orders:
+                        continue
+                        
+                    current_batch.append((receipt_number, receipt_df))
+                    
+                    if len(current_batch) >= self.batch_size:
+                        self._process_batch(current_batch)
+                        bar.update(len(current_batch))
+                        
+                        # Show periodic stats
+                        if batch_num % 5 == 0:
+                            self._show_progress_stats(total_receipts)
+                        
+                        current_batch = []
+                        batch_num += 1
+                        
+                        # Check error limit
+                        if self.stats['total_errors'] >= self.error_limit:
+                            self.logger.error(f"\nStopping: Error limit ({self.error_limit}) reached")
+                            break
+                
+                # Process final batch if any
+                if current_batch and self.stats['total_errors'] < self.error_limit:
                     self._process_batch(current_batch)
-                    print(f"Batch {batch_num} complete ({len(current_batch)} receipts)", flush=True)
-                    current_batch = []
-                    batch_num += 1
+                    bar.update(len(current_batch))
+                    self._show_progress_stats(total_receipts)
             
-            # Process final batch if any
-            if current_batch:
-                self._process_batch(current_batch)
-                print(f"Final batch complete ({len(current_batch)} receipts)", flush=True)
+            # Log error summary at the end
+            self.error_tracker.log_summary(self.logger)
             
             return {
-                'success': self.stats['failed_batches'] == 0,
+                'success': self.stats['failed_batches'] == 0 and self.stats['total_errors'] < self.error_limit,
                 'summary': {
-                    'stats': self.stats
+                    'stats': self.stats,
+                    'errors': self.error_tracker.get_summary()
                 }
             }
             
         except Exception as e:
-            logging.error(f"Failed to process file: {str(e)}")
+            self.logger.error(f"Failed to process file: {str(e)}")
             return {
                 'success': False,
                 'summary': {
-                    'stats': self.stats
+                    'stats': self.stats,
+                    'errors': self.error_tracker.get_summary()
                 }
             }
+    
+    def _show_progress_stats(self, total_receipts: int) -> None:
+        """Show current processing statistics."""
+        self.logger.info("\nCurrent Progress:")
+        self.logger.info(f"  Processed: {self.stats['orders_processed']}/{total_receipts} receipts")
+        self.logger.info(f"  Line items: {self.stats['total_line_items']}")
+        self.logger.info(f"  Errors: {self.stats['total_errors']}")
+        if self.stats['products_not_found'] > 0:
+            self.logger.info(f"  Products not found: {self.stats['products_not_found']}")
+        if self.stats['orders_not_found'] > 0:
+            self.logger.info(f"  Orders not found: {self.stats['orders_not_found']}")
     
     def _clear_existing_line_items(self, order_id: str, session: Session) -> None:
         """Remove existing line items for an order before processing new ones.
@@ -153,7 +274,11 @@ class SalesReceiptLineItemProcessor(BaseProcessor):
                         
                         if not order:
                             self.stats['orders_not_found'] += 1
-                            self.logger.error(f"Order not found for receipt {receipt_number}")
+                            self.error_tracker.add_error(
+                                'ORDER_NOT_FOUND',
+                                f"Order not found for receipt {receipt_number}",
+                                {'receipt_number': receipt_number}
+                            )
                             continue
                         
                         self.logger.debug(f"Found order {order.id} for receipt {receipt_number}")
@@ -192,10 +317,10 @@ class SalesReceiptLineItemProcessor(BaseProcessor):
                         order.taxAmount = tax_amount
                         order.totalAmount = subtotal + tax_amount  # Shipping is included in subtotal
                         
-                        self.logger.info(f"Updated order {order.orderNumber} totals:")
-                        self.logger.info(f"  Subtotal: {order.subtotal}")
-                        self.logger.info(f"  Tax: {order.taxAmount}")
-                        self.logger.info(f"  Total: {order.totalAmount}")
+                        self.logger.debug(f"Updated order {order.orderNumber} totals:")
+                        self.logger.debug(f"  Subtotal: {order.subtotal}")
+                        self.logger.debug(f"  Tax: {order.taxAmount}")
+                        self.logger.debug(f"  Total: {order.totalAmount}")
                         
                         # Ensure changes are flushed to DB
                         session.flush()
@@ -204,7 +329,11 @@ class SalesReceiptLineItemProcessor(BaseProcessor):
                         self.stats['orders_processed'] += 1
                             
                     except Exception as e:
-                        logging.error(f"Error processing receipt {receipt_number}: {str(e)}")
+                        self.error_tracker.add_error(
+                            'RECEIPT_PROCESSING_ERROR',
+                            f"Error processing receipt {receipt_number}: {str(e)}",
+                            {'receipt_number': receipt_number, 'error': str(e)}
+                        )
                         continue
                 
                 # Commit batch
@@ -214,7 +343,11 @@ class SalesReceiptLineItemProcessor(BaseProcessor):
         except Exception as e:
             self.stats['failed_batches'] += 1
             self.stats['total_errors'] += 1
-            logging.error(f"Error processing batch: {str(e)}")
+            self.error_tracker.add_error(
+                'BATCH_PROCESSING_ERROR',
+                f"Error processing batch: {str(e)}",
+                {'error': str(e)}
+            )
     
     def _process_line_item(self, row: pd.Series, order_id: str, session: Session) -> Dict[str, Any]:
         """Process a single line item."""
@@ -244,6 +377,11 @@ class SalesReceiptLineItemProcessor(BaseProcessor):
             
             if not product:
                 self.stats['products_not_found'] += 1
+                self.error_tracker.add_error(
+                    'PRODUCT_NOT_FOUND',
+                    f"Product not found: {product_code}",
+                    {'product_code': product_code, 'description': description}
+                )
                 result['success'] = False
                 result['error'] = {
                     'severity': 'ERROR',
@@ -260,11 +398,16 @@ class SalesReceiptLineItemProcessor(BaseProcessor):
                     amount = Decimal(cleaned_amount)
                     self.logger.debug(f"Parsed amount: {amount}")
                 except (ValueError, InvalidOperation) as e:
-                    self.logger.error(f"Failed to parse amount '{amount_str}' for {product_code}: {str(e)}")
+                    error_msg = f"Failed to parse amount '{amount_str}' for {product_code}: {str(e)}"
+                    self.error_tracker.add_error(
+                        'INVALID_AMOUNT',
+                        error_msg,
+                        {'product_code': product_code, 'amount': amount_str}
+                    )
                     result['success'] = False
                     result['error'] = {
                         'severity': 'ERROR',
-                        'message': f"Invalid amount for {product_code}"
+                        'message': error_msg
                     }
                     return result
 
@@ -282,15 +425,20 @@ class SalesReceiptLineItemProcessor(BaseProcessor):
                         unit_price = Decimal(cleaned_rate)
                         self.logger.debug(f"Parsed unit price from rate: {unit_price}")
                     except (ValueError, InvalidOperation) as e:
-                        self.logger.error(f"Failed to parse rate '{rate_str}' for {product_code}: {str(e)}")
+                        error_msg = f"Failed to parse rate '{rate_str}' for {product_code}: {str(e)}"
+                        self.error_tracker.add_error(
+                            'INVALID_RATE',
+                            error_msg,
+                            {'product_code': product_code, 'rate': rate_str}
+                        )
                         result['success'] = False
                         result['error'] = {
                             'severity': 'ERROR',
-                            'message': f"Invalid rate for {product_code}"
+                            'message': error_msg
                         }
                         return result
                 else:
-                    unit_price = Decimal('0')
+                    unit_price = amount  # Use amount as unit price if rate not provided
 
                 quantity = Decimal('1')
                 quantity_str = self.get_mapped_field(row, 'quantity')
@@ -299,17 +447,39 @@ class SalesReceiptLineItemProcessor(BaseProcessor):
                         quantity = Decimal(quantity_str.strip() or '1')
                         self.logger.debug(f"Parsed quantity: {quantity}")
                     except (ValueError, InvalidOperation):
-                        self.logger.warning(f"Invalid quantity for {product_code}: {quantity_str}")
+                        self.error_tracker.add_error(
+                            'INVALID_QUANTITY',
+                            f"Invalid quantity for {product_code}: {quantity_str}",
+                            {'product_code': product_code, 'quantity': quantity_str}
+                        )
                         quantity = Decimal('1')
 
                 # Verify amount matches quantity * rate for regular products
                 expected_amount = quantity * unit_price
-                if amount != expected_amount:
-                    self.logger.warning(
-                        f"Amount mismatch for {product_code}: "
-                        f"got {amount}, expected {expected_amount} "
-                        f"(quantity {quantity} * rate {unit_price})"
-                    )
+                
+                # Only compare amounts if we have both a valid amount and rate
+                if amount and unit_price and quantity:
+                    try:
+                        # Convert to Decimal and round to nearest cent
+                        rounded_amount = Decimal(str(amount)).quantize(Decimal('0.01'))
+                        rounded_expected = (Decimal(str(unit_price)) * Decimal(str(quantity))).quantize(Decimal('0.01'))
+                        
+                        # Check if difference is more than 1 cent
+                        if abs(rounded_amount - rounded_expected) > Decimal('0.01'):
+                            self.error_tracker.add_error(
+                                'AMOUNT_MISMATCH',
+                                f"Amount mismatch for {product_code}: got {rounded_amount}, expected {rounded_expected}",
+                                {
+                                    'product_code': product_code,
+                                    'actual_amount': str(rounded_amount),
+                                    'expected_amount': str(rounded_expected),
+                                    'quantity': str(quantity),
+                                    'rate': str(unit_price)
+                                }
+                            )
+                    except (InvalidOperation, TypeError):
+                        # Skip comparison if we can't convert values to Decimal
+                        pass
             
             # Parse service date if present
             service_date = None
@@ -318,7 +488,11 @@ class SalesReceiptLineItemProcessor(BaseProcessor):
                 try:
                     service_date = datetime.strptime(service_date_str, '%m-%d-%Y')
                 except ValueError:
-                    logging.warning(f"Invalid service date format for {product_code}")
+                    self.error_tracker.add_error(
+                        'INVALID_SERVICE_DATE',
+                        f"Invalid service date format for {product_code}: {service_date_str}",
+                        {'product_code': product_code, 'service_date': service_date_str}
+                    )
             
             # Normalize source data for JSON serialization
             source_data = validate_json_data(row.to_dict())
@@ -331,7 +505,7 @@ class SalesReceiptLineItemProcessor(BaseProcessor):
                 description=description or '',
                 quantity=quantity,
                 unitPrice=unit_price,
-                amount=amount,
+                amount=amount or (quantity * unit_price),  # Use calculated amount if not provided
                 serviceDate=service_date,
                 sourceData=source_data
             )
@@ -340,15 +514,21 @@ class SalesReceiptLineItemProcessor(BaseProcessor):
             self.logger.debug(f"Created line item for {product_code}:")
             self.logger.debug(f"  Quantity: {quantity}")
             self.logger.debug(f"  Unit Price: {unit_price}")
-            self.logger.debug(f"  Amount: {amount}")
+            self.logger.debug(f"  Amount: {line_item.amount}")
             result['line_item'] = line_item
             return result
             
         except Exception as e:
+            error_msg = f"Failed to process line item: {str(e)}"
+            self.error_tracker.add_error(
+                'LINE_ITEM_PROCESSING_ERROR',
+                error_msg,
+                {'error': str(e)}
+            )
             result['success'] = False
             result['error'] = {
                 'severity': 'ERROR',
-                'message': f"Failed to process line item: {str(e)}"
+                'message': error_msg
             }
             return result
     

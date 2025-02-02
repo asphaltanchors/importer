@@ -159,6 +159,8 @@ def find_customer_by_name(session: Session, name: str) -> Tuple[Optional['Custom
     from ..db.models import Customer  # Import here to avoid circular dependency
     
     logger.debug(f"Searching for customer by name: {name}")
+    logger.debug(f"Session ID: {id(session)}")
+    logger.debug(f"Session is active: {session.is_active}")
     
     # Try case-insensitive exact match first
     customer = session.query(Customer).filter(

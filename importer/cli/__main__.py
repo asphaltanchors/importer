@@ -6,7 +6,7 @@ import click
 from pathlib import Path
 
 from .config import Config
-from .logging import setup_logging
+from .logging import setup_logging, get_logger
 from ..commands.validate import ValidateCustomersCommand, ValidateSalesCommand
 from ..commands.utils import TestConnectionCommand
 from ..commands.sales import sales
@@ -22,20 +22,28 @@ from ..commands.customers import (
 )
 
 @click.group()
-@click.option('--debug', is_flag=True, help='Enable debug logging')
+@click.option('--debug', is_flag=True, help='Enable detailed debug output')
 @click.pass_context
 def cli(ctx, debug: bool):
     """CSV Importer CLI tool"""
     # Store debug flag in context for subcommands
     ctx.ensure_object(dict)
     ctx.obj['debug'] = debug
+    
+    # Setup logging with debug flag
+    setup_logging(debug=debug)
+    
+    # Get logger for CLI
+    logger = get_logger('cli')
     if debug:
-        setup_logging(level='DEBUG')
+        logger.debug("Debug mode enabled")
         
     # Initialize config and store in context
     try:
         config = Config.from_env()
         ctx.obj['config'] = config
+        if debug:
+            logger.debug(f"Using database: {config.database_url}")
     except Exception as e:
         click.echo(f"Error initializing configuration: {str(e)}", err=True)
         ctx.exit(1)
@@ -54,18 +62,13 @@ def test_connection():
 @cli.command()
 @click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
 @click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save validation results to file')
-@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), default='INFO')
-def validate(file: Path, output: Path | None, log_level: str):
+def validate(file: Path, output: Path | None):
     """Validate a customer CSV file before importing."""
     try:
-        # Setup logging
-        setup_logging(level=log_level)
-        
         # Initialize and run command
         config = Config.from_env()
         command = ValidateCustomersCommand(config, file, output)
         command.execute()
-        
     except Exception as e:
         click.secho(f"Error: {str(e)}", fg='red')
         raise click.Abort()
@@ -73,18 +76,13 @@ def validate(file: Path, output: Path | None, log_level: str):
 @cli.command()
 @click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
 @click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save validation results to file')
-@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), default='INFO')
-def validate_sales(file: Path, output: Path | None, log_level: str):
+def validate_sales(file: Path, output: Path | None):
     """Validate a sales CSV file before importing."""
     try:
-        # Setup logging
-        setup_logging(level=log_level)
-        
         # Initialize and run command
         config = Config.from_env()
         command = ValidateSalesCommand(config, file, output)
         command.execute()
-        
     except Exception as e:
         click.secho(f"Error: {str(e)}", fg='red')
         raise click.Abort()
@@ -136,14 +134,10 @@ def process_addresses(file: Path, output: Path | None):
 @customers.command('process')
 @click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
 @click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save customer processing results to file')
-@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), default='INFO')
 @click.pass_context
-def process_customers(ctx, file: Path, output: Path | None, log_level: str):
+def process_customers(ctx, file: Path, output: Path | None):
     """Process customer records from a CSV file."""
     try:
-        # Setup logging (use debug from context if set)
-        setup_logging(level='DEBUG' if ctx.obj.get('debug') else log_level)
-        
         config = Config.from_env()
         command = ProcessCustomersCommand(config, file, output)
         command.execute()
