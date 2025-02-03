@@ -71,8 +71,8 @@ COPY crontab.txt /app/crontab.txt
 # Ensure scripts are executable
 RUN chmod +x /app/scripts/run_import.sh /app/startup.sh
 
-# Create directory for logs and input files
-RUN mkdir -p /var/log/importer /data/input /data/processed /data/failed \
+# Create directory for logs 
+RUN mkdir -p /var/log/importer \
     && touch /var/log/importer/import.log \
     && chmod 666 /var/log/importer/import.log
 
