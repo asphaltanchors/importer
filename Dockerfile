@@ -78,13 +78,10 @@ RUN mkdir -p /var/log/importer \
 
 # Create non-root user
 RUN useradd -m -u 1000 importer_user \
-    && chown -R importer_user:importer_user /app /data /var/log/importer
+    && chown -R importer_user:importer_user /app /var/log/importer
 
 # Switch to non-root user
 USER importer_user
-
-# Volume for input files and logs
-VOLUME ["/data/input", "/var/log/importer"]
 
 # Set startup script as entrypoint
 ENTRYPOINT ["/app/startup.sh"]
