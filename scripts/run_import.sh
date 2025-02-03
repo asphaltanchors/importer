@@ -26,24 +26,18 @@ process_file() {
 }
 
 # Process customer files (excluding *_all.csv)
-for f in /data/Customer_[0-9]*.csv; do
-    if [ -f "$f" ]; then
-        process_file "$f" "customers process" "customer"
-    fi
+find /data -maxdepth 1 -name "Customer_[0-9]*.csv" -type f | while read -r f; do
+    process_file "$f" "customers process" "customer"
 done
 
 # Process invoice files (excluding *_all.csv)
-for f in /data/Invoice_[0-9]*.csv; do
-    if [ -f "$f" ]; then
-        process_file "$f" "sales process-invoices" "invoice"
-    fi
+find /data -maxdepth 1 -name "Invoice_[0-9]*.csv" -type f | while read -r f; do
+    process_file "$f" "sales process-invoices" "invoice"
 done
 
 # Process sales receipt files (excluding *_all.csv)
-for f in "/data/Sales Receipt_[0-9]"*.csv; do
-    if [ -f "$f" ]; then
-        process_file "$f" "sales process-receipts" "sales receipt"
-    fi
+find /data -maxdepth 1 -name "Sales Receipt_[0-9]*.csv" -type f | while read -r f; do
+    process_file "$f" "sales process-receipts" "sales receipt"
 done
 
 echo "Cleaning up old processed/failed files (older than 30 days)..."
