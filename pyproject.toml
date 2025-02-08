@@ -16,6 +16,11 @@ tld = "^0.13"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.4"
+pytest-cov = "^4.1.0"
+
+[tool.pytest.ini_options]
+addopts = "--cov=importer --cov-report=term-missing"
+testpaths = ["importer/tests"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

@@ -1,19 +1,154 @@
-"""Integration tests for invoice import with customer name normalization."""
+"""Integration tests for invoice import with full processing sequence."""
 
 import pytest
 from pathlib import Path
 import tempfile
 import csv
 from datetime import datetime
+import pandas as pd
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from ..processors.invoice import InvoiceProcessor
+from ..processors.company import CompanyProcessor
+from ..processors.product import ProductProcessor
 from ..utils import generate_uuid
 from ..db.models import (
     Customer, Company, Product, Base,
     Order, OrderStatus, PaymentStatus, OrderItem
 )
+
+def test_invoice_full_processing_sequence(session):
+    """Test the complete invoice processing sequence: company -> customer -> product -> order -> line item."""
+    # Create test invoice data
+    csv_path = create_test_csv([{
+        'Invoice No': 'INV001',
+        'Invoice Date': '01-15-2025',
+        'Customer': 'New Customer LLC',
+        'Terms': 'Net 30',
+        'Due Date': '02-14-2025',
+        'Status': 'Open',
+        'Product/Service': 'NEW001',
+        'Product/Service Description': 'New Product',
+        'Qty': '1',
+        'Product/Service  Amount': '100.00',
+        'Product/Service Sales Tax': '0.00'
+    }])
+    
+    # Configure processors
+    config = {
+        'database_url': str(session.get_bind().url),
+        'batch_size': 100,
+        'error_limit': 10
+    }
+    
+    # 1. Process companies
+    company_processor = CompanyProcessor(config)
+    company_result = company_processor.process(pd.DataFrame([{
+        'company_domain': 'newcustomer.com',
+        'Customer Name': 'New Customer LLC'
+    }]))
+    assert company_result['success']
+    assert company_result['stats']['companies_created'] == 1
+    
+    # 2. Process customers (handled by InvoiceProcessor)
+    
+    # 3. Process products
+    product_processor = ProductProcessor(config)
+    product_result = product_processor.process(pd.DataFrame([{
+        'Product/Service': 'NEW001',
+        'Product/Service Description': 'New Product',
+        'Product/Service  Amount': '100.00'
+    }]))
+    assert product_result['success']
+    assert product_result['stats']['products_created'] == 1
+    
+    # 4. Process invoice (creates customer, order, and line items)
+    invoice_processor = InvoiceProcessor(str(session.get_bind().url))
+    invoice_result = invoice_processor.process(csv_path)
+    
+    # Verify full sequence results
+    assert invoice_result['success']
+    assert invoice_result['summary']['stats']['total_invoices'] == 1
+    assert invoice_result['summary']['stats']['created'] == 1
+    assert invoice_result['summary']['stats']['errors'] == 0
+    
+    # Verify all relationships
+    with Session(session.get_bind()) as new_session:
+        # Verify company was created
+        company = new_session.query(Company).filter_by(domain='newcustomer.com').first()
+        assert company is not None
+        
+        # Verify customer was created and linked to company
+        customer = new_session.query(Customer).filter_by(customerName='New Customer LLC').first()
+        assert customer is not None
+        assert customer.company_domain == company.domain
+        
+        # Verify product was created
+        product = new_session.query(Product).filter_by(productCode='NEW001').first()
+        assert product is not None
+        assert product.description == 'New Product'
+        
+        # Verify order was created and linked to customer
+        order = new_session.query(Order).filter_by(orderNumber='INV001').first()
+        assert order is not None
+        assert order.customerId == customer.id
+        
+        # Verify line item was created and linked to order and product
+        line_item = new_session.query(OrderItem).filter_by(orderId=order.id).first()
+        assert line_item is not None
+        assert line_item.productCode == product.productCode
+
+def test_invoice_processing_phase_errors():
+    """Test error handling across all processing phases."""
+    # Create test invoice data with issues in each phase
+    csv_path = create_test_csv([{
+        'Invoice No': 'INV001',
+        'Invoice Date': '01-15-2025',
+        'Customer': 'Problem Customer',
+        'Terms': 'Net 30',
+        'Due Date': '02-14-2025',
+        'Status': 'Open',
+        'Product/Service': '',  # Invalid product code
+        'Product/Service Description': None,  # Missing description
+        'Qty': '1',
+        'Product/Service  Amount': 'invalid'  # Invalid amount
+    }])
+    
+    config = {
+        'database_url': 'sqlite:///:memory:',
+        'batch_size': 100,
+        'error_limit': 10
+    }
+    
+    # 1. Process companies with invalid domain
+    company_processor = CompanyProcessor(config)
+    company_result = company_processor.process(pd.DataFrame([{
+        'company_domain': '',  # Invalid domain
+        'Customer Name': 'Problem Customer'
+    }]))
+    assert not company_result['success']
+    assert company_result['stats']['errors'] > 0
+    
+    # 2. Process products with invalid data
+    product_processor = ProductProcessor(config)
+    product_result = product_processor.process(pd.DataFrame([{
+        'Product/Service': '',  # Invalid code
+        'Product/Service Description': None,  # Missing description
+        'Product/Service  Amount': 'invalid'  # Invalid amount
+    }]))
+    assert not product_result['success']
+    assert product_result['stats']['errors'] > 0
+    
+    # 3. Process invoice
+    invoice_processor = InvoiceProcessor('sqlite:///:memory:')
+    invoice_result = invoice_processor.process(csv_path)
+    
+    # Verify error handling
+    assert not invoice_result['success']
+    assert invoice_result['summary']['stats']['errors'] > 0
+    assert invoice_result['summary']['stats']['total_invoices'] == 0
+
 
 @pytest.fixture
 def session():
