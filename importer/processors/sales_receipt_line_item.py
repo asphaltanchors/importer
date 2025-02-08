@@ -39,7 +39,8 @@ class SalesReceiptLineItemProcessor(BaseProcessor[Dict[str, Any]]):
             error_limit: Maximum number of errors before stopping
             debug: Enable debug logging
         """
-        super().__init__(config, batch_size, error_limit, debug)
+        session_manager = SessionManager(config['database_url'])
+        super().__init__(session_manager, batch_size, error_limit, debug)
         
         # Track processed items
         self.processed_orders: Set[str] = set()
