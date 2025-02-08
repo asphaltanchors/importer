@@ -1,4 +1,11 @@
-"""Process invoices command."""
+"""Process invoices from a CSV file.
+
+A top-level command for importing invoice data into the database. This command:
+1. Processes companies from invoice data
+2. Creates/updates customer records
+3. Creates/updates invoice records
+4. Processes line items with product mapping
+"""
 
 from pathlib import Path
 import click
@@ -11,12 +18,13 @@ from ...cli.logging import get_logger
 from ...utils.csv_normalization import normalize_dataframe_columns
 from ...processors.invoice import InvoiceProcessor
 from ...processors.line_item import LineItemProcessor
+from ...processors.company import CompanyProcessor
 from ...db.session import SessionManager
 
 class ProcessInvoicesCommand(FileInputCommand):
     """Command to process invoices from a sales data file."""
     
-    def __init__(self, config, input_file: Path, output_file: Optional[Path] = None, batch_size: int = 100):
+    def __init__(self, config, input_file: Path, output_file: Optional[Path] = None, batch_size: int = 100, error_limit: int = 1000):
         """Initialize the command.
         
         Args:
@@ -24,9 +32,11 @@ class ProcessInvoicesCommand(FileInputCommand):
             input_file: Path to input CSV file
             output_file: Optional path to save results
             batch_size: Number of records to process per batch
+            error_limit: Maximum number of errors before stopping
         """
         super().__init__(config, input_file, output_file)
         self.batch_size = batch_size
+        self.error_limit = error_limit
         self.logger = get_logger(__name__)
     
     @command_error_handler
@@ -36,7 +46,13 @@ class ProcessInvoicesCommand(FileInputCommand):
         
         try:
             self.logger.info(f"Processing invoices from {self.input_file}")
-            self.logger.info(f"Batch size: {self.batch_size}")
+            self.logger.info(f"Batch size: {self.batch_size}, Error limit: {self.error_limit}")
+            
+            # Convert config to dict format
+            config_dict = {
+                'database_url': self.config.database_url,
+                'batch_size': self.batch_size
+            }
             
             # Process invoices first
             with session_manager.get_session() as session:
@@ -116,14 +132,17 @@ class ProcessInvoicesCommand(FileInputCommand):
 @click.argument('file_path', type=click.Path(exists=True, path_type=Path))
 @click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save processing results to file')
 @click.option('--batch-size', default=100, help='Number of records to process per batch')
+@click.option('--error-limit', default=1000, help='Maximum number of errors before stopping')
+@click.option('--debug', is_flag=True, help='Enable debug logging')
 @click.pass_context
-def process_invoices(ctx, file_path: Path, output: Optional[Path], batch_size: int):
-    """Process invoices from a CSV file."""
+def process_invoices(ctx, file_path: Path, output: Optional[Path], batch_size: int, error_limit: int, debug: bool):
+    """Import invoice data from a CSV file into the database."""
     config = ctx.obj.get('config')
     if not config:
         logger = get_logger(__name__)
         logger.error("No configuration found in context")
         return
         
-    command = ProcessInvoicesCommand(config, file_path, output, batch_size)
+    command = ProcessInvoicesCommand(config, file_path, output, batch_size, error_limit)
+    command.debug = debug
     command.execute()

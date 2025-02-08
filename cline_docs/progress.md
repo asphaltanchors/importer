@@ -54,6 +54,8 @@
 ## What's Left to Build
 
 1. Current Focus: Processing Sequence Standardization
+   - ✅ CLI command reorganization
+   - ✅ Config dictionary conversion
    - ⏳ Add company processing to invoice flow
    - ⏳ Add product processing to both flows
    - ⏳ Standardize phase logging
@@ -93,6 +95,8 @@
 - ✅ Data validation
 - ✅ Idempotent processing
 - ✅ Company-Customer relationships
+- ✅ CLI command organization
+- ✅ Docker script compatibility
 - ⏳ Processing sequence standardization
 - ⏳ Product processing integration
 - ⏳ Enhanced validation

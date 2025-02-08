@@ -1,4 +1,11 @@
-"""Process sales receipts command."""
+"""Process sales receipts from a CSV file.
+
+A top-level command for importing sales receipt data into the database. This command:
+1. Processes companies from receipt data
+2. Creates/updates customer records
+3. Creates/updates receipt records
+4. Processes line items with product mapping
+"""
 
 from pathlib import Path
 import click
@@ -227,13 +234,15 @@ class ProcessReceiptsCommand(FileInputCommand):
 @click.option('--output', type=click.Path(file_okay=True, dir_okay=False, path_type=Path), help='Save processing results to file')
 @click.option('--batch-size', default=50, help='Number of records to process per batch')
 @click.option('--error-limit', default=1000, help='Maximum number of errors before stopping')
+@click.option('--debug', is_flag=True, help='Enable debug logging')
 @click.pass_context
-def process_receipts(ctx, file_path: Path, output: Optional[Path], batch_size: int, error_limit: int):
-    """Process sales receipts from a CSV file."""
+def process_receipts(ctx, file_path: Path, output: Optional[Path], batch_size: int, error_limit: int, debug: bool):
+    """Import sales receipt data from a CSV file into the database."""
     config = ctx.obj.get('config')
     if not config:
         click.echo("Error: No configuration found in context")
         return
         
     command = ProcessReceiptsCommand(config, file_path, output, batch_size, error_limit)
+    command.debug = debug
     command.execute()

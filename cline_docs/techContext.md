@@ -4,6 +4,7 @@
 
 ### Core Stack
 - Python 3.8+
+- Poetry (package manager)
 - SQLAlchemy ORM
 - PostgreSQL Database
 - Pandas for data processing
@@ -17,10 +18,15 @@
 - python-dotenv: Environment configuration
 
 ## Development Setup
-1. Python virtual environment
+1. Poetry Installation & Setup
+   - Install Poetry: `curl -sSL https://install.python-poetry.org | python3 -`
+   - Install dependencies: `poetry install`
+   - Run commands: `poetry run importer <command>`
+
 2. PostgreSQL database
-3. Environment configuration
-4. Development tools (VSCode, etc.)
+   - Configure in .env: `DATABASE_URL="postgresql://user:password@localhost:5432/dbname"`
+
+3. Development tools (VSCode, etc.)
 
 ## Technical Constraints
 

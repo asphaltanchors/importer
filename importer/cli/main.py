@@ -9,7 +9,7 @@ from .config import Config
 from .logging import setup_logging, get_logger
 from ..commands.validate import ValidateCustomersCommand, ValidateSalesCommand
 from ..commands.utils import TestConnectionCommand
-from ..commands.sales import sales
+from ..commands.sales import sales, process_invoices, process_receipts
 from ..commands.verify import VerifyCommand
 from ..commands.customers import (
     ListCompaniesCommand,
@@ -183,7 +183,11 @@ def verify_import(output: Path | None):
         click.secho(f"Error: {str(e)}", fg='red')
         raise click.Abort()
 
-# Register sales commands
+# Register top-level process commands
+cli.add_command(process_invoices)
+cli.add_command(process_receipts)
+
+# Register sales commands (specialized operations)
 cli.add_command(sales)
 
 # Register verify commands

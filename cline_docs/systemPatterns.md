@@ -1,5 +1,25 @@
 # System Patterns
 
+## CLI Organization
+
+### Command Structure
+1. Top-Level Commands:
+   - process-invoices: Primary command for invoice data import
+   - process-receipts: Primary command for sales receipt import
+   - test-connection: Database connectivity test
+   - validate: General validation commands
+
+2. Subcommand Groups:
+   - customers: Customer data management operations
+   - sales: Specialized sales operations
+   - verify: Data verification tools
+
+### Command Patterns
+- Top-level commands for primary operations
+- Subcommands for domain-specific operations
+- Consistent parameter patterns (--output, --batch-size, --error-limit)
+- Debug mode available for all commands
+
 ## Data Processing Phases
 The system processes data in distinct phases to maintain separation of concerns:
 1. Company Processing (first to establish base relationships)

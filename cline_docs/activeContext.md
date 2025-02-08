@@ -89,25 +89,25 @@ After completing the current standardization work, several architectural improve
    - Add pre/post processing hooks
 
 ## Recent Changes
-1. Modified ProcessReceiptsCommand to:
-   - Add Phase 1 for company processing using CompanyProcessor
-   - Move customer processing to Phase 2
-   - Move receipt processing to Phase 3
-   - Move line item processing to Phase 4
+1. Reorganized CLI command structure:
+   - Moved process-invoices and process-receipts to top level
+   - Left specialized operations under sales subcommand
+   - Updated command docstrings to reflect new organization
 
-2. Added company creation to ProcessReceiptCustomersCommand:
-   - Added _ensure_required_companies method
-   - Creates amazon-fba.com and unknown-domain.com companies if needed
-   - Ensures companies exist before customer creation
+2. Updated Docker-related files:
+   - Modified run_import.sh to use new top-level commands
+   - Verified Dockerfile and startup.sh compatibility
+   - Ensured cron job continues to work with new structure
 
-3. Fixed configuration handling:
-   - Modified CompanyProcessor initialization to work with Config object
-   - Convert Config object to dictionary with required fields
+3. Modified ProcessInvoicesCommand:
+   - Added error_limit parameter
+   - Converted Config to dictionary format
+   - Updated logging to match receipt flow pattern
 
 ## Next Steps
-1. Begin with Phase 1: Adding company processing to invoice flow
-   - First implement Config to dictionary conversion
-   - Then add CompanyProcessor integration
-   - Finally update logging to match phase structure
+1. Continue with Phase 1: Adding company processing to invoice flow
+   - Now that Config dictionary conversion is done
+   - Next add CompanyProcessor integration
+   - Then update logging to match phase structure
 2. Each change should be small and testable
 3. Update this plan as we progress to keep it accurate

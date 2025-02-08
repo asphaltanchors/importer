@@ -16,7 +16,7 @@ process_file() {
     local type="$3"
     
     echo "Processing $type file: $file"
-    if poetry run python -m importer.cli $cmd "$file"; then
+    if poetry run importer $cmd "$file"; then
         echo "Successfully processed $file"
         mv "$file" "/data/processed/$TODAY/"
     else
@@ -32,12 +32,12 @@ done
 
 # Process invoice files (excluding *_all.csv)
 find /data -maxdepth 1 -name "Invoice_[0-9]*.csv" -type f | while read -r f; do
-    process_file "$f" "sales process-invoices" "invoice"
+    process_file "$f" "process-invoices" "invoice"
 done
 
 # Process sales receipt files (excluding *_all.csv)
 find /data -maxdepth 1 -name "Sales Receipt_[0-9]*.csv" -type f | while read -r f; do
-    process_file "$f" "sales process-receipts" "sales receipt"
+    process_file "$f" "process-receipts" "sales receipt"
 done
 
 echo "Cleaning up old processed/failed files (older than 30 days)..."
