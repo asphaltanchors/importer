@@ -27,6 +27,7 @@ from ...processors.sales_receipt import SalesReceiptProcessor
 from ...processors.sales_receipt_line_item import SalesReceiptLineItemProcessor
 from ...processors.company import CompanyProcessor
 from ...processors.product import ProductProcessor
+from ...processors.error_tracker import ErrorTracker
 from ...db.session import SessionManager
 
 class ProcessReceiptsCommand(FileInputCommand):
@@ -45,6 +46,7 @@ class ProcessReceiptsCommand(FileInputCommand):
         super().__init__(config, input_file, output_file)
         self.batch_size = batch_size
         self.error_limit = error_limit
+        self.error_tracker = ErrorTracker()
     
     @command_error_handler
     def execute(self) -> None:
@@ -267,16 +269,20 @@ class ProcessReceiptsCommand(FileInputCommand):
                 
         except Exception as e:
             self.logger.error(f"Failed to process file: {str(e)}", exc_info=self.debug)
+            error_context = {
+                'input_file': str(self.input_file),
+                'batch_size': self.batch_size,
+                'error_limit': self.error_limit,
+                'error': str(e)
+            }
             self.error_tracker.add_error(
                 'PROCESS_RECEIPTS_ERROR',
                 f"Failed to process sales receipts: {str(e)}",
-                {
-                    'input_file': str(self.input_file),
-                    'batch_size': self.batch_size,
-                    'error_limit': self.error_limit
-                }
+                error_context
             )
-            return
+            if self.debug:
+                self.logger.debug(f"Error details: {error_context}", exc_info=True)
+            raise  # Re-raise to let command_error_handler handle it
 
 # Click command wrapper
 @click.command()
