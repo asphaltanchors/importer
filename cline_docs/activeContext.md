@@ -1,61 +1,68 @@
 # Active Context
 
 ## Current Focus
-Fixing test patterns in customer import tests to align with system patterns and existing test practices.
+Standardizing test patterns across processor test files.
 
 ## Recent Changes
-- Identified misalignment between customer import tests and established patterns
-- Discovered correct test pattern in test_company_processing.py
-- Found issues with transaction management and test isolation
+- Analyzed test_company_processing.py for established patterns
+- Identified need for consistent test structure
+- Found gaps in current test implementations
+- Discovered successful patterns to replicate
+- Mapped out comprehensive test strategy
 
 ## Next Steps
 
-### Test Pattern Alignment
-1. Rewrite test_customer_import.py to follow established patterns:
-   - Use session_manager instead of populated_session
-   - Remove manual entity creation
-   - Process through proper interfaces
+### Test Pattern Standardization
+1. Core Functionality Tests:
+   - Basic creation/processing (happy path)
+   - Name/domain normalization
+   - Idempotent processing
+   - Batch processing
+   - Relationship handling
 
-2. Test Structure Changes:
-   - Create test data with both company and customer info
-   - Process with CompanyProcessor first
-   - Then process with CustomerProcessor
-   - Assert results through stats and queries
+2. Error Handling Tests:
+   - Invalid data scenarios
+   - Error limits
+   - Partial success cases
+   - Validation rules
+   - Warning vs critical errors
 
-3. Test Cases to Implement:
-   - test_customer_creation_basic: Basic flow with company creation first
-   - test_customer_domain_normalization: Handle domain variations
-   - test_customer_idempotent_processing: Verify idempotency
-   - test_customer_batch_processing: Test batch handling
-   - test_customer_error_handling: Validate error cases
+3. Relationship Tests:
+   - Entity relationships
+   - Lookup patterns
+   - Integrity constraints
+   - Update behaviors
 
-### Key Patterns to Follow
-1. Data Processing Sequence:
-   - Companies must be processed before customers
-   - Use proper processor interfaces
-   - No manual entity creation
+### Implementation Order
+1. test_customer_import.py:
+   - Rewrite basic functionality tests
+   - Add normalization tests
+   - Add idempotency tests
+   - Add batch processing tests
+   - Add error handling
+   - Add validation tests
+   - Add relationship tests
 
-2. Test Isolation:
-   - Each test is self-contained
-   - Use session_manager for clean state
-   - Process all data through processors
-
-3. Test Focus:
-   - Each test verifies specific behavior
-   - Clear test names describing behavior
-   - Assertions focus on processor stats and results
+2. Other Processor Tests:
+   - Apply same patterns to test_invoice_import.py
+   - Update test_product_processing.py
+   - Review and align other test files
 
 ## Active Decisions
-- Moving away from populated_session in processor tests
-- Following established patterns from test_company_processing.py
-- Maintaining proper processing sequence in tests
+- Follow established patterns from test_company_processing.py
+- Each test should be focused and self-contained
+- Clear test names describing behavior
+- Consistent structure across all processor tests
+- Strong validation of results
+- Proper error handling checks
 
 ## Implementation Notes
-- Use DataFrame for test data creation
-- Process through proper interfaces
-- Assert through processor stats
+- Use session_manager consistently
+- Follow processor initialization patterns
+- Create focused test data
+- Verify through stats
 - Maintain test isolation
-- Follow naming conventions from company tests
+- Use debug logging for clarity
 
 ## Future Work
 
