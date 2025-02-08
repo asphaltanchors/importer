@@ -21,32 +21,44 @@
 - Debug mode available for all commands
 
 ## Data Processing Phases
-The system processes data in distinct phases to maintain separation of concerns:
+The system processes data in a standardized sequence across both invoice and receipt flows:
+
 1. Company Processing (first to establish base relationships)
    - Creates/updates companies from customer domains
    - Ensures required companies exist (amazon-fba.com, unknown-domain.com)
    - Must run first as customers depend on companies
+   - Uses CompanyProcessor with error tracking
+   - Validates domain formats and relationships
 
 2. Customer Processing (uses company relationships)
    - Creates/updates customers with company relationships
    - Handles special cases like Amazon FBA
    - Must run after companies but before orders
+   - Uses customer-specific processors for each flow
+   - Maintains QuickBooks ID relationships
 
 3. Product Processing (independent phase)
    - Creates/updates products from line items
    - Handles special cases (shipping, tax, discounts)
    - Maps raw product codes to system codes
-   - Must run before orders to ensure products exist
+   - Uses ProductProcessor with ErrorTracker
+   - Validates product codes and descriptions
+   - Enforces business rules (e.g., no test products)
+   - Must run before line items to ensure products exist
 
 4. Order Processing (uses customer relationships)
    - Creates/updates orders (invoices/receipts)
    - Links to customers and addresses
    - Must run after customers but before line items
+   - Uses flow-specific processors (InvoiceProcessor/SalesReceiptProcessor)
+   - Validates order data and relationships
 
 5. Line Item Processing (uses order and product relationships)
    - Creates/updates line items
    - Links to orders and products
    - Must run last as it depends on both orders and products
+   - Uses flow-specific processors
+   - Validates product relationships and quantities
 
 ## Idempotency
 The system is designed to be idempotent - running the same import multiple times produces the same result:
@@ -95,5 +107,11 @@ The system is designed to be idempotent - running the same import multiple times
 - Track statistics for monitoring
 - Log validation issues
 - Track processing time
-- Phase-specific logging
+- Phase-specific logging with visual separation
 - Clear phase progression in logs
+- Standardized format across all phases:
+  * Phase headers with visual separation
+  * Validation summaries with item counts
+  * Consistent logging levels (info/debug)
+  * Progress reporting with batch counts
+  * Error summaries with context

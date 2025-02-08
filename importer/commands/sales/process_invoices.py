@@ -4,7 +4,14 @@ A top-level command for importing invoice data into the database. This command:
 1. Processes companies from invoice data
 2. Creates/updates customer records
 3. Creates/updates invoice records
-4. Processes line items with product mapping
+4. Creates/updates product records
+5. Processes line items with product mapping
+
+The processing sequence ensures proper relationship handling:
+- Companies must exist before customer records
+- Customers must exist before invoice records
+- Products must exist before line items
+- Line items link orders with products
 """
 
 from pathlib import Path
@@ -19,6 +26,7 @@ from ...utils.csv_normalization import normalize_dataframe_columns
 from ...processors.invoice import InvoiceProcessor
 from ...processors.line_item import LineItemProcessor
 from ...processors.company import CompanyProcessor
+from ...processors.product import ProductProcessor
 from ...db.session import SessionManager
 
 class ProcessInvoicesCommand(FileInputCommand):
@@ -162,10 +170,36 @@ class ProcessInvoicesCommand(FileInputCommand):
                 self.logger.info(f"Updated: {invoice_result['summary']['stats']['updated']}")
                 self.logger.info(f"Errors: {invoice_result['summary']['stats']['errors']}")
             
-            # Only proceed to line items if we have orders
+            # Only proceed to products if we have orders
             if invoice_processor.stats['created'] + invoice_processor.stats['updated'] > 0:
                 self.logger.info("")
-                self.logger.info("=== Phase 3: Line Item Processing ===")
+                self.logger.info("=== Phase 3: Product Processing ===")
+                if self.debug:
+                    self.logger.debug("Initializing ProductProcessor")
+                product_processor = ProductProcessor(session_manager, self.batch_size)
+                product_processor.debug = self.debug
+                
+                # Process products
+                product_result = product_processor.process_file(self.input_file)
+                
+                if not product_result['success']:
+                    self.logger.error("Failed to process products")
+                    if product_result['summary']['stats']['validation_errors'] > 0:
+                        self.logger.error(f"Validation errors: {product_result['summary']['stats']['validation_errors']}")
+                    if product_result['summary']['stats']['total_errors'] > 0:
+                        self.logger.error(f"Processing errors: {product_result['summary']['stats']['total_errors']}")
+                    return
+                
+                self.logger.info("Product processing complete")
+                self.logger.info(f"Total products: {product_result['summary']['stats']['total_products']}")
+                self.logger.info(f"Created: {product_result['summary']['stats']['created']}")
+                self.logger.info(f"Updated: {product_result['summary']['stats']['updated']}")
+                self.logger.info(f"Skipped: {product_result['summary']['stats']['skipped']}")
+                if product_result['summary']['stats']['validation_errors'] > 0:
+                    self.logger.warning(f"Validation errors: {product_result['summary']['stats']['validation_errors']}")
+                
+                self.logger.info("")
+                self.logger.info("=== Phase 4: Line Item Processing ===")
                 if self.debug:
                     self.logger.debug("Initializing LineItemProcessor")
                 line_item_processor = LineItemProcessor(session_manager, self.batch_size)
@@ -196,6 +230,7 @@ class ProcessInvoicesCommand(FileInputCommand):
                 results = {
                     'company_processing': company_result,
                     'invoice_processing': invoice_result,
+                    'product_processing': product_result,
                     'line_item_processing': line_item_result
                 }
                 with open(self.output_file, 'w') as f:

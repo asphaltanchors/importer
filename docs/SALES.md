@@ -5,44 +5,51 @@ This document outlines the multi-pass approach for processing sales data. Each p
 
 ## Command Structure
 
-The import process is broken down into several focused commands:
+The import process uses two top-level commands for processing sales data:
 
-1. Product Processing:
+1. Process Invoices:
    ```bash
-   python3 -m importer.cli sales process-products <file>
+   python3 -m importer.cli process-invoices <file> [--output results.json] [--batch-size 100] [--error-limit 1000] [--debug]
    ```
-   - Extracts and processes unique products
-   - Updates existing product descriptions
-   - Handles special items (shipping, tax, etc.)
+   Processes invoice data in five phases:
+   1. Company Processing
+      - Creates/updates companies from domains
+      - Ensures required companies exist
+   2. Customer Processing
+      - Creates/updates customers with company links
+      - Handles customer identification
+   3. Product Processing
+      - Creates/updates products from line items
+      - Handles special items (shipping, tax, etc.)
+   4. Invoice Processing
+      - Creates/updates invoice headers
+      - Links to customers and addresses
+   5. Line Item Processing
+      - Creates/updates line items
+      - Links to invoices and products
 
-2. Line Item Processing:
+2. Process Sales Receipts:
    ```bash
-   python3 -m importer.cli sales process-line-items <file>
+   python3 -m importer.cli process-receipts <file> [--output results.json] [--batch-size 50] [--error-limit 1000] [--debug]
    ```
-   - Validates product references
-   - Processes quantities and pricing
-   - Calculates line item amounts
-   - Handles service dates
+   Processes receipt data in five phases:
+   1. Company Processing
+      - Creates/updates companies from domains
+      - Ensures required companies exist
+   2. Customer Processing
+      - Creates/updates customers with company links
+      - Handles Amazon FBA special cases
+   3. Product Processing
+      - Creates/updates products from line items
+      - Handles special items (shipping, tax, etc.)
+   4. Receipt Processing
+      - Creates/updates receipt headers
+      - Links to customers and addresses
+   5. Line Item Processing
+      - Creates/updates line items
+      - Links to receipts and products
 
-3. Order Processing:
-   ```bash
-   python3 -m importer.cli sales process-orders <file>
-   ```
-   - Creates/updates order headers
-   - Validates customer references
-   - Processes order metadata
-   - Links to billing/shipping addresses
-
-4. Payment Processing:
-   ```bash
-   python3 -m importer.cli sales process-payments <file>
-   ```
-   - Updates payment status
-   - Processes payment terms
-   - Validates payment dates
-   - Reconciles payment amounts
-
-5. Verification:
+3. Verification:
    ```bash
    python3 -m importer.cli verify sales <file> [--output results.json]
    ```
@@ -182,20 +189,14 @@ An import is considered successful when:
 
 1. Process Order:
    ```bash
-   # 1. Process products first
-   python3 -m importer.cli sales process-products input.csv
+   # For invoices:
+   python3 -m importer.cli process-invoices input.csv --output invoice-results.json --debug
    
-   # 2. Process line items
-   python3 -m importer.cli sales process-line-items input.csv
+   # For sales receipts:
+   python3 -m importer.cli process-receipts input.csv --output receipt-results.json --debug
    
-   # 3. Process orders
-   python3 -m importer.cli sales process-orders input.csv
-   
-   # 4. Process payments
-   python3 -m importer.cli sales process-payments input.csv
-   
-   # 5. Verify everything
-   python3 -m importer.cli verify sales input.csv --output results.json
+   # Verify results:
+   python3 -m importer.cli verify sales input.csv --output verify-results.json
    ```
 
 2. Error Handling:

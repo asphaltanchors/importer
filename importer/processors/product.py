@@ -1,7 +1,7 @@
 """Product data processor."""
 
 from datetime import datetime
-from typing import Dict, Any, List, Set
+from typing import Dict, Any, List, Set, Optional
 from pathlib import Path
 import logging
 import pandas as pd
@@ -11,6 +11,7 @@ from ..utils import generate_uuid
 from ..utils.system_products import initialize_system_products, is_system_product
 from ..db.models import Product
 from .base import BaseProcessor
+from .error_tracker import ErrorTracker
 
 class ProductProcessor(BaseProcessor):
     """Process products from sales data."""
@@ -24,6 +25,9 @@ class ProductProcessor(BaseProcessor):
         """
         self.session_manager = session_manager
         super().__init__(None, batch_size)  # We'll manage sessions ourselves
+        
+        # Initialize error tracker
+        self.error_tracker = ErrorTracker()
         
         # Field mappings from CSV to our schema
         self.field_mappings = {
@@ -39,7 +43,8 @@ class ProductProcessor(BaseProcessor):
             'total_products': 0,
             'created': 0,
             'updated': 0,
-            'skipped': 0
+            'skipped': 0,
+            'validation_errors': 0
         })
         
     def process_file(self, file_path: Path) -> Dict[str, Any]:
@@ -101,66 +106,158 @@ class ProductProcessor(BaseProcessor):
                       f"{self.stats['created']} created, "
                       f"{self.stats['updated']} updated", flush=True)
             
+            # Log error summary
+            self.error_tracker.log_summary(self.logger)
+            
             return {
                 'success': self.stats['failed_batches'] == 0,
                 'summary': {
                     'stats': self.stats,
-                    'errors': []  # Detailed errors logged instead of returned
+                    'errors': self.error_tracker.get_summary()
                 }
             }
             
         except Exception as e:
             logging.error(f"Failed to process file: {str(e)}")
+            self.error_tracker.add_error(
+                'file_processing',
+                str(e),
+                {'file': str(file_path)}
+            )
             return {
                 'success': False,
                 'summary': {
                     'stats': self.stats,
-                    'errors': [{'message': str(e)}]
+                    'errors': self.error_tracker.get_summary()
                 }
             }
     
+    def _validate_product_code(self, product_code: str) -> Optional[str]:
+        """Validate product code format.
+        
+        Args:
+            product_code: Product code to validate
+            
+        Returns:
+            None if valid, error message if invalid
+        """
+        if not product_code:
+            return "Product code is required"
+        if len(product_code) > 50:  # Arbitrary limit
+            return "Product code exceeds maximum length"
+        # Allow alphanumeric, hyphen, underscore, and period
+        if not all(c.isalnum() or c in '-_.' for c in product_code):
+            return "Product code contains invalid characters (only letters, numbers, hyphen, underscore, and period allowed)"
+        return None
+        
+    def _validate_description(self, description: str) -> Optional[str]:
+        """Validate product description.
+        
+        Args:
+            description: Product description to validate
+            
+        Returns:
+            None if valid, error message if invalid
+        """
+        if not description:
+            return None  # Description is optional
+        if len(description) > 500:  # Arbitrary limit
+            return "Description exceeds maximum length"
+        return None
+        
+    def _validate_product_data(self, product_code: str, description: str) -> List[str]:
+        """Validate all product data fields.
+        
+        Args:
+            product_code: Product code to validate
+            description: Product description to validate
+            
+        Returns:
+            List of validation error messages
+        """
+        errors = []
+        
+        # Check product code
+        code_error = self._validate_product_code(product_code)
+        if code_error:
+            errors.append(code_error)
+            
+        # Check description
+        desc_error = self._validate_description(description)
+        if desc_error:
+            errors.append(desc_error)
+            
+        # Business rules
+        if product_code.startswith('TEST-'):
+            errors.append("Test products not allowed in production")
+            
+        if description and description.lower().startswith('deprecated'):
+            errors.append("Deprecated products should not be imported")
+            
+        return errors
+
     def _process_row(self, row: pd.Series, header_mapping: Dict[str, str], session) -> None:
         """Process a single product row."""
-        # Get product code
-        product_code = str(row[header_mapping['product_code']]).strip().upper()
-        if not product_code:
-            return
+        try:
+            # Get and validate product data
+            product_code = str(row[header_mapping['product_code']]).strip().upper()
+            description = str(row[header_mapping['description']]).strip()
             
-        # Skip duplicates and system products (already initialized)
-        if product_code in self.processed_codes:
-            return
-        if is_system_product(product_code):
-            self.stats['skipped'] += 1
-            return
-        self.processed_codes.add(product_code)
-        
-        self.stats['total_products'] += 1
-        
-        # Get or create product
-        product = session.query(Product).filter(
-            Product.productCode == product_code
-        ).first()
-        
-        description = str(row[header_mapping['description']]).strip()
-        now = datetime.utcnow()
-        
-        if product:
-            # Update existing product
-            if description and description != product.description:
-                product.description = description
-                product.modifiedAt = now
-                self.stats['updated'] += 1
-            else:
+            validation_errors = self._validate_product_data(product_code, description)
+            if validation_errors:
+                self.stats['validation_errors'] += len(validation_errors)
+                for error in validation_errors:
+                    self.error_tracker.add_error(
+                        'validation',
+                        error,
+                        {'row': row.to_dict()}
+                    )
+                return
+            
+            # Skip duplicates and system products (already initialized)
+            if product_code in self.processed_codes:
                 self.stats['skipped'] += 1
-        else:
-            # Create new product
-            product = Product(
-                id=generate_uuid(),
-                productCode=product_code,
-                name=product_code,  # Use code as name initially
-                description=description,
-                createdAt=now,
-                modifiedAt=now
+                return
+            if is_system_product(product_code):
+                self.stats['skipped'] += 1
+                return
+            self.processed_codes.add(product_code)
+            
+            self.stats['total_products'] += 1
+            
+            # Get or create product
+            product = session.query(Product).filter(
+                Product.productCode == product_code
+            ).first()
+            
+            now = datetime.utcnow()
+            
+            if product:
+                # Update existing product
+                if description and description != product.description:
+                    product.description = description
+                    product.modifiedAt = now
+                    self.stats['updated'] += 1
+                else:
+                    # No changes needed
+                    self.stats['skipped'] += 1
+            else:
+                # Create new product
+                product = Product(
+                    id=generate_uuid(),
+                    productCode=product_code,
+                    name=product_code,  # Use code as name initially
+                    description=description,
+                    createdAt=now,
+                    modifiedAt=now
+                )
+                session.add(product)
+                self.stats['created'] += 1
+                
+        except Exception as e:
+            self.error_tracker.add_error(
+                'processing',
+                str(e),
+                {'row': row.to_dict()}
             )
-            session.add(product)
-            self.stats['created'] += 1
+            self.stats['total_errors'] += 1

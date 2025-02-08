@@ -4,7 +4,14 @@ A top-level command for importing sales receipt data into the database. This com
 1. Processes companies from receipt data
 2. Creates/updates customer records
 3. Creates/updates receipt records
-4. Processes line items with product mapping
+4. Creates/updates product records
+5. Processes line items with product mapping
+
+The processing sequence ensures proper relationship handling:
+- Companies must exist before customer records
+- Customers must exist before receipt records
+- Products must exist before line items
+- Line items link orders with products
 """
 
 from pathlib import Path
@@ -19,6 +26,7 @@ from ...utils.csv_normalization import normalize_dataframe_columns
 from ...processors.sales_receipt import SalesReceiptProcessor
 from ...processors.sales_receipt_line_item import SalesReceiptLineItemProcessor
 from ...processors.company import CompanyProcessor
+from ...processors.product import ProductProcessor
 from ...db.session import SessionManager
 
 class ProcessReceiptsCommand(FileInputCommand):
@@ -58,7 +66,8 @@ class ProcessReceiptsCommand(FileInputCommand):
             self.logger.info(f"Found {len(df)} rows")
             
             # Process companies first
-            self.logger.info("Phase 1: Processing companies")
+            self.logger.info("")
+            self.logger.info("=== Phase 1: Company Processing ===")
             if self.debug:
                 self.logger.debug("Initializing CompanyProcessor")
             # Convert config to dict for CompanyProcessor
@@ -72,7 +81,8 @@ class ProcessReceiptsCommand(FileInputCommand):
                 self.logger.debug(f"Company processing stats: {company_processor.get_stats()}")
             
             # Process customers next
-            self.logger.info("Phase 2: Processing receipt customers")
+            self.logger.info("")
+            self.logger.info("=== Phase 2: Customer Processing ===")
             if self.debug:
                 self.logger.debug("Initializing ProcessReceiptCustomersCommand")
             from .receipt_customers import ProcessReceiptCustomersCommand
@@ -84,7 +94,8 @@ class ProcessReceiptsCommand(FileInputCommand):
             # If there were critical errors, execute would have raised an exception
             
             # Process receipts next
-            self.logger.info("Phase 3: Processing sales receipts")
+            self.logger.info("")
+            self.logger.info("=== Phase 3: Receipt Processing ===")
             if self.debug:
                 self.logger.debug(f"Initializing SalesReceiptProcessor with batch_size={self.batch_size}, error_limit={self.error_limit}")
             receipt_processor = SalesReceiptProcessor(session_manager, self.batch_size, self.error_limit)
@@ -145,9 +156,36 @@ class ProcessReceiptsCommand(FileInputCommand):
             self.logger.info(f"Errors: {receipt_result['summary']['stats']['errors']}")
             self.logger.info(f"Customer Lookup Failures: {receipt_result['summary']['stats']['customers_not_found']}")
             
-            # Only proceed to line items if we have orders
+            # Only proceed to products if we have orders
             if receipt_processor.stats['created'] + receipt_processor.stats['updated'] > 0:
-                self.logger.info("Phase 4: Processing line items")
+                self.logger.info("")
+                self.logger.info("=== Phase 4: Product Processing ===")
+                if self.debug:
+                    self.logger.debug("Initializing ProductProcessor")
+                product_processor = ProductProcessor(session_manager, self.batch_size)
+                product_processor.debug = self.debug
+                
+                # Process products
+                product_result = product_processor.process_file(self.input_file)
+                
+                if not product_result['success']:
+                    self.logger.error("Failed to process products")
+                    if product_result['summary']['stats']['validation_errors'] > 0:
+                        self.logger.error(f"Validation errors: {product_result['summary']['stats']['validation_errors']}")
+                    if product_result['summary']['stats']['total_errors'] > 0:
+                        self.logger.error(f"Processing errors: {product_result['summary']['stats']['total_errors']}")
+                    return
+                
+                self.logger.info("Product processing complete")
+                self.logger.info(f"Total products: {product_result['summary']['stats']['total_products']}")
+                self.logger.info(f"Created: {product_result['summary']['stats']['created']}")
+                self.logger.info(f"Updated: {product_result['summary']['stats']['updated']}")
+                self.logger.info(f"Skipped: {product_result['summary']['stats']['skipped']}")
+                if product_result['summary']['stats']['validation_errors'] > 0:
+                    self.logger.warning(f"Validation errors: {product_result['summary']['stats']['validation_errors']}")
+                
+                self.logger.info("")
+                self.logger.info("=== Phase 5: Line Item Processing ===")
                 if self.debug:
                     self.logger.debug(f"Initializing SalesReceiptLineItemProcessor with batch_size={self.batch_size}, error_limit={self.error_limit}")
                 line_item_processor = SalesReceiptLineItemProcessor(session_manager, self.batch_size, self.error_limit)
@@ -209,6 +247,7 @@ class ProcessReceiptsCommand(FileInputCommand):
                         }
                     },
                     'receipt_processing': receipt_result,
+                    'product_processing': product_result,
                     'line_item_processing': line_item_result
                 }
                 with open(self.output_file, 'w') as f:
