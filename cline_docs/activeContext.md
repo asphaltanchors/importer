@@ -61,6 +61,21 @@ After completing the current standardization work, several architectural improve
    - Add type hints throughout
    - Add dataclass for stats tracking
    - Add context manager support
+   - Standardize session management pattern:
+     * Currently have 3 different patterns:
+       1. BaseProcessor: Takes session in constructor
+       2. CompanyProcessor: Takes config dict, manages own sessions
+       3. SalesReceiptProcessor: Takes session_manager, uses context manager
+     * Standardize on SalesReceiptProcessor pattern:
+       - Better isolation (each processor manages sessions)
+       - Better error handling/reporting
+       - Context manager ensures cleanup
+       - More flexible session lifecycle
+     * Migration steps:
+       1. Update BaseProcessor to use session_manager
+       2. Update CompanyProcessor to match pattern
+       3. Update InvoiceProcessor to match pattern
+       4. Update remaining processors
 
 2. Error Handling:
    - Standardize error tracking across processors
@@ -102,12 +117,18 @@ After completing the current standardization work, several architectural improve
 3. Modified ProcessInvoicesCommand:
    - Added error_limit parameter
    - Converted Config to dictionary format
-   - Updated logging to match receipt flow pattern
+   - Added CompanyProcessor integration
+   - Updated logging structure:
+     * Added clear phase headers with visual separation
+     * Added validation summaries showing item counts
+     * Made logging levels consistent (info for important steps, debug for details)
+     * Aligned line item processing format with other phases
+     * Improved progress reporting across all phases
 
 ## Next Steps
-1. Continue with Phase 1: Adding company processing to invoice flow
-   - Now that Config dictionary conversion is done
-   - Next add CompanyProcessor integration
-   - Then update logging to match phase structure
+1. Continue with Phase 2: Product Processing
+   - Review and update ProductProcessor with validation and error tracking
+   - Add validation rules for product data
+   - Test product creation/lookup
 2. Each change should be small and testable
 3. Update this plan as we progress to keep it accurate

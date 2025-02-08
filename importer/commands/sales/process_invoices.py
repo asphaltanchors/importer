@@ -65,7 +65,70 @@ class ProcessInvoicesCommand(FileInputCommand):
                     self.logger.debug("Normalizing dataframe columns")
                 df = normalize_dataframe_columns(df)
                 self.logger.info(f"Found {len(df)} rows")
+
+                # Phase 1: Company Processing
+                self.logger.info("")
+                self.logger.info("=== Phase 1: Company Processing ===")
+                if self.debug:
+                    self.logger.debug("Initializing CompanyProcessor")
                 
+                # Initialize company processor with error tracking
+                company_processor = CompanyProcessor(config_dict, self.batch_size)
+                company_processor.debug = self.debug
+                
+                # Validate data before processing
+                critical_issues, warnings = company_processor.validate_data(df) if hasattr(company_processor, 'validate_data') else ([], [])
+                
+                # Show all validation issues
+                if warnings or critical_issues:
+                    self.logger.info("")
+                    self.logger.info("Company Validation Summary:")
+                    
+                    if critical_issues:
+                        self.logger.error("Critical Issues (must fix):")
+                        for issue in critical_issues:
+                            self.logger.error(f"  - {issue}")
+                        return
+                    
+                    if warnings:
+                        self.logger.warning("Rows that will be skipped:")
+                        for warning in warnings:
+                            self.logger.warning(f"  - {warning}")
+                        
+                        # Calculate valid rows
+                        skipped_rows = sum(int(w.split()[1]) for w in warnings if w.split()[1].isdigit())
+                        valid_rows = len(df) - skipped_rows
+                        self.logger.info(f"Will process {valid_rows} valid rows")
+                        if self.debug:
+                            self.logger.debug(f"Skipping {skipped_rows} rows due to validation warnings")
+                        self.logger.info("Continuing with processing...")
+                
+                # Process companies
+                processed_df = company_processor.process(df)
+                
+                # Get company processing results
+                company_stats = company_processor.get_stats()
+                company_result = {
+                    'success': company_stats.get('errors', 0) < self.error_limit,
+                    'summary': {
+                        'stats': company_stats
+                    }
+                }
+
+                if not company_result['success']:
+                    self.logger.error("Failed to process companies - too many errors")
+                    return
+
+                self.logger.info("Company processing complete")
+                self.logger.info(f"Domains extracted: {company_stats.get('domains_extracted', 0)}")
+                self.logger.info(f"Companies created: {company_stats.get('companies_created', 0)}")
+                self.logger.info(f"Rows with domain: {company_stats.get('rows_with_domain', 0)}")
+                if self.debug:
+                    self.logger.debug(f"Errors: {company_stats.get('errors', 0)}")
+
+                # Phase 2: Invoice Processing
+                self.logger.info("")
+                self.logger.info("=== Phase 2: Invoice Processing ===")
                 if self.debug:
                     self.logger.debug("Initializing InvoiceProcessor")
                 invoice_processor = InvoiceProcessor(session, self.batch_size)
@@ -74,7 +137,11 @@ class ProcessInvoicesCommand(FileInputCommand):
                 
                 # Convert processor results to our standard format
                 invoice_result = {
-                    'success': invoice_processor.stats['failed_batches'] == 0,
+                    'success': (
+                        invoice_processor.stats['failed_batches'] == 0 and
+                        invoice_processor.stats['errors'] < self.error_limit and
+                        invoice_processor.stats['created'] + invoice_processor.stats['updated'] > 0
+                    ),
                     'summary': {
                         'stats': invoice_processor.stats
                     }
@@ -82,40 +149,52 @@ class ProcessInvoicesCommand(FileInputCommand):
                 
                 if not invoice_result['success']:
                     self.logger.error("Failed to process invoices")
-                    if self.debug:
-                        self.logger.debug(f"Failed batches: {invoice_processor.stats['failed_batches']}")
+                    if invoice_processor.stats['failed_batches'] > 0:
+                        self.logger.error(f"Failed batches: {invoice_processor.stats['failed_batches']}")
+                    if invoice_processor.stats['errors'] >= self.error_limit:
+                        self.logger.error(f"Error limit reached: {invoice_processor.stats['errors']} errors")
+                    if invoice_processor.stats['created'] + invoice_processor.stats['updated'] == 0:
+                        self.logger.error("No invoices were created or updated")
                     return
                 
                 self.logger.info("Invoice processing complete")
+                self.logger.info(f"Created: {invoice_result['summary']['stats']['created']}")
+                self.logger.info(f"Updated: {invoice_result['summary']['stats']['updated']}")
+                self.logger.info(f"Errors: {invoice_result['summary']['stats']['errors']}")
+            
+            # Only proceed to line items if we have orders
+            if invoice_processor.stats['created'] + invoice_processor.stats['updated'] > 0:
+                self.logger.info("")
+                self.logger.info("=== Phase 3: Line Item Processing ===")
                 if self.debug:
-                    self.logger.debug(f"Created: {invoice_result['summary']['stats']['created']}")
-                    self.logger.debug(f"Updated: {invoice_result['summary']['stats']['updated']}")
-                    self.logger.debug(f"Errors: {invoice_result['summary']['stats']['errors']}")
-            
-            # Then process line items
-            self.logger.info("Processing line items")
-            if self.debug:
-                self.logger.debug("Initializing LineItemProcessor")
-            line_item_processor = LineItemProcessor(session_manager, self.batch_size)
-            line_item_processor.debug = self.debug  # Pass debug flag from command
-            line_item_result = line_item_processor.process_file(str(self.input_file))
-            
-            if not line_item_result['success']:
-                self.logger.error("Failed to process line items")
-                return
+                    self.logger.debug("Initializing LineItemProcessor")
+                line_item_processor = LineItemProcessor(session_manager, self.batch_size)
+                line_item_processor.debug = self.debug  # Pass debug flag from command
+                line_item_result = line_item_processor.process_file(str(self.input_file))
                 
-            self.logger.info("Line item processing complete")
-            if self.debug:
-                self.logger.debug(f"Total line items: {line_item_result['summary']['stats']['total_line_items']}")
-                self.logger.debug(f"Orders processed: {line_item_result['summary']['stats']['orders_processed']}")
-                self.logger.debug(f"Products not found: {line_item_result['summary']['stats']['products_not_found']}")
-                self.logger.debug(f"Orders not found: {line_item_result['summary']['stats']['orders_not_found']}")
+                if not line_item_result['success']:
+                    self.logger.error("Failed to process line items")
+                    if 'validation_issues' in line_item_result['summary']:
+                        self.logger.error("Validation issues:")
+                        for issue in line_item_result['summary']['validation_issues']:
+                            self.logger.error(f"  - {issue}")
+                    return
+                    
+                self.logger.info("Line item processing complete")
+                self.logger.info(f"Total line items: {line_item_result['summary']['stats']['total_line_items']}")
+                self.logger.info(f"Orders processed: {line_item_result['summary']['stats']['orders_processed']}")
+                self.logger.info(f"Products not found: {line_item_result['summary']['stats']['products_not_found']}")
+                self.logger.info(f"Orders not found: {line_item_result['summary']['stats']['orders_not_found']}")
+            else:
+                self.logger.info("Skipping line item processing since no invoices were created")
+                return
             
             # Save results if output file specified
             if self.output_file:
                 if self.debug:
                     self.logger.debug(f"Saving results to {self.output_file}")
                 results = {
+                    'company_processing': company_result,
                     'invoice_processing': invoice_result,
                     'line_item_processing': line_item_result
                 }

@@ -1,9 +1,7 @@
 """Line item processor for sales data."""
 
-# Debug flag for order items processing - set to False for production
-DEBUG_ORDER_ITEMS = True
-
 from datetime import datetime
+import click
 from decimal import Decimal, InvalidOperation
 from typing import Dict, Any, List, Set
 from pathlib import Path
@@ -21,22 +19,26 @@ from ..utils.csv_normalization import (
     validate_json_data
 )
 from .base import BaseProcessor
+from .error_tracker import ErrorTracker
 
 class LineItemProcessor(BaseProcessor):
     """Process line items from sales data."""
     
-    def __init__(self, session_manager, batch_size: int = 100):
+    def __init__(self, session_manager, batch_size: int = 100, error_limit: int = 1000):
         """Initialize the processor.
         
         Args:
             session_manager: Database session manager
             batch_size: Number of orders to process per batch
+            error_limit: Maximum number of errors before stopping
         """
         self.session_manager = session_manager
         super().__init__(None, batch_size)  # We'll manage sessions ourselves
         
         # Track processed items
         self.processed_orders: Set[str] = set()
+        self.error_limit = error_limit
+        self.error_tracker = ErrorTracker()
         
         # Field mappings from CSV to our schema
         self.field_mappings = {
@@ -68,13 +70,13 @@ class LineItemProcessor(BaseProcessor):
         try:
             # Read CSV into DataFrame and normalize column names
             df = pd.read_csv(file_path)
-            if DEBUG_ORDER_ITEMS:
-                self.logger.info(f"Raw CSV data shape: {df.shape}")
-                self.logger.info(f"Raw columns before normalization: {df.columns.tolist()}")
+            if self.debug:
+                self.logger.debug(f"Raw CSV data shape: {df.shape}")
+                self.logger.debug(f"Raw columns before normalization: {df.columns.tolist()}")
             
             df = normalize_dataframe_columns(df)
-            if DEBUG_ORDER_ITEMS:
-                self.logger.info(f"Normalized columns: {df.columns.tolist()}")
+            if self.debug:
+                self.logger.debug(f"Normalized columns: {df.columns.tolist()}")
             
             # Validate required columns
             required_columns = ['Product/Service']
@@ -94,21 +96,30 @@ class LineItemProcessor(BaseProcessor):
             # Group by invoice/receipt number
             invoice_groups = df.groupby(group_by_col)
             total_invoices = len(invoice_groups)
-            if DEBUG_ORDER_ITEMS:
-                self.logger.info(f"Total rows in CSV: {len(df)}")
-                self.logger.info(f"Found {total_invoices} unique invoice numbers")
+            if self.debug:
+                self.logger.debug(f"Total rows in CSV: {len(df)}")
+                self.logger.debug(f"Found {total_invoices} unique invoice numbers")
                 # Show first few rows of data
-                self.logger.info("First few rows of normalized data:")
+                self.logger.debug("First few rows of normalized data:")
                 for idx, row in df.head().iterrows():
-                    self.logger.info(f"Row {idx}: {row.to_dict()}")
+                    self.logger.debug(f"Row {idx}: {row.to_dict()}")
             
-            self.logger.info(f"Processing {total_invoices} invoices")
+            # Show validation summary
+            self.logger.info("Line Item Validation Summary:")
+            self.logger.info(f"Found {total_invoices} invoices with {len(df)} total line items")
+            self.logger.info("Starting line item processing...")
             if self.debug:
                 self.logger.debug(f"Batch size: {self.batch_size}")
+            
+            # Show processing plan
+            self.logger.info(f"Will process in batches of {self.batch_size}")
+            if self.debug:
+                self.logger.debug(f"Total batches: {(len(df) + self.batch_size - 1) // self.batch_size}")
             
             # Process in batches
             current_batch = []
             batch_num = 1
+            self.logger.info("Processing line items...")
             
             for invoice_number, invoice_df in invoice_groups:
                 if invoice_number in self.processed_orders:
@@ -137,7 +148,7 @@ class LineItemProcessor(BaseProcessor):
             }
             
         except Exception as e:
-            logging.error(f"Failed to process file: {str(e)}")
+            self.logger.error(f"Failed to process file: {str(e)}")
             return {
                 'success': False,
                 'summary': {
@@ -226,14 +237,13 @@ class LineItemProcessor(BaseProcessor):
                         order.taxAmount = tax_amount
                         order.totalAmount = subtotal + tax_amount  # Shipping is included in subtotal
                         
-                        # Print order summary if debug enabled
-                        if DEBUG_ORDER_ITEMS:
-                            self.logger.info(
+                        # Print order summary
+                        if self.debug:
+                            self.logger.debug(
                                 f"Order {order.orderNumber}: {items_found + items_skipped} items "
                                 f"(Found: {items_found}, Skipped: {items_skipped}), "
                                 f"subtotal: ${subtotal:.2f}, tax: ${tax_amount:.2f}"
                             )
-                        elif self.debug:
                             self.logger.debug(f"Updated order {order.orderNumber} totals:")
                             self.logger.debug(f"  Subtotal: {order.subtotal}")
                             self.logger.debug(f"  Tax: {order.taxAmount}")
@@ -246,7 +256,11 @@ class LineItemProcessor(BaseProcessor):
                         self.stats['orders_processed'] += 1
                             
                     except Exception as e:
-                        logging.error(f"Error processing invoice {invoice_number}: {str(e)}")
+                        self.error_tracker.add_error(
+                            'INVOICE_PROCESSING_ERROR',
+                            f"Error processing invoice {invoice_number}: {str(e)}",
+                            {'invoice_number': invoice_number, 'error': str(e)}
+                        )
                         continue
                 
                 # Commit batch
@@ -256,7 +270,11 @@ class LineItemProcessor(BaseProcessor):
         except Exception as e:
             self.stats['failed_batches'] += 1
             self.stats['total_errors'] += 1
-            logging.error(f"Error processing batch: {str(e)}")
+            self.error_tracker.add_error(
+                'BATCH_PROCESSING_ERROR',
+                f"Error processing batch: {str(e)}",
+                {'error': str(e)}
+            )
     
     def _process_line_item(self, row: pd.Series, order_id: str, session: Session) -> Dict[str, Any]:
         """Process a single line item."""
@@ -269,15 +287,15 @@ class LineItemProcessor(BaseProcessor):
         try:
             product_code = self.get_mapped_field(row, 'product_code')
             if not product_code:
-                if DEBUG_ORDER_ITEMS:
-                    self.logger.info("Skipping row - no product code found")
+                if self.debug:
+                    self.logger.debug("Skipping row - no product code found")
                 return result  # Skip empty rows
             
             # Map product code using common utility
             description = self.get_mapped_field(row, 'description')
             mapped_code = map_product_code(product_code, description)
-            if DEBUG_ORDER_ITEMS:
-                self.logger.info(f"Product mapping: '{product_code}' -> '{mapped_code}' (description: '{description}')")
+            if self.debug:
+                self.logger.debug(f"Product mapping: '{product_code}' -> '{mapped_code}' (description: '{description}')")
             
             # Look up product
             product = session.query(Product).filter(
@@ -289,8 +307,8 @@ class LineItemProcessor(BaseProcessor):
             
             if not product:
                 self.stats['products_not_found'] += 1
-                if DEBUG_ORDER_ITEMS:
-                    self.logger.info(f"Product not found in database: {mapped_code} (original: {product_code})")
+                if self.debug:
+                    self.logger.debug(f"Product not found in database: {mapped_code} (original: {product_code})")
                 result['success'] = False
                 result['error'] = {
                     'severity': 'ERROR',
