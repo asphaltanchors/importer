@@ -3,12 +3,13 @@
 ## Technologies Used
 
 ### Core Stack
-- Python 3.8+
-- Poetry (package manager)
+- Python 3.11 (specified in Dockerfile)
+- Poetry 2.0.1 (package manager)
 - SQLAlchemy ORM
 - PostgreSQL Database
 - Pandas for data processing
 - Click for CLI interface
+- Docker for containerization
 
 ### Key Libraries
 - pandas: CSV processing and data manipulation
@@ -26,7 +27,31 @@
 2. PostgreSQL database
    - Configure in .env: `DATABASE_URL="postgresql://user:password@localhost:5432/dbname"`
 
-3. Development tools (VSCode, etc.)
+3. Docker Setup (Production)
+   - Build image: `docker build -t py-importer .`
+   - Run with env file: `docker run --rm --env-file .env.docker py-importer`
+   - Volume mount for data: `-v $(pwd)/data/input:/data/input`
+   - Logging to: `/var/log/importer/import.log`
+   - Daily cron job via supercronic
+
+4. Development tools (VSCode, etc.)
+
+## Deployment Architecture
+
+### Container Configuration
+- Multi-stage Docker build for minimal image size
+- Non-root user (importer_user) for security
+- Supercronic for reliable cron execution
+- Volume mounting for data input
+- Structured logging to /var/log/importer
+- Environment configuration via .env files
+
+### Scheduled Execution
+- Daily import job at 6 AM via cron (configured in crontab.txt)
+- Automated CSV processing from mounted volume (/data/input)
+- File archiving after processing
+- Comprehensive logging to /var/log/importer/import.log
+- Execution via supercronic for reliable containerized scheduling
 
 ## Technical Constraints
 
