@@ -1,87 +1,24 @@
 """Integration tests for invoice import with full processing sequence."""
 
-import pytest
-from pathlib import Path
-import tempfile
-import csv
+import os
 from datetime import datetime
 import pandas as pd
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 from ..processors.invoice import InvoiceProcessor
 from ..processors.company import CompanyProcessor
 from ..processors.product import ProductProcessor
 from ..utils import generate_uuid
 from ..db.models import (
-    Customer, Company, Product, Base,
+    Customer, Company, Product,
     Order, OrderStatus, PaymentStatus, OrderItem
 )
-
-@pytest.fixture
-def engine():
-    """Create a test database engine."""
-    engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
-    return engine
-
-@pytest.fixture
-def session_manager(engine):
-    """Create a session manager for testing."""
-    return sessionmaker(bind=engine)
-
-@pytest.fixture
-def session(engine):
-    """Create a test database session."""
-    with Session(engine) as session:
-        # Create test company
-        company = Company(
-            id='test-company',
-            name='Test Company',
-            domain='example.com'
-        )
-        session.add(company)
-        
-        # Create test product
-        product = Product(
-            id='test-product',
-            productCode='TEST001',
-            name='Test Product',
-            description='Test product for invoice import',
-            unitPrice=100.00
-        )
-        session.add(product)
-        
-        session.commit()
-        
-        yield session
-
-def create_test_csv(rows):
-    """Create a temporary CSV file with test data."""
-    fd, path = tempfile.mkstemp(suffix='.csv')
-    with open(path, 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=[
-            'Invoice No',
-            'Invoice Date',
-            'Customer',
-            'Terms',
-            'Due Date',
-            'Status',
-            'Product/Service',
-            'Product/Service Description',
-            'Qty',
-            'Product/Service  Amount',
-            'Product/Service Sales Tax'
-        ])
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
-    return Path(path)
 
 def test_validate_data(session_manager):
     """Test invoice data validation."""
     processor = InvoiceProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=100,
         error_limit=10
     )
@@ -113,7 +50,7 @@ def test_validate_data(session_manager):
 def test_invoice_full_processing_sequence(session_manager):
     """Test the complete invoice processing sequence."""
     config = {
-        'database_url': 'sqlite:///:memory:',
+        'database_url': os.getenv('TEST_DATABASE_URL'),
         'batch_size': 100,
         'error_limit': 10
     }
@@ -163,7 +100,7 @@ def test_invoice_full_processing_sequence(session_manager):
     assert stats['total_errors'] == 0
     
     # Verify relationships
-    with Session(create_engine('sqlite:///:memory:')) as session:
+    with Session(create_engine(os.getenv('TEST_DATABASE_URL'))) as session:
         # Verify company was created
         company = session.query(Company).filter_by(domain='newcustomer.com').first()
         assert company is not None

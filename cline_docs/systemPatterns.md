@@ -95,6 +95,22 @@ The system is designed to be idempotent - running the same import multiple times
 - Validate data before processing
 - Each phase has its own validation rules
 
+## Testing Patterns
+
+### Database Test Isolation
+- Use autouse fixture to truncate tables between tests
+- Ensure clean state for each test run
+- Prevent test interdependencies
+- Make test failures deterministic
+- Follow database testing best practices
+
+### Test Fixtures
+- session_manager: Creates database session managers
+- session: Provides transactional test sessions
+- populated_session: Sets up common test data
+- clean_tables: Ensures test isolation
+- Fixtures follow clear dependency chain
+
 ## Database Operations
 
 ### Session Management

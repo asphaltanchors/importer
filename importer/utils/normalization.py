@@ -195,6 +195,9 @@ def normalize_domain(domain: str) -> Optional[str]:
     - sub.example.co.uk -> example.co.uk
     - app.staging.company.com -> company.com
     
+    Since this is primarily used for email domains, it automatically prepends
+    https:// to properly use the tld package's domain parsing.
+    
     Args:
         domain: The domain name to normalize
         
@@ -205,9 +208,11 @@ def normalize_domain(domain: str) -> Optional[str]:
         return None
         
     try:
+        # Ensure domain has protocol for tld package
+        prefixed_domain = f"https://{domain.strip().lower()}"
         # get_fld returns the "first level domain" - the registrable domain
         # without subdomains but including the public suffix
-        return get_fld(domain.strip().lower(), fix_protocol=True)
+        return get_fld(prefixed_domain)
     except (TldDomainNotFound, TldBadUrl):
         return None
 

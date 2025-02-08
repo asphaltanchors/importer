@@ -1,35 +1,17 @@
 """Integration tests for product processing phase."""
 
-import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+import os
 import pandas as pd
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 from ..processors.product import ProductProcessor
-from ..db.models import Product, Base
-
-@pytest.fixture
-def engine():
-    """Create a test database engine."""
-    engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
-    return engine
-
-@pytest.fixture
-def session_manager(engine):
-    """Create a session manager for testing."""
-    return sessionmaker(bind=engine)
-
-@pytest.fixture
-def session(engine):
-    """Create a test database session."""
-    with Session(engine) as session:
-        yield session
+from ..db.models import Product
 
 def test_validate_data(session_manager):
     """Test product data validation."""
     processor = ProductProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=100,
         error_limit=10
     )
@@ -69,7 +51,7 @@ def test_validate_data(session_manager):
 def test_product_creation_basic(session_manager):
     """Test basic product creation."""
     processor = ProductProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=100,
         error_limit=10,
         debug=True
@@ -94,7 +76,7 @@ def test_product_creation_basic(session_manager):
 def test_product_system_products(session_manager):
     """Test creation of system-defined products."""
     processor = ProductProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=100,
         error_limit=10
     )
@@ -104,7 +86,7 @@ def test_product_system_products(session_manager):
     result = processor.process(data)
     
     # Verify system products were created
-    with Session(create_engine('sqlite:///:memory:')) as session:
+    with Session(create_engine(os.getenv('TEST_DATABASE_URL'))) as session:
         products = session.query(Product).all()
         codes = [p.productCode for p in products]
         # Check for required system products
@@ -115,7 +97,7 @@ def test_product_system_products(session_manager):
 def test_product_code_mapping(session_manager):
     """Test product code mapping and normalization."""
     processor = ProductProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=100,
         error_limit=10
     )
@@ -151,7 +133,7 @@ def test_product_code_mapping(session_manager):
 def test_product_idempotent_processing(session_manager):
     """Test idempotent product processing."""
     processor = ProductProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=100,
         error_limit=10
     )
@@ -169,7 +151,7 @@ def test_product_idempotent_processing(session_manager):
     
     # Reset processor for second run
     processor = ProductProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=100,
         error_limit=10
     )
@@ -184,7 +166,7 @@ def test_product_idempotent_processing(session_manager):
 def test_product_description_update(session_manager):
     """Test updating product description."""
     processor = ProductProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=100,
         error_limit=10
     )
@@ -212,14 +194,14 @@ def test_product_description_update(session_manager):
     assert stats2['updated'] == 1
     
     # Verify description was updated
-    with Session(create_engine('sqlite:///:memory:')) as session:
+    with Session(create_engine(os.getenv('TEST_DATABASE_URL'))) as session:
         product = session.query(Product).filter_by(productCode='PROD001').first()
         assert product.description == 'Updated Description'
 
 def test_product_batch_processing(session_manager):
     """Test product batch processing."""
     processor = ProductProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=2,  # Small batch size for testing
         error_limit=10
     )
@@ -244,7 +226,7 @@ def test_product_batch_processing(session_manager):
 def test_product_error_handling(session_manager):
     """Test error handling and validation."""
     processor = ProductProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=100,
         error_limit=2  # Low error limit for testing
     )
@@ -280,7 +262,7 @@ def test_product_error_handling(session_manager):
 def test_debug_logging(session_manager):
     """Test debug logging functionality."""
     processor = ProductProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=100,
         error_limit=10,
         debug=True

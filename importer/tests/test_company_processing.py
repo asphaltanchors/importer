@@ -1,35 +1,17 @@
 """Integration tests for company processing phase."""
 
-import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+import os
 import pandas as pd
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 from ..processors.company import CompanyProcessor
-from ..db.models import Company, Base
-
-@pytest.fixture
-def engine():
-    """Create a test database engine."""
-    engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
-    return engine
-
-@pytest.fixture
-def session_manager(engine):
-    """Create a session manager for testing."""
-    return sessionmaker(bind=engine)
-
-@pytest.fixture
-def session(engine):
-    """Create a test database session."""
-    with Session(engine) as session:
-        yield session
+from ..db.models import Company
 
 def test_company_creation_basic(session_manager):
     """Test basic company creation from domain."""
     processor = CompanyProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=100,
         error_limit=10,
         debug=True
@@ -54,9 +36,10 @@ def test_company_creation_basic(session_manager):
 def test_company_domain_normalization(session_manager):
     """Test company domain normalization."""
     processor = CompanyProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=100,
-        error_limit=10
+        error_limit=10,
+        debug=True
     )
     
     # Create test data with various email formats
@@ -79,9 +62,10 @@ def test_company_domain_normalization(session_manager):
 def test_company_idempotent_processing(session_manager):
     """Test idempotent company processing."""
     processor = CompanyProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=100,
-        error_limit=10
+        error_limit=10,
+        debug=True
     )
     
     # Create test data
@@ -96,7 +80,7 @@ def test_company_idempotent_processing(session_manager):
     
     # Reset processor for second run
     processor = CompanyProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=100,
         error_limit=10
     )
@@ -112,7 +96,7 @@ def test_company_idempotent_processing(session_manager):
 def test_company_batch_processing(session_manager):
     """Test company batch processing."""
     processor = CompanyProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=2,  # Small batch size for testing
         error_limit=10
     )
@@ -139,7 +123,7 @@ def test_company_batch_processing(session_manager):
 def test_company_error_handling(session_manager):
     """Test company processing error handling."""
     processor = CompanyProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=100,
         error_limit=2  # Low error limit for testing
     )
@@ -163,7 +147,7 @@ def test_company_error_handling(session_manager):
 def test_validate_data(session_manager):
     """Test data validation."""
     processor = CompanyProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=100,
         error_limit=10
     )
@@ -191,36 +175,38 @@ def test_validate_data(session_manager):
 def test_extract_email_domain(session_manager):
     """Test domain extraction from various fields."""
     processor = CompanyProcessor(
-        config={'database_url': 'sqlite:///:memory:'},
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
         batch_size=100,
         error_limit=10
     )
     
     # Test various email locations
     test_cases = [
-        {
-            'Customer': 'Test Company',
-            'Main Email': 'test@example.com',
-            'expected_domain': 'example.com'
-        },
-        {
-            'Customer': 'Test Company',
-            'Billing Address Email': 'billing@company.com',
-            'expected_domain': 'company.com'
-        },
-        {
-            'Customer': 'Test Company',
-            'Notes': 'Contact at: support@business.com',
-            'expected_domain': 'business.com'
-        },
-        {
-            'Customer': 'acme.com',  # Domain-like company name
-            'expected_domain': 'acme.com'
-        }
+            {
+                'Customer': 'Test Company',
+                'Main Email': 'test@example.com',
+                'expected_domain': 'example.com'
+            },
+            {
+                'Customer': 'Test Company',
+                'Billing Address Email': 'billing@company.com',
+                'expected_domain': 'company.com'
+            },
+            {
+                'Customer': 'Test Company',
+                'Notes': 'Contact at: support@business.com',
+                'expected_domain': 'business.com'
+            },
+            {
+                'Customer': 'acme.com',  # Domain-like company name
+                'expected_domain': 'acme.com'
+            }
     ]
     
     for case in test_cases:
-        expected = case.pop('expected_domain')
-        row = pd.Series(case)
+        # Create a copy of the case to preserve original data for error reporting
+        case_copy = case.copy()
+        expected = case_copy.pop('expected_domain')
+        row = pd.Series(case_copy)
         domain = processor.extract_email_domain(row)
-        assert domain == expected, f"Failed to extract domain from {case}"
+        assert domain == expected, f"Failed to extract domain from {case} - got '{domain}' but expected '{expected}'"
