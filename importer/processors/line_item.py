@@ -1,10 +1,8 @@
 """Line item processor for sales data."""
 
 from datetime import datetime
-import click
 from decimal import Decimal, InvalidOperation
-from typing import Dict, Any, List, Set
-from pathlib import Path
+from typing import Dict, Any, List, Set, Tuple
 import logging
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -13,31 +11,34 @@ from ..db.models import Product, OrderItem, Order
 from ..utils import generate_uuid
 from ..utils.product_mapping import map_product_code
 from ..utils.system_products import is_tax_product, is_shipping_product
-from ..utils.csv_normalization import (
-    normalize_dataframe_columns, 
-    validate_required_columns,
-    validate_json_data
-)
+from ..utils.csv_normalization import validate_json_data
+from ..db.session import SessionManager
 from .base import BaseProcessor
 from .error_tracker import ErrorTracker
 
-class LineItemProcessor(BaseProcessor):
+class LineItemProcessor(BaseProcessor[Dict[str, Any]]):
     """Process line items from sales data."""
     
-    def __init__(self, session_manager, batch_size: int = 100, error_limit: int = 1000):
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        batch_size: int = 100,
+        error_limit: int = 1000,
+        debug: bool = False
+    ):
         """Initialize the processor.
         
         Args:
-            session_manager: Database session manager
+            config: Configuration dictionary containing database_url
             batch_size: Number of orders to process per batch
             error_limit: Maximum number of errors before stopping
+            debug: Enable debug logging
         """
-        self.session_manager = session_manager
-        super().__init__(None, batch_size)  # We'll manage sessions ourselves
+        session_manager = SessionManager(config['database_url'])
+        super().__init__(session_manager, batch_size, error_limit, debug)
         
         # Track processed items
         self.processed_orders: Set[str] = set()
-        self.error_limit = error_limit
         self.error_tracker = ErrorTracker()
         
         # Field mappings from CSV to our schema
@@ -49,112 +50,73 @@ class LineItemProcessor(BaseProcessor):
             'service_date': ['Service Date']
         }
         
-        # Additional stats
-        self.stats.update({
-            'total_line_items': 0,
-            'orders_processed': 0,
-            'products_not_found': 0,
-            'orders_not_found': 0,
-            'skipped_items': 0
-        })
-        
-    def process_file(self, file_path: Path) -> Dict[str, Any]:
-        """Process line items from a CSV file.
+        # Add line item-specific stats
+        self.stats.total_line_items = 0
+        self.stats.orders_processed = 0
+        self.stats.products_not_found = 0
+        self.stats.orders_not_found = 0
+        self.stats.skipped_items = 0
+
+    def validate_data(self, df: pd.DataFrame) -> Tuple[List[str], List[str]]:
+        """Validate data before processing.
         
         Args:
-            file_path: Path to CSV file
+            df: DataFrame to validate
             
         Returns:
-            Dict containing processing results
+            Tuple of (critical_issues, warnings)
         """
-        try:
-            # Read CSV into DataFrame and normalize column names
-            df = pd.read_csv(file_path)
-            if self.debug:
-                self.logger.debug(f"Raw CSV data shape: {df.shape}")
-                self.logger.debug(f"Raw columns before normalization: {df.columns.tolist()}")
-            
-            df = normalize_dataframe_columns(df)
-            if self.debug:
-                self.logger.debug(f"Normalized columns: {df.columns.tolist()}")
-            
-            # Validate required columns
-            required_columns = ['Product/Service']
-            if not validate_required_columns(df, required_columns):
-                raise ValueError("Missing required columns in CSV file")
-            
-            # Determine if this is a sales receipt file
-            is_sales_receipt = 'Sales Receipt No' in df.columns
-            group_by_col = 'Sales Receipt No' if is_sales_receipt else 'Invoice No'
-            
-            if self.debug:
-                self.logger.debug(f"CSV columns: {df.columns.tolist()}")
-            
-            # Convert invoice numbers to strings to match order lookup
-            df[group_by_col] = df[group_by_col].astype(str).str.strip()
-            
-            # Group by invoice/receipt number
-            invoice_groups = df.groupby(group_by_col)
-            total_invoices = len(invoice_groups)
-            if self.debug:
-                self.logger.debug(f"Total rows in CSV: {len(df)}")
-                self.logger.debug(f"Found {total_invoices} unique invoice numbers")
-                # Show first few rows of data
-                self.logger.debug("First few rows of normalized data:")
-                for idx, row in df.head().iterrows():
-                    self.logger.debug(f"Row {idx}: {row.to_dict()}")
-            
-            # Show validation summary
-            self.logger.info("Line Item Validation Summary:")
-            self.logger.info(f"Found {total_invoices} invoices with {len(df)} total line items")
-            self.logger.info("Starting line item processing...")
-            if self.debug:
-                self.logger.debug(f"Batch size: {self.batch_size}")
-            
-            # Show processing plan
-            self.logger.info(f"Will process in batches of {self.batch_size}")
-            if self.debug:
-                self.logger.debug(f"Total batches: {(len(df) + self.batch_size - 1) // self.batch_size}")
-            
-            # Process in batches
-            current_batch = []
-            batch_num = 1
-            self.logger.info("Processing line items...")
-            
-            for invoice_number, invoice_df in invoice_groups:
-                if invoice_number in self.processed_orders:
-                    continue
-                    
-                current_batch.append((invoice_number, invoice_df))
-                
-                if len(current_batch) >= self.batch_size:
-                    self._process_batch(current_batch)
-                    if self.debug:
-                        self.logger.debug(f"Batch {batch_num} complete ({len(current_batch)} invoices)")
-                    current_batch = []
-                    batch_num += 1
-            
-            # Process final batch if any
-            if current_batch:
-                self._process_batch(current_batch)
-                if self.debug:
-                    self.logger.debug(f"Final batch complete ({len(current_batch)} invoices)")
-            
-            return {
-                'success': self.stats['failed_batches'] == 0,
-                'summary': {
-                    'stats': self.stats
-                }
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Failed to process file: {str(e)}")
-            return {
-                'success': False,
-                'summary': {
-                    'stats': self.stats
-                }
-            }
+        critical_issues = []
+        warnings = []
+        
+        # Check required columns
+        required_columns = ['Product/Service']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            critical_issues.append(f"Missing required columns: {', '.join(missing_columns)}")
+            return critical_issues, warnings
+        
+        # Check for empty product codes
+        empty_products = df[df['Product/Service'].isna()]
+        if not empty_products.empty:
+            msg = (f"Found {len(empty_products)} rows with missing product codes that will be skipped. "
+                  f"First few row numbers: {', '.join(map(str, empty_products.index[:3]))}")
+            warnings.append(msg)
+        
+        # Check for missing amounts
+        if 'Product/Service Amount' in df.columns:
+            invalid_amounts = []
+            for idx, amount_str in df['Product/Service Amount'].items():
+                if pd.notna(amount_str):
+                    try:
+                        cleaned = str(amount_str).replace('$', '').replace(',', '')
+                        Decimal(cleaned)
+                    except InvalidOperation:
+                        invalid_amounts.append(f"Row {idx}: {amount_str}")
+                        if len(invalid_amounts) >= 3:
+                            break
+            if invalid_amounts:
+                msg = (f"Found rows with invalid amounts that will be skipped. "
+                      f"Examples: {', '.join(invalid_amounts)}")
+                warnings.append(msg)
+        
+        # Check for invalid service dates
+        if 'Service Date' in df.columns:
+            invalid_dates = []
+            for idx, date_str in df['Service Date'].items():
+                if pd.notna(date_str):
+                    try:
+                        datetime.strptime(str(date_str), '%m-%d-%Y')
+                    except ValueError:
+                        invalid_dates.append(f"Row {idx}: {date_str}")
+                        if len(invalid_dates) >= 3:
+                            break
+            if invalid_dates:
+                msg = (f"Found rows with invalid service dates that will be skipped. "
+                      f"Examples: {', '.join(invalid_dates)}")
+                warnings.append(msg)
+        
+        return critical_issues, warnings
     
     def _clear_existing_line_items(self, order_id: str, session: Session) -> None:
         """Remove existing line items for an order before processing new ones.
@@ -169,112 +131,127 @@ class LineItemProcessor(BaseProcessor):
             OrderItem.orderId == order_id
         ).delete()
 
-    def _process_batch(self, batch: List[tuple[str, pd.DataFrame]]) -> None:
+    def _process_batch(self, session: Session, batch_df: pd.DataFrame) -> pd.DataFrame:
         """Process a batch of line items.
         
         Args:
-            batch: List of (invoice_number, invoice_df) tuples
+            session: Database session for this batch
+            batch_df: DataFrame containing batch of rows to process
+            
+        Returns:
+            Processed DataFrame with order IDs
         """
-        try:
-            with self.session_manager as session:
-                for invoice_number, invoice_df in batch:
-                    try:
-                        # Find order
-                        if self.debug:
-                            self.logger.debug(f"Looking for order {invoice_number}")
-                        order = session.query(Order).filter(
-                            Order.orderNumber == str(invoice_number)
-                        ).first()
+        if self.debug:
+            self.logger.debug(f"Processing batch of {len(batch_df)} rows")
+            
+        # Determine if this is a sales receipt file
+        is_sales_receipt = 'Sales Receipt No' in batch_df.columns
+        group_by_col = 'Sales Receipt No' if is_sales_receipt else 'Invoice No'
+        
+        # Convert invoice numbers to strings to match order lookup
+        batch_df[group_by_col] = batch_df[group_by_col].astype(str).str.strip()
+        
+        # Group by invoice/receipt number
+        invoice_groups = batch_df.groupby(group_by_col)
+        if self.debug:
+            self.logger.debug(f"Found {len(invoice_groups)} unique invoice numbers")
+        
+        # Process each invoice
+        for invoice_number, invoice_df in invoice_groups:
+            try:
+                if invoice_number in self.processed_orders:
+                    if self.debug:
+                        self.logger.debug(f"Skipping already processed invoice {invoice_number}")
+                    continue
+                
+                # Find order
+                if self.debug:
+                    self.logger.debug(f"Looking for order {invoice_number}")
+                order = session.query(Order).filter(
+                    Order.orderNumber == str(invoice_number)
+                ).first()
+                
+                if not order:
+                    self.stats.orders_not_found += 1
+                    self.logger.error(f"Order not found for invoice {invoice_number}")
+                    continue
+                
+                if self.debug:
+                    self.logger.debug(f"Found order {order.id} for invoice {invoice_number}")
+                
+                # Clear existing line items before processing new ones
+                self._clear_existing_line_items(order.id, session)
+                
+                # Initialize running totals and counters
+                subtotal = Decimal('0')
+                tax_amount = Decimal('0')
+                items_found = 0
+                items_skipped = 0
+                
+                # Process each line item
+                for _, row in invoice_df.iterrows():
+                    if self.debug:
+                        self.logger.debug(f"Processing row: {row.to_dict()}")
+                    result = self._process_line_item(row, order.id, session)
+                    if result['success'] and result['line_item']:
+                        item = result['line_item']
+                        self.stats.total_line_items += 1
                         
-                        if not order:
-                            self.stats['orders_not_found'] += 1
-                            self.logger.error(f"Order not found for invoice {invoice_number}")
+                        # Skip NaN amounts
+                        if item.amount is None or pd.isna(item.amount):
+                            if self.debug:
+                                self.logger.debug(f"Skipping NaN amount for {item.productCode}")
+                            items_skipped += 1
                             continue
                         
-                        if self.debug:
-                            self.logger.debug(f"Found order {order.id} for invoice {invoice_number}")
+                        items_found += 1
                         
-                        # Clear existing line items before processing new ones
-                        self._clear_existing_line_items(order.id, session)
-                        
-                        # Initialize running totals and counters
-                        subtotal = Decimal('0')
-                        tax_amount = Decimal('0')
-                        items_found = 0
-                        items_skipped = 0
-                        
-                        # Process each line item
-                        for _, row in invoice_df.iterrows():
+                        # Add to running totals
+                        if is_tax_product(item.productCode):
+                            tax_amount += item.amount
                             if self.debug:
-                                self.logger.debug(f"Processing row: {row.to_dict()}")
-                            result = self._process_line_item(row, order.id, session)
-                            if result['success'] and result['line_item']:
-                                item = result['line_item']
-                                self.stats['total_line_items'] += 1
-                                
-                                # Skip NaN amounts
-                                if item.amount is None or pd.isna(item.amount):
-                                    if self.debug:
-                                        self.logger.debug(f"Skipping NaN amount for {item.productCode}")
-                                    items_skipped += 1
-                                    continue
-                                
-                                items_found += 1
-                                
-                                # Add to running totals
-                                if is_tax_product(item.productCode):
-                                    tax_amount += item.amount
-                                    if self.debug:
-                                        self.logger.debug(f"Added tax amount: {item.amount}")
-                                else:
-                                    # Everything else (including shipping) goes to subtotal
-                                    subtotal += item.amount
-                                    if self.debug:
-                                        self.logger.debug(f"Added to subtotal: {item.amount}")
-                        
-                        # Update order totals
-                        order.subtotal = subtotal
-                        order.taxAmount = tax_amount
-                        order.totalAmount = subtotal + tax_amount  # Shipping is included in subtotal
-                        
-                        # Print order summary
-                        if self.debug:
-                            self.logger.debug(
-                                f"Order {order.orderNumber}: {items_found + items_skipped} items "
-                                f"(Found: {items_found}, Skipped: {items_skipped}), "
-                                f"subtotal: ${subtotal:.2f}, tax: ${tax_amount:.2f}"
-                            )
-                            self.logger.debug(f"Updated order {order.orderNumber} totals:")
-                            self.logger.debug(f"  Subtotal: {order.subtotal}")
-                            self.logger.debug(f"  Tax: {order.taxAmount}")
-                            self.logger.debug(f"  Total: {order.totalAmount}")
-                        
-                        # Ensure changes are flushed to DB
-                        session.flush()
-                        
-                        self.processed_orders.add(invoice_number)
-                        self.stats['orders_processed'] += 1
-                            
-                    except Exception as e:
-                        self.error_tracker.add_error(
-                            'INVOICE_PROCESSING_ERROR',
-                            f"Error processing invoice {invoice_number}: {str(e)}",
-                            {'invoice_number': invoice_number, 'error': str(e)}
-                        )
-                        continue
+                                self.logger.debug(f"Added tax amount: {item.amount}")
+                        else:
+                            # Everything else (including shipping) goes to subtotal
+                            subtotal += item.amount
+                            if self.debug:
+                                self.logger.debug(f"Added to subtotal: {item.amount}")
                 
-                # Commit batch
-                session.commit()
-                self.stats['successful_batches'] += 1
+                # Update order totals
+                order.subtotal = subtotal
+                order.taxAmount = tax_amount
+                order.totalAmount = subtotal + tax_amount  # Shipping is included in subtotal
                 
-        except Exception as e:
-            self.stats['failed_batches'] += 1
-            self.stats['total_errors'] += 1
-            self.error_tracker.add_error(
-                'BATCH_PROCESSING_ERROR',
-                f"Error processing batch: {str(e)}",
-                {'error': str(e)}
-            )
+                # Print order summary
+                if self.debug:
+                    self.logger.debug(
+                        f"Order {order.orderNumber}: {items_found + items_skipped} items "
+                        f"(Found: {items_found}, Skipped: {items_skipped}), "
+                        f"subtotal: ${subtotal:.2f}, tax: ${tax_amount:.2f}"
+                    )
+                    self.logger.debug(f"Updated order {order.orderNumber} totals:")
+                    self.logger.debug(f"  Subtotal: {order.subtotal}")
+                    self.logger.debug(f"  Tax: {order.taxAmount}")
+                    self.logger.debug(f"  Total: {order.totalAmount}")
+                
+                # Ensure changes are flushed to DB
+                session.flush()
+                
+                self.processed_orders.add(invoice_number)
+                self.stats.orders_processed += 1
+                    
+            except Exception as e:
+                self.error_tracker.add_error(
+                    'INVOICE_PROCESSING_ERROR',
+                    f"Error processing invoice {invoice_number}: {str(e)}",
+                    {'invoice_number': invoice_number, 'error': str(e)}
+                )
+                self.stats.total_errors += 1
+                if self.debug:
+                    self.logger.debug(f"Error processing invoice {invoice_number}: {str(e)}", exc_info=True)
+                continue
+        
+        return batch_df
     
     def _process_line_item(self, row: pd.Series, order_id: str, session: Session) -> Dict[str, Any]:
         """Process a single line item."""
@@ -306,7 +283,7 @@ class LineItemProcessor(BaseProcessor):
                 self.logger.debug(f"Found product {product.productCode}")
             
             if not product:
-                self.stats['products_not_found'] += 1
+                self.stats.products_not_found += 1
                 if self.debug:
                     self.logger.debug(f"Product not found in database: {mapped_code} (original: {product_code})")
                 result['success'] = False
@@ -431,38 +408,3 @@ class LineItemProcessor(BaseProcessor):
         if self.debug:
             self.logger.debug(f"No mapping found for {field}")
         return ''
-
-    def _calculate_totals(self, line_items: List[OrderItem]) -> Dict[str, Decimal]:
-        """Calculate order totals from line items."""
-        subtotal = Decimal('0')
-        tax_amount = Decimal('0')
-        shipping_amount = Decimal('0')
-        
-        for item in line_items:
-            # Skip items with NaN or None amounts
-            if item.amount is None or pd.isna(item.amount):
-                if self.debug:
-                    self.logger.debug(f"Skipping line item with NaN/None amount: {item.productCode}")
-                continue
-                
-            if is_tax_product(item.productCode):
-                tax_amount += item.amount
-                if self.debug:
-                    self.logger.debug(f"Added tax amount: {item.amount}")
-            elif is_shipping_product(item.productCode):
-                shipping_amount += item.amount
-                if self.debug:
-                    self.logger.debug(f"Added shipping amount: {item.amount}")
-            else:
-                subtotal += item.amount
-                if self.debug:
-                    self.logger.debug(f"Added to subtotal: {item.amount}")
-        
-        if self.debug:
-            self.logger.debug(f"Calculated totals - Subtotal: {subtotal}, Tax: {tax_amount}, Shipping: {shipping_amount}")
-        
-        return {
-            'subtotal': subtotal,
-            'tax_amount': tax_amount,
-            'shipping_amount': shipping_amount
-        }

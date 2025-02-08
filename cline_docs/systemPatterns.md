@@ -96,11 +96,45 @@ The system is designed to be idempotent - running the same import multiple times
 - Each phase has its own validation rules
 
 ## Database Operations
-- Use session management for transactions
+
+### Session Management
+- Use SessionManager class for all database operations
+- Initialize processors with config dictionary containing database_url
+- Use context manager pattern for automatic session cleanup
 - Commit in batches for performance
 - Use with_for_update() for row locking
 - Cascade deletes for related records
 - Maintain referential integrity across phases
+
+### Processor Architecture
+1. Base Class Pattern:
+   - BaseProcessor[T] abstract base class
+   - Type-safe configuration with Generic[T]
+   - Abstract validate_data() method
+   - Abstract _process_batch() method
+   - Common batch processing logic
+   - Standardized error handling
+
+2. Stats Tracking:
+   - Dynamic ProcessingStats class
+   - Support both attribute and dictionary access
+   - Automatic handling of processor-specific stats
+   - Built-in timing metrics
+   - JSON-serializable output
+
+3. Error Handling:
+   - ErrorTracker integration
+   - Batch-level error recovery
+   - Error limit enforcement
+   - Detailed error context
+   - Debug logging support
+
+4. Validation:
+   - Two-phase validation (critical/warnings)
+   - Pre-processing data validation
+   - Row-level validation during processing
+   - Clear validation messages
+   - Validation summary logging
 
 ## Logging
 - Debug mode for detailed logs

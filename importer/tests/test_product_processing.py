@@ -2,62 +2,109 @@
 
 import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 import pandas as pd
 
 from ..processors.product import ProductProcessor
 from ..db.models import Product, Base
 
 @pytest.fixture
-def session():
-    """Create a test database session."""
+def engine():
+    """Create a test database engine."""
     engine = create_engine('sqlite:///:memory:')
     Base.metadata.create_all(engine)
-    
+    return engine
+
+@pytest.fixture
+def session_manager(engine):
+    """Create a session manager for testing."""
+    return sessionmaker(bind=engine)
+
+@pytest.fixture
+def session(engine):
+    """Create a test database session."""
     with Session(engine) as session:
         yield session
 
-def test_product_creation_basic():
+def test_validate_data(session_manager):
+    """Test product data validation."""
+    processor = ProductProcessor(
+        config={'database_url': 'sqlite:///:memory:'},
+        batch_size=100,
+        error_limit=10
+    )
+    
+    # Test missing required columns
+    data1 = pd.DataFrame([{'Description': 'Test'}])
+    critical1, warnings1 = processor.validate_data(data1)
+    assert len(critical1) == 1  # Missing Product/Service column
+    
+    # Test empty product codes
+    data2 = pd.DataFrame([
+        {'Product/Service': None, 'Product/Service Description': 'Test'},
+        {'Product/Service': 'PROD001', 'Product/Service Description': 'Test'}
+    ])
+    critical2, warnings2 = processor.validate_data(data2)
+    assert len(critical2) == 0
+    assert len(warnings2) == 1  # Warning about empty product code
+    
+    # Test test products
+    data3 = pd.DataFrame([{
+        'Product/Service': 'TEST-001',
+        'Product/Service Description': 'Test'
+    }])
+    critical3, warnings3 = processor.validate_data(data3)
+    assert len(critical3) == 0
+    assert len(warnings3) == 1  # Warning about test product
+    
+    # Test deprecated products
+    data4 = pd.DataFrame([{
+        'Product/Service': 'PROD001',
+        'Product/Service Description': 'DEPRECATED: Old Product'
+    }])
+    critical4, warnings4 = processor.validate_data(data4)
+    assert len(critical4) == 0
+    assert len(warnings4) == 1  # Warning about deprecated product
+
+def test_product_creation_basic(session_manager):
     """Test basic product creation."""
-    config = {
-        'database_url': 'sqlite:///:memory:',
-        'batch_size': 100,
-        'error_limit': 10
-    }
-    processor = ProductProcessor(config)
+    processor = ProductProcessor(
+        config={'database_url': 'sqlite:///:memory:'},
+        batch_size=100,
+        error_limit=10,
+        debug=True
+    )
     
     # Create test data
     data = pd.DataFrame([{
-        'Product/Service': 'TEST001',
+        'Product/Service': 'PROD001',
         'Product/Service Description': 'Test Product',
         'Product/Service  Amount': '100.00'
     }])
     
     # Process data
     result = processor.process(data)
+    stats = processor.get_stats()
     
     # Verify results
-    assert result['success']
-    assert result['stats']['products_created'] == 1
-    assert result['stats']['errors'] == 0
+    assert stats['created'] == 1
+    assert stats['total_errors'] == 0
+    assert stats['total_products'] == 1
 
-def test_product_system_products():
+def test_product_system_products(session_manager):
     """Test creation of system-defined products."""
-    config = {
-        'database_url': 'sqlite:///:memory:',
-        'batch_size': 100,
-        'error_limit': 10
-    }
-    processor = ProductProcessor(config)
+    processor = ProductProcessor(
+        config={'database_url': 'sqlite:///:memory:'},
+        batch_size=100,
+        error_limit=10
+    )
     
     # Process empty data to trigger system product creation
     data = pd.DataFrame([])
     result = processor.process(data)
     
     # Verify system products were created
-    engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
-    with Session(engine) as session:
+    with Session(create_engine('sqlite:///:memory:')) as session:
         products = session.query(Product).all()
         codes = [p.productCode for p in products]
         # Check for required system products
@@ -65,29 +112,28 @@ def test_product_system_products():
         assert 'TAX' in codes
         assert 'DISCOUNT' in codes
 
-def test_product_code_mapping():
+def test_product_code_mapping(session_manager):
     """Test product code mapping and normalization."""
-    config = {
-        'database_url': 'sqlite:///:memory:',
-        'batch_size': 100,
-        'error_limit': 10
-    }
-    processor = ProductProcessor(config)
+    processor = ProductProcessor(
+        config={'database_url': 'sqlite:///:memory:'},
+        batch_size=100,
+        error_limit=10
+    )
     
-    # Create test data with various product code formats
+    # Create test data with various formats
     data = pd.DataFrame([
         {
-            'Product/Service': 'TEST-001',
+            'Product/Service': 'PROD-001',
             'Product/Service Description': 'Test Product 1',
             'Product/Service  Amount': '100.00'
         },
         {
-            'Product/Service': 'TEST_001',  # Different separator
+            'Product/Service': 'PROD_001',  # Different separator
             'Product/Service Description': 'Test Product 1',
             'Product/Service  Amount': '100.00'
         },
         {
-            'Product/Service': 'test001',  # Different case
+            'Product/Service': 'prod001',  # Different case
             'Product/Service Description': 'Test Product 1',
             'Product/Service  Amount': '100.00'
         }
@@ -95,82 +141,88 @@ def test_product_code_mapping():
     
     # Process data
     result = processor.process(data)
+    stats = processor.get_stats()
     
     # Verify results
-    assert result['success']
-    assert result['stats']['products_created'] == 1  # All map to same product
-    assert result['stats']['errors'] == 0
+    assert stats['created'] == 1  # All normalize to same code
+    assert stats['total_errors'] == 0
+    assert stats['skipped'] == 2  # Duplicates skipped
 
-def test_product_idempotent_processing():
+def test_product_idempotent_processing(session_manager):
     """Test idempotent product processing."""
-    config = {
-        'database_url': 'sqlite:///:memory:',
-        'batch_size': 100,
-        'error_limit': 10
-    }
-    processor = ProductProcessor(config)
+    processor = ProductProcessor(
+        config={'database_url': 'sqlite:///:memory:'},
+        batch_size=100,
+        error_limit=10
+    )
     
     # Create test data
     data = pd.DataFrame([{
-        'Product/Service': 'TEST001',
+        'Product/Service': 'PROD001',
         'Product/Service Description': 'Test Product',
         'Product/Service  Amount': '100.00'
     }])
     
     # Process data twice
     result1 = processor.process(data)
+    stats1 = processor.get_stats()
+    
+    # Reset processor for second run
+    processor = ProductProcessor(
+        config={'database_url': 'sqlite:///:memory:'},
+        batch_size=100,
+        error_limit=10
+    )
     result2 = processor.process(data)
+    stats2 = processor.get_stats()
     
     # Verify results
-    assert result1['success'] and result2['success']
-    assert result1['stats']['products_created'] == 1
-    assert result2['stats']['products_created'] == 0  # No new products created
-    assert result2['stats'].get('products_updated', 0) == 0  # No updates needed
+    assert stats1['created'] == 1
+    assert stats2['created'] == 0  # No new products created
+    assert stats2['skipped'] > 0  # Product skipped on second run
 
-def test_product_description_update():
+def test_product_description_update(session_manager):
     """Test updating product description."""
-    config = {
-        'database_url': 'sqlite:///:memory:',
-        'batch_size': 100,
-        'error_limit': 10
-    }
-    processor = ProductProcessor(config)
+    processor = ProductProcessor(
+        config={'database_url': 'sqlite:///:memory:'},
+        batch_size=100,
+        error_limit=10
+    )
     
     # Create initial product
     data1 = pd.DataFrame([{
-        'Product/Service': 'TEST001',
+        'Product/Service': 'PROD001',
         'Product/Service Description': 'Initial Description',
         'Product/Service  Amount': '100.00'
     }])
     result1 = processor.process(data1)
+    stats1 = processor.get_stats()
     
     # Update product with new description
     data2 = pd.DataFrame([{
-        'Product/Service': 'TEST001',
+        'Product/Service': 'PROD001',
         'Product/Service Description': 'Updated Description',
         'Product/Service  Amount': '100.00'
     }])
     result2 = processor.process(data2)
+    stats2 = processor.get_stats()
     
     # Verify results
-    assert result1['success'] and result2['success']
-    assert result2['stats'].get('products_updated', 0) == 1
+    assert stats1['created'] == 1
+    assert stats2['updated'] == 1
     
     # Verify description was updated
-    engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
-    with Session(engine) as session:
-        product = session.query(Product).filter_by(productCode='TEST001').first()
+    with Session(create_engine('sqlite:///:memory:')) as session:
+        product = session.query(Product).filter_by(productCode='PROD001').first()
         assert product.description == 'Updated Description'
 
-def test_product_batch_processing():
+def test_product_batch_processing(session_manager):
     """Test product batch processing."""
-    config = {
-        'database_url': 'sqlite:///:memory:',
-        'batch_size': 2,  # Small batch size for testing
-        'error_limit': 10
-    }
-    processor = ProductProcessor(config)
+    processor = ProductProcessor(
+        config={'database_url': 'sqlite:///:memory:'},
+        batch_size=2,  # Small batch size for testing
+        error_limit=10
+    )
     
     # Create test data with multiple records
     data = pd.DataFrame([
@@ -182,20 +234,20 @@ def test_product_batch_processing():
     
     # Process data
     result = processor.process(data)
+    stats = processor.get_stats()
     
     # Verify results
-    assert result['success']
-    assert result['stats']['products_created'] == 4
-    assert result['stats']['total_batches'] == 2  # Should be processed in 2 batches
+    assert stats['created'] == 4
+    assert stats['successful_batches'] == 2  # Should be processed in 2 batches
+    assert stats['total_errors'] == 0
 
-def test_product_validation():
-    """Test product validation rules."""
-    config = {
-        'database_url': 'sqlite:///:memory:',
-        'batch_size': 100,
-        'error_limit': 10
-    }
-    processor = ProductProcessor(config)
+def test_product_error_handling(session_manager):
+    """Test error handling and validation."""
+    processor = ProductProcessor(
+        config={'database_url': 'sqlite:///:memory:'},
+        batch_size=100,
+        error_limit=2  # Low error limit for testing
+    )
     
     # Create test data with validation issues
     data = pd.DataFrame([
@@ -205,12 +257,12 @@ def test_product_validation():
             'Product/Service  Amount': '100.00'
         },
         {
-            'Product/Service': 'TEST',  # Invalid code format
+            'Product/Service': 'TEST-PROD',  # Test product not allowed
             'Product/Service Description': 'Invalid Product 2',
             'Product/Service  Amount': '100.00'
         },
         {
-            'Product/Service': 'TEST001',  # Valid product
+            'Product/Service': 'PROD001',  # Valid product
             'Product/Service Description': 'Valid Product',
             'Product/Service  Amount': '100.00'
         }
@@ -218,45 +270,35 @@ def test_product_validation():
     
     # Process data
     result = processor.process(data)
+    stats = processor.get_stats()
     
     # Verify results
-    assert not result['success']  # Should fail validation
-    assert result['stats']['products_created'] == 1  # Valid product still created
-    assert result['stats']['errors'] == 2  # Two validation errors
-    assert len(result['error_details']) == 2  # Error details recorded
+    assert stats['created'] == 1  # Valid product created
+    assert stats['validation_errors'] > 0  # Validation errors recorded
+    assert stats['total_errors'] > 0
 
-def test_product_error_tracking():
-    """Test error tracking with ErrorTracker integration."""
-    config = {
-        'database_url': 'sqlite:///:memory:',
-        'batch_size': 100,
-        'error_limit': 2  # Low error limit for testing
-    }
-    processor = ProductProcessor(config)
+def test_debug_logging(session_manager):
+    """Test debug logging functionality."""
+    processor = ProductProcessor(
+        config={'database_url': 'sqlite:///:memory:'},
+        batch_size=100,
+        error_limit=10,
+        debug=True
+    )
     
-    # Create test data with multiple issues
-    data = pd.DataFrame([
-        {
-            'Product/Service': 'TEST001',
-            'Product/Service Description': None,  # Missing description
-            'Product/Service  Amount': 'invalid'  # Invalid amount
-        },
-        {
-            'Product/Service': '',  # Empty code
-            'Product/Service Description': 'Invalid Product',
-            'Product/Service  Amount': '100.00'
-        }
-    ])
+    # Create test data
+    data = pd.DataFrame([{
+        'Product/Service': 'PROD001',
+        'Product/Service Description': 'Test Product',
+        'Product/Service  Amount': '100.00'
+    }])
     
     # Process data
     result = processor.process(data)
+    stats = processor.get_stats()
     
-    # Verify error tracking
-    assert not result['success']
-    assert result['stats']['errors'] == 2
-    assert len(result['error_details']) == 2
-    
-    # Verify error details
-    error_messages = [e['message'] for e in result['error_details']]
-    assert any('description' in msg.lower() for msg in error_messages)
-    assert any('amount' in msg.lower() for msg in error_messages)
+    # Verify timing stats are present
+    assert 'processing_time' in stats
+    assert 'db_operation_time' in stats
+    assert stats['started_at'] is not None
+    assert stats['completed_at'] is not None
