@@ -1,5 +1,8 @@
 """Line item processor for sales data."""
 
+# Debug flag for order items processing - set to False for production
+DEBUG_ORDER_ITEMS = True
+
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Dict, Any, List, Set
@@ -172,9 +175,11 @@ class LineItemProcessor(BaseProcessor):
                         # Clear existing line items before processing new ones
                         self._clear_existing_line_items(order.id, session)
                         
-                        # Initialize running totals
+                        # Initialize running totals and counters
                         subtotal = Decimal('0')
                         tax_amount = Decimal('0')
+                        items_found = 0
+                        items_skipped = 0
                         
                         # Process each line item
                         for _, row in invoice_df.iterrows():
@@ -189,7 +194,10 @@ class LineItemProcessor(BaseProcessor):
                                 if item.amount is None or pd.isna(item.amount):
                                     if self.debug:
                                         self.logger.debug(f"Skipping NaN amount for {item.productCode}")
+                                    items_skipped += 1
                                     continue
+                                
+                                items_found += 1
                                 
                                 # Add to running totals
                                 if is_tax_product(item.productCode):
@@ -207,7 +215,14 @@ class LineItemProcessor(BaseProcessor):
                         order.taxAmount = tax_amount
                         order.totalAmount = subtotal + tax_amount  # Shipping is included in subtotal
                         
-                        if self.debug:
+                        # Print order summary if debug enabled
+                        if DEBUG_ORDER_ITEMS:
+                            self.logger.info(
+                                f"Order {order.orderNumber}: {items_found + items_skipped} items "
+                                f"(Found: {items_found}, Skipped: {items_skipped}), "
+                                f"subtotal: ${subtotal:.2f}, tax: ${tax_amount:.2f}"
+                            )
+                        elif self.debug:
                             self.logger.debug(f"Updated order {order.orderNumber} totals:")
                             self.logger.debug(f"  Subtotal: {order.subtotal}")
                             self.logger.debug(f"  Tax: {order.taxAmount}")
