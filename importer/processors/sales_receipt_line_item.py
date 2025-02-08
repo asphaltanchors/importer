@@ -21,24 +21,28 @@ from ..utils.csv_normalization import (
 from .base import BaseProcessor
 from .error_tracker import ErrorTracker
 
-class SalesReceiptLineItemProcessor(BaseProcessor):
+class SalesReceiptLineItemProcessor(BaseProcessor[Dict[str, Any]]):
     """Process line items from sales receipt data."""
     
-    def __init__(self, session_manager, batch_size: int = 50, error_limit: int = 1000):
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        batch_size: int = 50,
+        error_limit: int = 1000,
+        debug: bool = False
+    ):
         """Initialize the processor.
         
         Args:
-            session_manager: Database session manager
+            config: Configuration dictionary containing database_url
             batch_size: Number of orders to process per batch
             error_limit: Maximum number of errors before stopping
+            debug: Enable debug logging
         """
-        self.session_manager = session_manager
-        super().__init__(None, batch_size)  # We'll manage sessions ourselves
+        super().__init__(config, batch_size, error_limit, debug)
         
         # Track processed items
         self.processed_orders: Set[str] = set()
-        self.error_limit = error_limit
-        self.error_tracker = ErrorTracker()
         
         # Field mappings specific to sales receipts
         self.field_mappings = {
@@ -51,13 +55,11 @@ class SalesReceiptLineItemProcessor(BaseProcessor):
         }
         
         # Additional stats
-        self.stats.update({
-            'total_line_items': 0,
-            'orders_processed': 0,
-            'products_not_found': 0,
-            'orders_not_found': 0,
-            'skipped_items': 0
-        })
+        self.stats.total_line_items = 0
+        self.stats.orders_processed = 0
+        self.stats.products_not_found = 0
+        self.stats.orders_not_found = 0
+        self.stats.skipped_items = 0
     
     def validate_data(self, df: pd.DataFrame) -> Tuple[List[str], List[str]]:
         """Validate data before processing.
@@ -122,127 +124,6 @@ class SalesReceiptLineItemProcessor(BaseProcessor):
                 )
         
         return critical_issues, warnings
-        
-    def process_file(self, data: Union[Path, pd.DataFrame]) -> Dict[str, Any]:
-        """Process line items from a CSV file or DataFrame.
-        
-        Args:
-            data: Path to CSV file or DataFrame to process
-            
-        Returns:
-            Dict containing processing results
-        """
-        try:
-            # Handle both file path and DataFrame input
-            if isinstance(data, Path):
-                df = pd.read_csv(data, low_memory=False)
-                df = normalize_dataframe_columns(df)
-            else:
-                df = data
-            
-            # Validate data
-            critical_issues, warnings = self.validate_data(df)
-            
-            # Show warnings but continue
-            if warnings:
-                self.logger.warning("\nValidation warnings:")
-                for warning in warnings:
-                    self.logger.warning(f"  - {warning}")
-                self.logger.warning("Continuing with processing...")
-            
-            # Stop on critical issues
-            if critical_issues:
-                self.logger.error("\nData validation failed:")
-                for issue in critical_issues:
-                    self.logger.error(f"  - {issue}")
-                self.stats['errors'] += len(critical_issues)
-                return {
-                    'success': False,
-                    'summary': {
-                        'stats': self.stats,
-                        'validation_issues': critical_issues
-                    }
-                }
-            
-            # Log column names for debugging
-            self.logger.debug(f"CSV columns: {df.columns.tolist()}")
-            
-            # Convert receipt numbers to strings to match order lookup
-            df['Sales Receipt No'] = df['Sales Receipt No'].astype(str).str.strip()
-            
-            # Group by receipt number
-            receipt_groups = df.groupby('Sales Receipt No')
-            total_receipts = len(receipt_groups)
-            self.logger.info(f"Found {total_receipts} unique receipt numbers")
-            
-            with click.progressbar(
-                length=total_receipts,
-                label='Processing receipts',
-                item_show_func=lambda x: f"Processed {self.stats['orders_processed']}/{total_receipts} receipts"
-            ) as bar:
-                # Process in batches
-                current_batch = []
-                batch_num = 1
-                
-                for receipt_number, receipt_df in receipt_groups:
-                    if receipt_number in self.processed_orders:
-                        continue
-                        
-                    current_batch.append((receipt_number, receipt_df))
-                    
-                    if len(current_batch) >= self.batch_size:
-                        self._process_batch(current_batch)
-                        bar.update(len(current_batch))
-                        
-                        # Show periodic stats
-                        if batch_num % 5 == 0:
-                            self._show_progress_stats(total_receipts)
-                        
-                        current_batch = []
-                        batch_num += 1
-                        
-                        # Check error limit
-                        if self.stats['total_errors'] >= self.error_limit:
-                            self.logger.error(f"\nStopping: Error limit ({self.error_limit}) reached")
-                            break
-                
-                # Process final batch if any
-                if current_batch and self.stats['total_errors'] < self.error_limit:
-                    self._process_batch(current_batch)
-                    bar.update(len(current_batch))
-                    self._show_progress_stats(total_receipts)
-            
-            # Log error summary at the end
-            self.error_tracker.log_summary(self.logger)
-            
-            return {
-                'success': self.stats['failed_batches'] == 0 and self.stats['total_errors'] < self.error_limit,
-                'summary': {
-                    'stats': self.stats,
-                    'errors': self.error_tracker.get_summary()
-                }
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Failed to process file: {str(e)}")
-            return {
-                'success': False,
-                'summary': {
-                    'stats': self.stats,
-                    'errors': self.error_tracker.get_summary()
-                }
-            }
-    
-    def _show_progress_stats(self, total_receipts: int) -> None:
-        """Show current processing statistics."""
-        self.logger.info("\nCurrent Progress:")
-        self.logger.info(f"  Processed: {self.stats['orders_processed']}/{total_receipts} receipts")
-        self.logger.info(f"  Line items: {self.stats['total_line_items']}")
-        self.logger.info(f"  Errors: {self.stats['total_errors']}")
-        if self.stats['products_not_found'] > 0:
-            self.logger.info(f"  Products not found: {self.stats['products_not_found']}")
-        if self.stats['orders_not_found'] > 0:
-            self.logger.info(f"  Orders not found: {self.stats['orders_not_found']}")
     
     def _clear_existing_line_items(self, order_id: str, session: Session) -> None:
         """Remove existing line items for an order before processing new ones.
@@ -255,99 +136,99 @@ class SalesReceiptLineItemProcessor(BaseProcessor):
         session.query(OrderItem).filter(
             OrderItem.orderId == order_id
         ).delete()
-
-    def _process_batch(self, batch: List[tuple[str, pd.DataFrame]]) -> None:
+    
+    def _process_batch(self, session: Session, batch_df: pd.DataFrame) -> pd.DataFrame:
         """Process a batch of line items.
         
         Args:
-            batch: List of (receipt_number, receipt_df) tuples
+            session: Database session for this batch
+            batch_df: DataFrame containing the batch data
+            
+        Returns:
+            Processed DataFrame
         """
-        try:
-            with self.session_manager as session:
-                for receipt_number, receipt_df in batch:
-                    try:
-                        # Find order
-                        self.logger.debug(f"Looking for order {receipt_number}")
-                        order = session.query(Order).filter(
-                            Order.orderNumber == str(receipt_number)
-                        ).first()
+        # Convert receipt numbers to strings to match order lookup
+        batch_df['Sales Receipt No'] = batch_df['Sales Receipt No'].astype(str).str.strip()
+        
+        # Group by receipt number
+        receipt_groups = batch_df.groupby('Sales Receipt No')
+        
+        for receipt_number, receipt_df in receipt_groups:
+            if receipt_number in self.processed_orders:
+                continue
+                
+            try:
+                # Find order
+                self.logger.debug(f"Looking for order {receipt_number}")
+                order = session.query(Order).filter(
+                    Order.orderNumber == str(receipt_number)
+                ).first()
+                
+                if not order:
+                    self.stats.orders_not_found += 1
+                    self.error_tracker.add_error(
+                        'ORDER_NOT_FOUND',
+                        f"Order not found for receipt {receipt_number}",
+                        {'receipt_number': receipt_number}
+                    )
+                    continue
+                
+                self.logger.debug(f"Found order {order.id} for receipt {receipt_number}")
+                
+                # Clear existing line items before processing new ones
+                self._clear_existing_line_items(order.id, session)
+                
+                # Initialize running totals
+                subtotal = Decimal('0')
+                tax_amount = Decimal('0')
+                
+                # Process each line item
+                for _, row in receipt_df.iterrows():
+                    self.logger.debug(f"Processing row: {row.to_dict()}")
+                    result = self._process_line_item(row, order.id, session)
+                    if result['success'] and result['line_item']:
+                        item = result['line_item']
+                        self.stats.total_line_items += 1
                         
-                        if not order:
-                            self.stats['orders_not_found'] += 1
-                            self.error_tracker.add_error(
-                                'ORDER_NOT_FOUND',
-                                f"Order not found for receipt {receipt_number}",
-                                {'receipt_number': receipt_number}
-                            )
+                        # Skip NaN amounts
+                        if item.amount is None or pd.isna(item.amount):
+                            self.logger.debug(f"Skipping NaN amount for {item.productCode}")
                             continue
                         
-                        self.logger.debug(f"Found order {order.id} for receipt {receipt_number}")
-                        
-                        # Clear existing line items before processing new ones
-                        self._clear_existing_line_items(order.id, session)
-                        
-                        # Initialize running totals
-                        subtotal = Decimal('0')
-                        tax_amount = Decimal('0')
-                        
-                        # Process each line item
-                        for _, row in receipt_df.iterrows():
-                            self.logger.debug(f"Processing row: {row.to_dict()}")
-                            result = self._process_line_item(row, order.id, session)
-                            if result['success'] and result['line_item']:
-                                item = result['line_item']
-                                self.stats['total_line_items'] += 1
-                                
-                                # Skip NaN amounts
-                                if item.amount is None or pd.isna(item.amount):
-                                    self.logger.debug(f"Skipping NaN amount for {item.productCode}")
-                                    continue
-                                
-                                # Add to running totals
-                                if is_tax_product(item.productCode):
-                                    tax_amount += item.amount
-                                    self.logger.debug(f"Added tax amount: {item.amount}")
-                                else:
-                                    # Everything else (including shipping) goes to subtotal
-                                    subtotal += item.amount
-                                    self.logger.debug(f"Added to subtotal: {item.amount}")
-                        
-                        # Update order totals
-                        order.subtotal = subtotal
-                        order.taxAmount = tax_amount
-                        order.totalAmount = subtotal + tax_amount  # Shipping is included in subtotal
-                        
-                        self.logger.debug(f"Updated order {order.orderNumber} totals:")
-                        self.logger.debug(f"  Subtotal: {order.subtotal}")
-                        self.logger.debug(f"  Tax: {order.taxAmount}")
-                        self.logger.debug(f"  Total: {order.totalAmount}")
-                        
-                        # Ensure changes are flushed to DB
-                        session.flush()
-                        
-                        self.processed_orders.add(receipt_number)
-                        self.stats['orders_processed'] += 1
-                            
-                    except Exception as e:
-                        self.error_tracker.add_error(
-                            'RECEIPT_PROCESSING_ERROR',
-                            f"Error processing receipt {receipt_number}: {str(e)}",
-                            {'receipt_number': receipt_number, 'error': str(e)}
-                        )
-                        continue
+                        # Add to running totals
+                        if is_tax_product(item.productCode):
+                            tax_amount += item.amount
+                            self.logger.debug(f"Added tax amount: {item.amount}")
+                        else:
+                            # Everything else (including shipping) goes to subtotal
+                            subtotal += item.amount
+                            self.logger.debug(f"Added to subtotal: {item.amount}")
                 
-                # Commit batch
-                session.commit()
-                self.stats['successful_batches'] += 1
+                # Update order totals
+                order.subtotal = subtotal
+                order.taxAmount = tax_amount
+                order.totalAmount = subtotal + tax_amount  # Shipping is included in subtotal
                 
-        except Exception as e:
-            self.stats['failed_batches'] += 1
-            self.stats['total_errors'] += 1
-            self.error_tracker.add_error(
-                'BATCH_PROCESSING_ERROR',
-                f"Error processing batch: {str(e)}",
-                {'error': str(e)}
-            )
+                self.logger.debug(f"Updated order {order.orderNumber} totals:")
+                self.logger.debug(f"  Subtotal: {order.subtotal}")
+                self.logger.debug(f"  Tax: {order.taxAmount}")
+                self.logger.debug(f"  Total: {order.totalAmount}")
+                
+                # Ensure changes are flushed to DB
+                session.flush()
+                
+                self.processed_orders.add(receipt_number)
+                self.stats.orders_processed += 1
+                    
+            except Exception as e:
+                self.error_tracker.add_error(
+                    'RECEIPT_PROCESSING_ERROR',
+                    f"Error processing receipt {receipt_number}: {str(e)}",
+                    {'receipt_number': receipt_number, 'error': str(e)}
+                )
+                continue
+        
+        return batch_df
     
     def _process_line_item(self, row: pd.Series, order_id: str, session: Session) -> Dict[str, Any]:
         """Process a single line item."""
@@ -376,7 +257,7 @@ class SalesReceiptLineItemProcessor(BaseProcessor):
                 self.logger.debug(f"Found product {product.productCode}")
             
             if not product:
-                self.stats['products_not_found'] += 1
+                self.stats.products_not_found += 1
                 self.error_tracker.add_error(
                     'PRODUCT_NOT_FOUND',
                     f"Product not found: {product_code}",
