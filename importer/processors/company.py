@@ -58,16 +58,17 @@ class CompanyProcessor(BaseProcessor[Dict[str, Any]]):
         critical_issues = []
         warnings = []
         
-        # Check for required columns
-        required_columns = ['Customer']  # At minimum need customer name to extract domain
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        if missing_columns:
-            critical_issues.append(f"Missing required columns: {', '.join(missing_columns)}")
-            self.stats.total_errors += len(missing_columns)
+        # Check for required columns - either Customer or Customer Name is required
+        if 'Customer' not in df.columns and 'Customer Name' not in df.columns:
+            critical_issues.append("Missing required columns: Customer or Customer Name")
+            self.stats.total_errors += 1
             return critical_issues, warnings
         
+        # Use the available column name
+        customer_column = 'Customer' if 'Customer' in df.columns else 'Customer Name'
+        
         # Check for empty or invalid customer names
-        empty_customers = df[df['Customer'].isna() | (df['Customer'].astype(str).str.strip() == '')]
+        empty_customers = df[df[customer_column].isna() | (df[customer_column].astype(str).str.strip() == '')]
         if not empty_customers.empty:
             msg = (f"Found {len(empty_customers)} rows with missing or empty customer names that will be skipped. "
                   f"First few row numbers: {', '.join(map(str, empty_customers.index[:3]))}")
@@ -149,8 +150,9 @@ class CompanyProcessor(BaseProcessor[Dict[str, Any]]):
                         continue
 
         # If no email domain found, try to extract from company name
-        if 'Customer' in row and pd.notna(row['Customer']):
-            company_name = str(row['Customer']).strip().lower()
+        customer_column = 'Customer' if 'Customer' in row else 'Customer Name'
+        if customer_column in row and pd.notna(row[customer_column]):
+            company_name = str(row[customer_column]).strip().lower()
             if '.' in company_name:  # Only try company names that look like domains
                 domain = normalize_domain(company_name)
                 if domain:
