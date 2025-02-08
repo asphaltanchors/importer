@@ -44,6 +44,7 @@ class SalesReceiptProcessor(BaseProcessor[Dict[str, Any]]):
         """
         session_manager = SessionManager(config['database_url'])
         super().__init__(session_manager, batch_size, error_limit, debug)
+        self.config = config  # Store config for child processors
         self.address_processor = None  # Will be initialized per session
         self.error_tracker = ErrorTracker()
         
@@ -294,7 +295,7 @@ class SalesReceiptProcessor(BaseProcessor[Dict[str, Any]]):
                     if self.debug:
                         self.logger.debug("Initializing address processor")
                     self.address_processor = AddressProcessor(
-                        config={'database_url': str(session.get_bind().url)},
+                        config=self.config,
                         batch_size=self.batch_size,
                         error_limit=self.error_limit,
                         debug=self.debug
