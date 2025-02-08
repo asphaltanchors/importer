@@ -24,7 +24,7 @@ from ...cli.base import FileInputCommand, command_error_handler
 from ...cli.logging import get_logger
 from ...utils.csv_normalization import normalize_dataframe_columns
 from ...processors.sales_receipt import SalesReceiptProcessor
-from ...processors.sales_receipt_line_item import SalesReceiptLineItemProcessor
+from ...processors.line_item import LineItemProcessor
 from ...processors.company import CompanyProcessor
 from ...processors.product import ProductProcessor
 from ...processors.error_tracker import ErrorTracker
@@ -168,11 +168,12 @@ class ProcessReceiptsCommand(FileInputCommand):
                     self.logger.info("")
                     self.logger.info("=== Phase 5: Line Item Processing ===")
                     if self.debug:
-                        self.logger.debug(f"Initializing SalesReceiptLineItemProcessor")
-                    line_item_processor = SalesReceiptLineItemProcessor(
+                        self.logger.debug(f"Initializing LineItemProcessor")
+                    line_item_processor = LineItemProcessor(
                         {'database_url': self.config.database_url},
                         batch_size=self.batch_size,
-                        error_limit=self.error_limit
+                        error_limit=self.error_limit,
+                        debug=self.debug
                     )
                     
                     # Check for validation issues

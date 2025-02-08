@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 import click
 
 from ..db.models import Product, OrderItem, Order
+from ..db.session import SessionManager
 from ..utils import generate_uuid
 from ..utils.product_mapping import map_product_code
 from ..utils.system_products import is_tax_product, is_shipping_product
