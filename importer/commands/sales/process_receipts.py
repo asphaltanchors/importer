@@ -98,7 +98,11 @@ class ProcessReceiptsCommand(FileInputCommand):
             self.logger.info("=== Phase 3: Receipt Processing ===")
             if self.debug:
                 self.logger.debug(f"Initializing SalesReceiptProcessor with batch_size={self.batch_size}, error_limit={self.error_limit}")
-            receipt_processor = SalesReceiptProcessor(session_manager, self.batch_size, self.error_limit)
+            receipt_processor = SalesReceiptProcessor(
+                {'database_url': self.config.database_url},
+                batch_size=self.batch_size,
+                error_limit=self.error_limit
+            )
             
             # Check for validation issues
             critical_issues, warnings = receipt_processor.validate_data(df)
@@ -162,7 +166,10 @@ class ProcessReceiptsCommand(FileInputCommand):
                 self.logger.info("=== Phase 4: Product Processing ===")
                 if self.debug:
                     self.logger.debug("Initializing ProductProcessor")
-                product_processor = ProductProcessor(session_manager, self.batch_size)
+                product_processor = ProductProcessor(
+                    {'database_url': self.config.database_url},
+                    batch_size=self.batch_size
+                )
                 product_processor.debug = self.debug
                 
                 # Process products
@@ -188,7 +195,11 @@ class ProcessReceiptsCommand(FileInputCommand):
                 self.logger.info("=== Phase 5: Line Item Processing ===")
                 if self.debug:
                     self.logger.debug(f"Initializing SalesReceiptLineItemProcessor with batch_size={self.batch_size}, error_limit={self.error_limit}")
-                line_item_processor = SalesReceiptLineItemProcessor(session_manager, self.batch_size, self.error_limit)
+                line_item_processor = SalesReceiptLineItemProcessor(
+                    {'database_url': self.config.database_url},
+                    batch_size=self.batch_size,
+                    error_limit=self.error_limit
+                )
                 
                 # Check for validation issues
                 critical_issues, warnings = line_item_processor.validate_data(df)
