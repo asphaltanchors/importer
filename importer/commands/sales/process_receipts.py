@@ -78,9 +78,12 @@ class ProcessReceiptsCommand(FileInputCommand):
                 'batch_size': self.batch_size
             }
             company_processor = CompanyProcessor(config_dict, batch_size=self.batch_size)
-            company_result = company_processor.process(df)
-            if self.debug:
-                self.logger.debug(f"Company processing stats: {company_processor.get_stats()}")
+            df = company_processor.process(df)
+            company_stats = company_processor.get_stats()
+            click.echo(f"Companies processed: {company_stats['total_processed']}")
+            click.echo(f"Successful batches: {company_stats['successful_batches']}")
+            click.echo(f"Failed batches: {company_stats['failed_batches']}")
+            click.echo(f"Total errors: {company_stats['total_errors']}")
             
             # Process customers next
             self.logger.info("")
@@ -91,9 +94,6 @@ class ProcessReceiptsCommand(FileInputCommand):
             customer_processor = ProcessReceiptCustomersCommand(self.config, self.input_file, None, self.batch_size, self.error_limit)
             customer_processor.execute()
             # The execute method handles the processing internally
-            
-            # Customer processing is handled by the execute method
-            # If there were critical errors, execute would have raised an exception
             
             # Process receipts next
             self.logger.info("")
@@ -133,37 +133,16 @@ class ProcessReceiptsCommand(FileInputCommand):
                     self.logger.info("Continuing with processing...")
             
             processed_df = receipt_processor.process(df)
-            
-            # Convert processor results to our standard format
-            receipt_result = {
-                'success': (
-                    receipt_processor.stats['failed_batches'] == 0 and 
-                    receipt_processor.stats['errors'] < self.error_limit and
-                    receipt_processor.stats['created'] + receipt_processor.stats['updated'] > 0
-                ),
-                'summary': {
-                    'stats': receipt_processor.stats
-                }
-            }
-            
-            if not receipt_result['success']:
-                self.logger.error("Failed to process sales receipts")
-                if receipt_processor.stats['failed_batches'] > 0:
-                    self.logger.error(f"Failed batches: {receipt_processor.stats['failed_batches']}")
-                if receipt_processor.stats['errors'] >= self.error_limit:
-                    self.logger.error(f"Error limit reached: {receipt_processor.stats['errors']} errors")
-                if receipt_processor.stats['created'] + receipt_processor.stats['updated'] == 0:
-                    self.logger.error("No orders were created or updated")
-                return
+            receipt_stats = receipt_processor.get_stats()
             
             self.logger.info("Sales receipt processing complete")
-            self.logger.info(f"Created: {receipt_result['summary']['stats']['created']}")
-            self.logger.info(f"Updated: {receipt_result['summary']['stats']['updated']}")
-            self.logger.info(f"Errors: {receipt_result['summary']['stats']['errors']}")
-            self.logger.info(f"Customer Lookup Failures: {receipt_result['summary']['stats']['customers_not_found']}")
+            self.logger.info(f"Total processed: {receipt_stats['total_processed']}")
+            self.logger.info(f"Successful batches: {receipt_stats['successful_batches']}")
+            self.logger.info(f"Failed batches: {receipt_stats['failed_batches']}")
+            self.logger.info(f"Total errors: {receipt_stats['total_errors']}")
             
-            # Only proceed to products if we have orders
-            if receipt_processor.stats['created'] + receipt_processor.stats['updated'] > 0:
+            # Only proceed to products if we have successful receipts
+            if receipt_stats['successful_batches'] > 0:
                 self.logger.info("")
                 self.logger.info("=== Phase 4: Product Processing ===")
                 if self.debug:
@@ -175,114 +154,86 @@ class ProcessReceiptsCommand(FileInputCommand):
                 product_processor.debug = self.debug
                 
                 # Process products
-                product_result = product_processor.process_file(self.input_file)
-                
-                if not product_result['success']:
-                    self.logger.error("Failed to process products")
-                    if product_result['summary']['stats']['validation_errors'] > 0:
-                        self.logger.error(f"Validation errors: {product_result['summary']['stats']['validation_errors']}")
-                    if product_result['summary']['stats']['total_errors'] > 0:
-                        self.logger.error(f"Processing errors: {product_result['summary']['stats']['total_errors']}")
-                    return
+                df = product_processor.process(df)
+                product_stats = product_processor.get_stats()
                 
                 self.logger.info("Product processing complete")
-                self.logger.info(f"Total products: {product_result['summary']['stats']['total_products']}")
-                self.logger.info(f"Created: {product_result['summary']['stats']['created']}")
-                self.logger.info(f"Updated: {product_result['summary']['stats']['updated']}")
-                self.logger.info(f"Skipped: {product_result['summary']['stats']['skipped']}")
-                if product_result['summary']['stats']['validation_errors'] > 0:
-                    self.logger.warning(f"Validation errors: {product_result['summary']['stats']['validation_errors']}")
+                self.logger.info(f"Total processed: {product_stats['total_processed']}")
+                self.logger.info(f"Successful batches: {product_stats['successful_batches']}")
+                self.logger.info(f"Failed batches: {product_stats['failed_batches']}")
+                self.logger.info(f"Total errors: {product_stats['total_errors']}")
                 
-                self.logger.info("")
-                self.logger.info("=== Phase 5: Line Item Processing ===")
-                if self.debug:
-                    self.logger.debug(f"Initializing SalesReceiptLineItemProcessor with batch_size={self.batch_size}, error_limit={self.error_limit}")
-                line_item_processor = SalesReceiptLineItemProcessor(
-                    {'database_url': self.config.database_url},
-                    batch_size=self.batch_size,
-                    error_limit=self.error_limit
-                )
-                
-                # Check for validation issues
-                critical_issues, warnings = line_item_processor.validate_data(df)
-                
-                # Show all validation issues
-                if warnings or critical_issues:
-                    self.logger.info("Line Item Validation Summary:")
+                # Only proceed to line items if we have successful products
+                if product_stats['successful_batches'] > 0:
+                    self.logger.info("")
+                    self.logger.info("=== Phase 5: Line Item Processing ===")
+                    if self.debug:
+                        self.logger.debug(f"Initializing SalesReceiptLineItemProcessor")
+                    line_item_processor = SalesReceiptLineItemProcessor(
+                        {'database_url': self.config.database_url},
+                        batch_size=self.batch_size,
+                        error_limit=self.error_limit
+                    )
                     
-                    if critical_issues:
-                        self.logger.error("Critical Issues (must fix):")
-                        for issue in critical_issues:
-                            self.logger.error(f"  - {issue}")
-                        return
+                    # Check for validation issues
+                    critical_issues, warnings = line_item_processor.validate_data(df)
                     
-                    if warnings:
-                        self.logger.warning("Rows that will be skipped:")
-                        for warning in warnings:
-                            self.logger.warning(f"  - {warning}")
+                    # Show all validation issues
+                    if warnings or critical_issues:
+                        self.logger.info("Line Item Validation Summary:")
                         
-                        # Calculate valid rows
-                        skipped_rows = sum(int(w.split()[1]) for w in warnings if w.split()[1].isdigit())
-                        valid_rows = len(df) - skipped_rows
-                        self.logger.info(f"Will process {valid_rows} valid line items")
-                        if self.debug:
-                            self.logger.debug(f"Skipping {skipped_rows} line items due to validation warnings")
-                        self.logger.info("Continuing with processing...")
-                
-                line_item_result = line_item_processor.process_file(df)  # Pass DataFrame directly
+                        if critical_issues:
+                            self.logger.error("Critical Issues (must fix):")
+                            for issue in critical_issues:
+                                self.logger.error(f"  - {issue}")
+                            return
+                        
+                        if warnings:
+                            self.logger.warning("Rows that will be skipped:")
+                            for warning in warnings:
+                                self.logger.warning(f"  - {warning}")
+                            
+                            # Calculate valid rows
+                            skipped_rows = sum(int(w.split()[1]) for w in warnings if w.split()[1].isdigit())
+                            valid_rows = len(df) - skipped_rows
+                            self.logger.info(f"Will process {valid_rows} valid line items")
+                            if self.debug:
+                                self.logger.debug(f"Skipping {skipped_rows} line items due to validation warnings")
+                            self.logger.info("Continuing with processing...")
+                    
+                    df = line_item_processor.process(df)
+                    line_item_stats = line_item_processor.get_stats()
+                    
+                    self.logger.info("Line item processing complete")
+                    self.logger.info(f"Total processed: {line_item_stats['total_processed']}")
+                    self.logger.info(f"Successful batches: {line_item_stats['successful_batches']}")
+                    self.logger.info(f"Failed batches: {line_item_stats['failed_batches']}")
+                    self.logger.info(f"Total errors: {line_item_stats['total_errors']}")
+                else:
+                    self.logger.info("Skipping line item processing due to product processing errors")
             else:
-                self.logger.info("Skipping line item processing since no orders were created")
-                return
-            
-            if not line_item_result['success']:
-                self.logger.error("Failed to process line items")
-                if 'validation_issues' in line_item_result['summary']:
-                    self.logger.error("Validation issues:")
-                    for issue in line_item_result['summary']['validation_issues']:
-                        self.logger.error(f"  - {issue}")
-                return
-                
-            self.logger.info("Line item processing complete")
-            self.logger.info(f"Total line items: {line_item_result['summary']['stats']['total_line_items']}")
-            self.logger.info(f"Orders processed: {line_item_result['summary']['stats']['orders_processed']}")
-            self.logger.info(f"Products not found: {line_item_result['summary']['stats']['products_not_found']}")
-            self.logger.info(f"Orders not found: {line_item_result['summary']['stats']['orders_not_found']}")
+                self.logger.info("Skipping product and line item processing due to receipt processing errors")
             
             # Save results if output file specified
             if self.output_file:
                 if self.debug:
                     self.logger.debug(f"Saving results to {self.output_file}")
                 results = {
-                    'company_processing': {
-                        'success': True,
-                        'summary': {
-                            'stats': company_processor.get_stats()
-                        }
-                    },
-                    'receipt_processing': receipt_result,
-                    'product_processing': product_result,
-                    'line_item_processing': line_item_result
+                    'company_stats': company_stats,
+                    'receipt_stats': receipt_stats,
+                    'product_stats': product_stats if 'product_stats' in locals() else None,
+                    'line_item_stats': line_item_stats if 'line_item_stats' in locals() else None,
+                    'processed_rows': len(df)
                 }
                 with open(self.output_file, 'w') as f:
                     json.dump(results, f, indent=2)
                 self.logger.info(f"Detailed results saved to {self.output_file}")
                 
         except Exception as e:
-            self.logger.error(f"Failed to process file: {str(e)}", exc_info=self.debug)
-            error_context = {
-                'input_file': str(self.input_file),
-                'batch_size': self.batch_size,
-                'error_limit': self.error_limit,
-                'error': str(e)
-            }
-            self.error_tracker.add_error(
-                'PROCESS_RECEIPTS_ERROR',
-                f"Failed to process sales receipts: {str(e)}",
-                error_context
-            )
+            # Log error but continue
+            self.logger.error(f"Error during processing: {str(e)}")
             if self.debug:
-                self.logger.debug(f"Error details: {error_context}", exc_info=True)
-            raise  # Re-raise to let command_error_handler handle it
+                self.logger.debug("Error details:", exc_info=True)
 
 # Click command wrapper
 @click.command()
