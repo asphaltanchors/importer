@@ -68,7 +68,13 @@ class LineItemProcessor(BaseProcessor):
         try:
             # Read CSV into DataFrame and normalize column names
             df = pd.read_csv(file_path)
+            if DEBUG_ORDER_ITEMS:
+                self.logger.info(f"Raw CSV data shape: {df.shape}")
+                self.logger.info(f"Raw columns before normalization: {df.columns.tolist()}")
+            
             df = normalize_dataframe_columns(df)
+            if DEBUG_ORDER_ITEMS:
+                self.logger.info(f"Normalized columns: {df.columns.tolist()}")
             
             # Validate required columns
             required_columns = ['Product/Service']
@@ -88,8 +94,13 @@ class LineItemProcessor(BaseProcessor):
             # Group by invoice/receipt number
             invoice_groups = df.groupby(group_by_col)
             total_invoices = len(invoice_groups)
-            if self.debug:
-                self.logger.debug(f"Found {total_invoices} unique invoice numbers")
+            if DEBUG_ORDER_ITEMS:
+                self.logger.info(f"Total rows in CSV: {len(df)}")
+                self.logger.info(f"Found {total_invoices} unique invoice numbers")
+                # Show first few rows of data
+                self.logger.info("First few rows of normalized data:")
+                for idx, row in df.head().iterrows():
+                    self.logger.info(f"Row {idx}: {row.to_dict()}")
             
             self.logger.info(f"Processing {total_invoices} invoices")
             if self.debug:
@@ -258,13 +269,15 @@ class LineItemProcessor(BaseProcessor):
         try:
             product_code = self.get_mapped_field(row, 'product_code')
             if not product_code:
+                if DEBUG_ORDER_ITEMS:
+                    self.logger.info("Skipping row - no product code found")
                 return result  # Skip empty rows
             
             # Map product code using common utility
             description = self.get_mapped_field(row, 'description')
             mapped_code = map_product_code(product_code, description)
-            if self.debug:
-                self.logger.debug(f"Mapped product code '{product_code}' with description '{description}' to '{mapped_code}'")
+            if DEBUG_ORDER_ITEMS:
+                self.logger.info(f"Product mapping: '{product_code}' -> '{mapped_code}' (description: '{description}')")
             
             # Look up product
             product = session.query(Product).filter(
@@ -276,6 +289,8 @@ class LineItemProcessor(BaseProcessor):
             
             if not product:
                 self.stats['products_not_found'] += 1
+                if DEBUG_ORDER_ITEMS:
+                    self.logger.info(f"Product not found in database: {mapped_code} (original: {product_code})")
                 result['success'] = False
                 result['error'] = {
                     'severity': 'ERROR',
