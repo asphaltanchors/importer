@@ -1,5 +1,5 @@
 """Processor for handling customer data."""
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List, Any
 import logging
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -8,37 +8,56 @@ from sqlalchemy import select, func
 from ..db.models import Customer, Company, Address
 from .base import BaseProcessor
 from ..utils.normalization import normalize_customer_name, find_customer_by_name
+from ..db.session import SessionManager
 
-class CustomerProcessor(BaseProcessor):
+class CustomerProcessor(BaseProcessor[Dict[str, Any]]):
     """Processes customer data from CSV imports."""
     
-    def __init__(self, session: Session, batch_size: int = 100):
-        """Initialize processor with database session."""
-        super().__init__(session, batch_size)
-        self.stats.update({
-            'customers_created': 0,
-            'customers_updated': 0,
-            'missing_company_domains': 0,
-            'invalid_billing_addresses': 0,
-            'invalid_shipping_addresses': 0
-        })
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        batch_size: int = 100,
+        error_limit: int = 1000,
+        debug: bool = False
+    ):
+        """Initialize processor with configuration.
+        
+        Args:
+            config: Configuration dictionary containing database_url
+            batch_size: Number of records to process in each batch
+            error_limit: Maximum number of errors before stopping
+            debug: Enable debug logging
+        """
+        session_manager = SessionManager(config['database_url'])
+        super().__init__(session_manager, batch_size, error_limit, debug)
+        
+        # Initialize customer-specific stats
+        self.stats.customers_created = 0
+        self.stats.customers_updated = 0
+        self.stats.missing_company_domains = 0
+        self.stats.invalid_billing_addresses = 0
+        self.stats.invalid_shipping_addresses = 0
         # Cache company domains and address IDs for performance
         self.company_domains = set()
         self.address_ids = set()
-        self._load_cached_data()
+        with self.session_manager as session:
+            self._load_cached_data(session)
 
-    def _load_cached_data(self):
+    def _load_cached_data(self, session: Session):
         """Load existing company domains and address IDs into cache."""
         self.logger.debug("Loading cached data...")
         
         # Cache company domains
-        companies = self.session.execute(select(Company.domain)).scalars()
-        self.company_domains.update(companies)
-        self.logger.debug(f"Cached {len(self.company_domains)} company domains")
+        self.logger.debug("Querying company domains...")
+        domains = [d.domain for d in session.query(Company.domain).all()]
+        self.logger.debug(f"Raw domain results: {domains}")
+        self.company_domains.update(domains)
+        self.logger.debug(f"Cached company domains: {self.company_domains}")
         
         # Cache address IDs
-        addresses = self.session.execute(select(Address.id)).scalars()
-        self.address_ids.update(addresses)
+        self.logger.debug("Querying address IDs...")
+        address_ids = [a.id for a in session.query(Address.id).all()]
+        self.address_ids.update(address_ids)
         self.logger.debug(f"Cached {len(self.address_ids)} address IDs")
 
     def _verify_company_domain(self, domain: str) -> bool:
@@ -52,11 +71,11 @@ class CustomerProcessor(BaseProcessor):
         """Verify address ID exists if provided."""
         return address_id is None or address_id in self.address_ids
 
-    def _find_customer_by_name(self, name: str) -> Tuple[Optional[Customer], bool]:
+    def _find_customer_by_name(self, session: Session, name: str) -> Tuple[Optional[Customer], bool]:
         """Find a customer by name using the shared matching logic."""
-        return find_customer_by_name(self.session, name)
+        return find_customer_by_name(session, name)
 
-    def _process_batch(self, batch_df: pd.DataFrame) -> pd.DataFrame:
+    def _process_batch(self, session: Session, batch_df: pd.DataFrame) -> pd.DataFrame:
         """Process a batch of customer rows."""
         batch_df['customer_id'] = None
         
@@ -87,14 +106,14 @@ class CustomerProcessor(BaseProcessor):
                             company_domain = str(row[field]).split('@')[1].strip().lower()
                             break
                     else:
-                        self.stats['missing_company_domains'] += 1
+                        self.stats.missing_company_domains += 1
                         continue
                 else:
                     company_domain = row['company_domain'].lower()
                 
                 # Verify company domain exists
                 if not self._verify_company_domain(company_domain):
-                    self.stats['missing_company_domains'] += 1
+                    self.stats.missing_company_domains += 1
                     continue
                 
                 # Get optional address IDs
@@ -103,11 +122,11 @@ class CustomerProcessor(BaseProcessor):
                 
                 # Verify address IDs if present
                 if billing_id and not self._verify_address_id(billing_id):
-                    self.stats['invalid_billing_addresses'] += 1
+                    self.stats.invalid_billing_addresses += 1
                     billing_id = None
                     
                 if shipping_id and not self._verify_address_id(shipping_id):
-                    self.stats['invalid_shipping_addresses'] += 1
+                    self.stats.invalid_shipping_addresses += 1
                     shipping_id = None
                 
                 # First try to find by QuickBooks ID if it exists and is valid
@@ -115,7 +134,7 @@ class CustomerProcessor(BaseProcessor):
                     self.logger.debug(f"Searching for customer by QuickBooks ID: {quickbooks_id}")
                     # Try finding by both id and quickbooksId since we now use QB ID as primary key
                     existing_customer = (
-                        self.session.query(Customer)
+                        session.query(Customer)
                         .filter(
                             (Customer.id == quickbooks_id) | 
                             (Customer.quickbooksId == quickbooks_id)
@@ -131,11 +150,10 @@ class CustomerProcessor(BaseProcessor):
                 # If not found by ID, try name matching (only if name is valid)
                 if not existing_customer and not pd.isna(name):
                     self.logger.debug(f"Searching for customer by name: {name}")
-                    existing_customer, used_normalization = self._find_customer_by_name(name)
+                    existing_customer, used_normalization = self._find_customer_by_name(session, name)
                     if existing_customer:
                         if used_normalization:
-                            self.stats.setdefault('normalized_matches', 0)
-                            self.stats['normalized_matches'] += 1
+                            self.stats.normalized_matches += 1
                             self.logger.info(f"Updating existing customer found by normalized name match: '{name}' -> '{existing_customer.customerName}'")
                         else:
                             self.logger.debug(f"Found existing customer by exact name match: {existing_customer.customerName}")
@@ -153,7 +171,7 @@ class CustomerProcessor(BaseProcessor):
                     existing_customer.shippingAddressId = shipping_id
                     existing_customer.modifiedAt = pd.Timestamp.now()
                     customer = existing_customer
-                    self.stats['customers_updated'] += 1
+                    self.stats.customers_updated += 1
                 else:
                     # Create new customer
                     self.logger.debug(f"Creating new customer: {name}")
@@ -179,8 +197,8 @@ class CustomerProcessor(BaseProcessor):
                     ]):
                         raise ValueError("Customer field mapping error")
                     
-                    self.session.add(customer)
-                    self.stats['customers_created'] += 1
+                    session.add(customer)
+                    self.stats.customers_created += 1
                 
                 batch_df.at[idx, 'customer_id'] = customer.id
                 
@@ -190,6 +208,32 @@ class CustomerProcessor(BaseProcessor):
         
         return batch_df
 
-    def get_stats(self) -> Dict[str, int]:
+    def validate_data(self, df: pd.DataFrame) -> Tuple[List[str], List[str]]:
+        """Validate customer data before processing.
+        
+        Args:
+            df: DataFrame to validate
+            
+        Returns:
+            Tuple of (critical_issues, warnings)
+        """
+        critical_issues = []
+        warnings = []
+        
+        # Check for required columns
+        required_columns = ['Customer Name', 'QuickBooks Internal Id']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            critical_issues.append(f"Missing required columns: {', '.join(missing_columns)}")
+        
+        # Check for empty customer names
+        if 'Customer Name' in df.columns:
+            empty_names = df['Customer Name'].isna().sum()
+            if empty_names > 0:
+                warnings.append(f"Found {empty_names} rows with empty customer names")
+        
+        return critical_issues, warnings
+
+    def get_stats(self) -> Dict[str, Any]:
         """Get processing statistics."""
-        return self.stats
+        return self.stats.to_dict()

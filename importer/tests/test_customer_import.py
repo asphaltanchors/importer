@@ -1,55 +1,67 @@
 """Integration tests for customer import with name normalization."""
 
+import os
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
 import pandas as pd
+from sqlalchemy.orm import Session
 
 from ..processors.customer import CustomerProcessor
-from ..db.models import Customer, Company, Base
+from ..db.models import Customer, Company
 
-@pytest.fixture
-def session():
-    """Create a test database session."""
-    engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
+def test_customer_import_basic(populated_session, caplog):
+    """Test basic customer import with exact name match."""
+    import logging
+    caplog.set_level(logging.DEBUG)
     
-    with Session(engine) as session:
-        # Create test company
-        company = Company(
+    print("\n=== Test Start ===")
+    
+    # Verify company exists from populated_session fixture
+    company = populated_session.query(Company).filter(Company.domain == 'example.com').first()
+    print(f"Using company from fixture: id={company.id}, domain={company.domain}")
+    
+    # Create company in a fresh session outside the transaction
+    engine = populated_session.get_bind().engine
+    with Session(engine) as fresh_session:
+        fresh_session.add(Company(
             id='test-company',
             name='Test Company',
             domain='example.com'
-        )
-        session.add(company)
-        session.commit()
-        
-        yield session
-
-def test_customer_import_basic(session):
-    """Test basic customer import with exact name match."""
-    processor = CustomerProcessor(session)
+        ))
+        fresh_session.commit()
+    
+    # Initialize processor after company is committed
+    processor = CustomerProcessor(
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
+        batch_size=100,
+        error_limit=10,
+        debug=True
+    )
     
     # Create test data
     data = pd.DataFrame([{
         'Customer Name': 'Acme Corp',
         'QuickBooks Internal Id': '12345',
-        'company_domain': 'example.com'
+        'company_domain': 'example.com'  # Match the company domain
     }])
     
     # Process data
     result = processor.process(data)
     
     # Verify customer was created
-    customer = session.query(Customer).first()
+    customer = populated_session.query(Customer).first()
     assert customer is not None
     assert customer.customerName == 'Acme Corp'
     assert processor.stats['customers_created'] == 1
     assert processor.stats.get('normalized_matches', 0) == 0
 
-def test_customer_import_normalized_name(session):
+def test_customer_import_normalized_name(populated_session):
     """Test customer import with normalized name matching."""
-    processor = CustomerProcessor(session)
+    processor = CustomerProcessor(
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
+        batch_size=100,
+        error_limit=10,
+        debug=True
+    )
     
     # Create existing customer
     existing = Customer.create(
@@ -57,8 +69,8 @@ def test_customer_import_normalized_name(session):
         quickbooks_id='12345',
         company_domain='example.com'
     )
-    session.add(existing)
-    session.commit()
+    populated_session.add(existing)
+    populated_session.commit()
     
     # Create test data with different name format
     data = pd.DataFrame([{
@@ -71,15 +83,20 @@ def test_customer_import_normalized_name(session):
     result = processor.process(data)
     
     # Verify customer was updated, not created
-    customers = session.query(Customer).all()
+    customers = populated_session.query(Customer).all()
     assert len(customers) == 1
     assert customers[0].customerName == 'Acme Corp LLC'  # Name updated to new format
     assert processor.stats['customers_updated'] == 1
     assert processor.stats.get('normalized_matches', 0) == 1
 
-def test_customer_import_comma_name(session):
+def test_customer_import_comma_name(populated_session):
     """Test customer import with comma-separated name."""
-    processor = CustomerProcessor(session)
+    processor = CustomerProcessor(
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
+        batch_size=100,
+        error_limit=10,
+        debug=True
+    )
     
     # Create existing customer
     existing = Customer.create(
@@ -87,8 +104,8 @@ def test_customer_import_comma_name(session):
         quickbooks_id='12345',
         company_domain='example.com'
     )
-    session.add(existing)
-    session.commit()
+    populated_session.add(existing)
+    populated_session.commit()
     
     # Create test data with comma format
     data = pd.DataFrame([{
@@ -101,15 +118,20 @@ def test_customer_import_comma_name(session):
     result = processor.process(data)
     
     # Verify customer was updated, not created
-    customers = session.query(Customer).all()
+    customers = populated_session.query(Customer).all()
     assert len(customers) == 1
     assert customers[0].customerName == 'Smith, John'  # Name updated to new format
     assert processor.stats['customers_updated'] == 1
     assert processor.stats.get('normalized_matches', 0) == 1
 
-def test_customer_import_percentage_notation(session):
+def test_customer_import_percentage_notation(populated_session):
     """Test customer import with percentage notation."""
-    processor = CustomerProcessor(session)
+    processor = CustomerProcessor(
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
+        batch_size=100,
+        error_limit=10,
+        debug=True
+    )
     
     # Create existing customer with percentage notation
     existing = Customer.create(
@@ -117,8 +139,8 @@ def test_customer_import_percentage_notation(session):
         quickbooks_id='12345',
         company_domain='example.com'
     )
-    session.add(existing)
-    session.commit()
+    populated_session.add(existing)
+    populated_session.commit()
     
     # Create test data with same notation but different case
     data = pd.DataFrame([{
@@ -131,15 +153,20 @@ def test_customer_import_percentage_notation(session):
     result = processor.process(data)
     
     # Verify customer was updated, not created
-    customers = session.query(Customer).all()
+    customers = populated_session.query(Customer).all()
     assert len(customers) == 1
     assert customers[0].customerName == 'WHITE CAP 30%:WHITECAP EDMONTON CANADA'
     assert processor.stats['customers_updated'] == 1
     assert processor.stats.get('normalized_matches', 0) == 1
 
-def test_customer_import_business_suffixes(session):
+def test_customer_import_business_suffixes(populated_session):
     """Test customer import with various business suffixes."""
-    processor = CustomerProcessor(session)
+    processor = CustomerProcessor(
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
+        batch_size=100,
+        error_limit=10,
+        debug=True
+    )
     
     # Create test data with different suffix variations
     data = pd.DataFrame([
@@ -164,7 +191,7 @@ def test_customer_import_business_suffixes(session):
     result = processor.process(data)
     
     # Verify all variations were normalized and created as one customer
-    customers = session.query(Customer).all()
+    customers = populated_session.query(Customer).all()
     assert len(customers) == 3  # Each has unique QuickBooks ID
     assert processor.stats['customers_created'] == 3
     assert processor.stats.get('normalized_matches', 0) == 0  # No matches since all new
