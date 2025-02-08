@@ -3,9 +3,30 @@
 ## Data Processing Phases
 The system processes data in distinct phases to maintain separation of concerns:
 1. Company Processing (first to establish base relationships)
+   - Creates/updates companies from customer domains
+   - Ensures required companies exist (amazon-fba.com, unknown-domain.com)
+   - Must run first as customers depend on companies
+
 2. Customer Processing (uses company relationships)
-3. Receipt/Invoice Processing (uses customer relationships)
-4. Line Item Processing (uses order relationships)
+   - Creates/updates customers with company relationships
+   - Handles special cases like Amazon FBA
+   - Must run after companies but before orders
+
+3. Product Processing (independent phase)
+   - Creates/updates products from line items
+   - Handles special cases (shipping, tax, discounts)
+   - Maps raw product codes to system codes
+   - Must run before orders to ensure products exist
+
+4. Order Processing (uses customer relationships)
+   - Creates/updates orders (invoices/receipts)
+   - Links to customers and addresses
+   - Must run after customers but before line items
+
+5. Line Item Processing (uses order and product relationships)
+   - Creates/updates line items
+   - Links to orders and products
+   - Must run last as it depends on both orders and products
 
 ## Idempotency
 The system is designed to be idempotent - running the same import multiple times produces the same result:
@@ -32,6 +53,7 @@ The system is designed to be idempotent - running the same import multiple times
    - Amazon FBA uses city-specific names
    - Normalized customer names for better matching
    - Domain handling (amazon-fba.com, email domain, unknown-domain.com)
+   - System products (shipping, tax, discounts)
 
 ## Error Handling
 - Batch processing with error limits
@@ -39,15 +61,19 @@ The system is designed to be idempotent - running the same import multiple times
 - Stop on critical errors
 - Track error context for debugging
 - Validate data before processing
+- Each phase has its own validation rules
 
 ## Database Operations
 - Use session management for transactions
 - Commit in batches for performance
 - Use with_for_update() for row locking
 - Cascade deletes for related records
+- Maintain referential integrity across phases
 
 ## Logging
 - Debug mode for detailed logs
 - Track statistics for monitoring
 - Log validation issues
 - Track processing time
+- Phase-specific logging
+- Clear phase progression in logs

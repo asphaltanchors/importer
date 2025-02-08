@@ -6,6 +6,7 @@ This system imports sales data from QuickBooks into a structured database, enabl
 - Integration with other systems
 - Historical tracking of sales
 - Customer relationship management
+- Product catalog management
 
 ## Problems Solved
 
@@ -14,6 +15,26 @@ This system imports sales data from QuickBooks into a structured database, enabl
 - Maintains relationships between customers, orders, and products
 - Preserves QuickBooks IDs for data consistency
 - Handles special cases like Amazon FBA
+- Manages product catalog consistently across imports
+
+### Product Management
+1. Product Identification:
+   - Maps raw QuickBooks product codes to system codes
+   - Handles special system products (shipping, tax, discounts)
+   - Maintains consistent product codes across imports
+   - Updates product descriptions when they change
+
+2. Product Data Quality:
+   - Prevents duplicate product records
+   - Updates product information when it changes
+   - Maintains consistent naming for system products
+   - Validates product codes and descriptions
+
+3. Special Product Handling:
+   - System-defined shipping products
+   - Multiple tax product variations
+   - Discount product handling
+   - Consistent mapping of variations
 
 ### Customer Management
 1. Customer Identification:
@@ -45,10 +66,12 @@ This system imports sales data from QuickBooks into a structured database, enabl
 
 ### Data Flow
 1. Read sales data from CSV files
-2. Process customers first to establish relationships
-3. Process sales receipts/invoices
-4. Process line items and product mappings
-5. Generate validation reports
+2. Process companies first to establish relationships
+3. Process customers to link with companies
+4. Process products to ensure catalog consistency
+5. Process sales receipts/invoices with customer links
+6. Process line items with product and order links
+7. Generate validation reports
 
 ### Key Features
 - Batch processing for performance
@@ -57,9 +80,12 @@ This system imports sales data from QuickBooks into a structured database, enabl
 - Idempotent processing
 - Special case handling
 - Relationship maintenance
+- Product code mapping
+- System product handling
 
 ### Integration Points
 - QuickBooks data export (input)
 - Database storage (output)
 - Error reporting system
 - Validation system
+- Product catalog management
