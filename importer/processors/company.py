@@ -104,24 +104,26 @@ class CompanyProcessor(BaseProcessor[Dict[str, Any]]):
         primary_fields = ['Main Email', 'Billing Address Email']
         for field in primary_fields:
             if field in row and pd.notna(row[field]):
-                email = str(row[field]).strip()
-                if '@' in email:
-                    try:
-                        raw_domain = email.split('@')[1].strip()
-                        if self.debug:
-                            self.logger.debug(f"Attempting to normalize domain: {raw_domain}")
-                        domain = normalize_domain(raw_domain)
-                        if domain:
+                # Split multiple emails
+                emails = str(row[field]).strip().split(';')
+                for email in emails:
+                    email = email.strip()
+                    if '@' in email:
+                        try:
+                            raw_domain = email.split('@')[1].strip()
                             if self.debug:
-                                self.logger.debug(f"Successfully normalized domain: {domain}")
-                            return domain
-                        elif self.debug:
-                            self.logger.debug(f"normalize_domain returned None for: {raw_domain}")
-                        return ''  # Return empty string when normalize_domain returns None
-                    except IndexError:
-                        if self.debug:
-                            self.logger.debug(f"IndexError extracting domain from: {email}")
-                        continue
+                                self.logger.debug(f"Attempting to normalize domain: {raw_domain}")
+                            domain = normalize_domain(raw_domain)
+                            if domain:
+                                if self.debug:
+                                    self.logger.debug(f"Successfully normalized domain: {domain}")
+                                return domain
+                            elif self.debug:
+                                self.logger.debug(f"normalize_domain returned None for: {raw_domain}")
+                        except IndexError:
+                            if self.debug:
+                                self.logger.debug(f"IndexError extracting domain from: {email}")
+                            continue
 
         # Then check other email fields
         for field in self.EMAIL_FIELDS:

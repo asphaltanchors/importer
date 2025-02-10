@@ -60,8 +60,13 @@ class ExtractDomainsCommand(FileInputCommand):
         """Execute the command."""
         self.logger.info(f"Processing {self.input_file} for email domains...")
         
-        # Read the CSV file
-        df = pd.read_csv(self.input_file)
+        # Read the CSV file with Windows encoding
+        df = pd.read_csv(
+            self.input_file,
+            encoding='cp1252',
+            dtype=str,  # Read all columns as strings to preserve IDs
+            skipinitialspace=True
+        )
         
         # Initialize and run company processor
         processor = CompanyProcessor({'database_url': self.config.database_url})
@@ -101,8 +106,13 @@ class ProcessAddressesCommand(FileInputCommand):
         """Execute the command."""
         self.logger.info(f"Processing {self.input_file} for addresses...")
         
-        # Read the CSV file
-        df = pd.read_csv(self.input_file)
+        # Read the CSV file with Windows encoding
+        df = pd.read_csv(
+            self.input_file,
+            encoding='cp1252',
+            dtype=str,  # Read all columns as strings to preserve IDs
+            skipinitialspace=True
+        )
         
         # Initialize and run address processor
         session = self.get_session()
@@ -145,9 +155,18 @@ class ProcessCustomersCommand(FileInputCommand):
         """Execute the command."""
         self.logger.info(f"Processing {self.input_file} for customers...")
         
-        # Read the CSV file
-        df = pd.read_csv(self.input_file)
+        # Read the CSV file with Windows encoding
+        df = pd.read_csv(
+            self.input_file,
+            encoding='cp1252',
+            dtype=str,  # Read all columns as strings to preserve IDs
+            skipinitialspace=True
+        )
         total_rows = len(df)
+        
+        # Debug: Print DataFrame columns and first row
+        self.logger.debug(f"DataFrame columns: {df.columns.tolist()}")
+        self.logger.debug(f"First row: {df.iloc[0].to_dict()}")
         
         print(f"\nProcessing {total_rows} rows in batches of 100", flush=True)
         
@@ -236,8 +255,13 @@ class ProcessEmailsCommand(FileInputCommand):
         """Execute the command."""
         self.logger.info(f"Processing {self.input_file} for customer emails...")
         
-        # Read the CSV file
-        df = pd.read_csv(self.input_file)
+        # Read the CSV file with Windows encoding
+        df = pd.read_csv(
+            self.input_file,
+            encoding='cp1252',
+            dtype=str,  # Read all columns as strings to preserve IDs
+            skipinitialspace=True
+        )
         
         session = self.get_session()
         try:
@@ -293,8 +317,13 @@ class ProcessPhonesCommand(FileInputCommand):
         """Execute the command."""
         self.logger.info(f"Processing {self.input_file} for customer phones...")
         
-        # Read the CSV file
-        df = pd.read_csv(self.input_file)
+        # Read the CSV file with Windows encoding
+        df = pd.read_csv(
+            self.input_file,
+            encoding='cp1252',
+            dtype=str,  # Read all columns as strings to preserve IDs
+            skipinitialspace=True
+        )
         
         session = self.get_session()
         try:

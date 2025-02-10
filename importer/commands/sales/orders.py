@@ -40,7 +40,12 @@ class ProcessOrdersCommand(FileInputCommand):
             self.logger.info(f"Processing orders from {self.input_file}")
             
             # Read and normalize CSV
-            df = pd.read_csv(self.input_file)
+            df = pd.read_csv(
+                self.input_file,
+                encoding='cp1252',
+                dtype=str,  # Read all columns as strings to preserve IDs
+                skipinitialspace=True
+            )
             df = normalize_dataframe_columns(df)
             
             # Process orders using session

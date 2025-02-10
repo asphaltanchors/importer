@@ -32,9 +32,10 @@ class Customer(Base):
     
     @classmethod
     def create(cls, name: str, quickbooks_id: str, company_domain: str, 
-               billing_address_id: str = None, shipping_address_id: str = None) -> 'Customer':
+               billing_address_id: str = None, shipping_address_id: str = None,
+               created_at: datetime = None) -> 'Customer':
         """Create a new customer record."""
-        now = datetime.utcnow()
+        now = created_at or datetime.utcnow()
         return cls(
             id=str(uuid.uuid4()) if not quickbooks_id else quickbooks_id,  # Use UUID if no QuickBooks ID, otherwise use QuickBooks ID
             customerName=name,

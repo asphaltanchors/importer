@@ -296,6 +296,46 @@ def test_validate_data(session_manager):
     critical3, warnings3 = customer_processor.validate_data(data3)
     assert len(warnings3) >= 1  # Warning about missing company domain
 
+def test_customer_created_date(session_manager):
+    """Test customer created date is set from CSV."""
+    # Initialize company processor
+    company_processor = CompanyProcessor(
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
+        batch_size=100,
+        error_limit=10,
+        debug=True
+    )
+    
+    # Create test data with created date
+    data = pd.DataFrame([{
+        'Customer': 'Test Corp',
+        'Main Email': 'contact@example.com',
+        'Customer Name': 'Test Corp',
+        'QuickBooks Internal Id': '12345',
+        'Created Date': '01-15-2024'  # MM-DD-YYYY format
+    }])
+    
+    # Process company first
+    company_processor.process(data)
+    
+    # Initialize customer processor after company exists
+    customer_processor = CustomerProcessor(
+        config={'database_url': os.getenv('TEST_DATABASE_URL')},
+        batch_size=100,
+        error_limit=10,
+        debug=True
+    )
+    
+    # Process customer data
+    customer_processor.process(data)
+    
+    # Verify created date was set correctly
+    with Session(session_manager()) as session:
+        customer = session.query(Customer).first()
+        assert customer is not None
+        expected_date = pd.to_datetime('01-15-2024', format='%m-%d-%Y')
+        assert customer.createdAt.date() == expected_date.date()
+
 def test_customer_company_relationship(session_manager):
     """Test customer-company relationship handling."""
     # Initialize company processor

@@ -81,7 +81,12 @@ class PaymentProcessor(BaseProcessor):
         """
         try:
             # Read CSV into DataFrame and normalize column names
-            df = pd.read_csv(file_path)
+            df = pd.read_csv(
+                file_path,
+                encoding='cp1252',
+                dtype=str,  # Read all columns as strings to preserve IDs
+                skipinitialspace=True
+            )
             df = normalize_dataframe_columns(df)
             
             # Validate required columns

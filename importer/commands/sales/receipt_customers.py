@@ -187,7 +187,12 @@ class ProcessReceiptCustomersCommand(FileInputCommand):
         self.logger.info("Reading CSV file...")
         if self.debug:
             self.logger.debug(f"Reading CSV with low_memory=False from {self.input_file}")
-        df = pd.read_csv(self.input_file, low_memory=False)
+        df = pd.read_csv(
+            self.input_file,
+            encoding='cp1252',
+            dtype=str,  # Read all columns as strings to preserve IDs
+            skipinitialspace=True
+        )
         if self.debug:
             self.logger.debug("Normalizing dataframe columns")
         df = normalize_dataframe_columns(df)
