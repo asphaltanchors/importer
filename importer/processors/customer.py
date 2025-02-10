@@ -81,20 +81,29 @@ class CustomerProcessor(BaseProcessor[Dict[str, Any]]):
         
         for idx, row in batch_df.iterrows():
             try:
-                # Try both possible column names
+                # Get customer name and company name
                 customer_name = None
-                for column in ['Customer Name', 'Customer']:
-                    if column in row and not pd.isna(row[column]):
-                        customer_name = row[column]
-                        if column == 'Customer':
-                            self.logger.debug(f"Using 'Customer' column instead of 'Customer Name'")
-                        break
+                company_name = None
+
+                # Try both possible column names for customer name
+                if 'Customer Name' in row and not pd.isna(row['Customer Name']):
+                    customer_name = str(row['Customer Name']).strip()
+                elif 'Customer' in row and not pd.isna(row['Customer']):
+                    customer_name = str(row['Customer']).strip()
+                    self.logger.debug(f"Using 'Customer' column instead of 'Customer Name'")
+
+                # Get company name if available
+                if 'Company Name' in row and not pd.isna(row['Company Name']):
+                    company_name = str(row['Company Name']).strip()
 
                 if customer_name is None:
                     self.logger.warning(f"Skipping row with missing or NaN customer name, QuickBooks ID: {row.get('QuickBooks Internal Id', 'unknown')}")
                     continue
 
-                name = str(customer_name)  # Convert to string after NaN check
+                # Use customer name for display name, not Account Number
+                name = customer_name
+                if 'Account Number' in row and not pd.isna(row['Account Number']):
+                    self.logger.debug(f"Found Account Number: {row['Account Number']} but using Customer Name: {customer_name}")
                     
                 quickbooks_id = str(row['QuickBooks Internal Id'])
                 
@@ -143,6 +152,14 @@ class CustomerProcessor(BaseProcessor[Dict[str, Any]]):
                     )
                     if existing_customer:
                         self.logger.debug(f"Found existing customer by QuickBooks ID: {existing_customer.customerName}")
+                        # Update the name to match the current record
+                        existing_customer.customerName = name
+                        existing_customer.modifiedAt = pd.Timestamp.now()
+                        self.logger.debug(f"Updated customer name to: {name}")
+                        self.stats.customers_updated += 1
+                        customer = existing_customer
+                        batch_df.at[idx, 'customer_id'] = customer.id
+                        continue  # Skip the rest since we've already updated everything
                 else:
                     existing_customer = None
                     quickbooks_id = None  # Ensure it's None if empty/invalid
@@ -179,12 +196,21 @@ class CustomerProcessor(BaseProcessor[Dict[str, Any]]):
                     self.logger.debug(f"Billing address ID: {billing_id}")
                     self.logger.debug(f"Shipping address ID: {shipping_id}")
                     
+                    # Parse created date if available
+                    created_at = None
+                    if 'Created Date' in row and not pd.isna(row['Created Date']):
+                        try:
+                            created_at = pd.to_datetime(row['Created Date'], format='%m-%d-%Y')
+                        except ValueError:
+                            self.logger.warning(f"Invalid Created Date format for customer {name}: {row['Created Date']}")
+
                     customer = Customer.create(
                         name=name,
                         quickbooks_id=quickbooks_id,
                         company_domain=company_domain,
                         billing_address_id=billing_id,
-                        shipping_address_id=shipping_id
+                        shipping_address_id=shipping_id,
+                        created_at=created_at
                     )
                     
                     # Verify the customer was created with correct field mappings
