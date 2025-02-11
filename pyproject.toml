@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "py-importer"
-version = "0.1.0"
+version = "1.0.0"
 description = "CSV import processor for database ingestion"
 authors = ["Your Name <your.email@example.com>"]
 packages = [{include = "importer"}]

@@ -1,53 +1,66 @@
 #!/bin/bash
 set -e
 
-# Set up logging
-exec 1>> /var/log/importer/import.log 2>&1
-
 echo "Starting import process at $(date)"
 
 # Create today's processed/failed directories
 TODAY=$(date +%Y-%m-%d)
 mkdir -p "/data/processed/$TODAY" "/data/failed/$TODAY"
 
-process_file() {
-    local file="$1"
+# Function to count files matching a pattern
+count_files() {
+    local pattern="$1"
+    local count=$(find /data -maxdepth 1 -name "$pattern" -type f | wc -l)
+    echo "$count"
+}
+
+# Function to process files of a specific type
+process_files() {
+    local pattern="$1"
     local cmd="$2"
     local type="$3"
     
-    echo "Processing $type file: $file"
-    if poetry run importer $cmd "$file"; then
-        echo "Successfully processed $file"
-        mv "$file" "/data/processed/$TODAY/"
-    else
-        echo "Failed to process $file"
-        mv "$file" "/data/failed/$TODAY/"
-    fi
+    local success_count=0
+    local fail_count=0
+    
+    echo "Processing $type files..."
+    find /data -maxdepth 1 -name "$pattern" -type f | while read -r f; do
+        echo "  → Processing: $(basename "$f")"
+        if poetry run importer $cmd "$f"; then
+            echo "    ✓ Successfully processed $(basename "$f")"
+            mv "$f" "/data/processed/$TODAY/"
+            ((success_count++))
+        else
+            echo "    ✗ Failed to process $(basename "$f")"
+            mv "$f" "/data/failed/$TODAY/"
+            ((fail_count++))
+        fi
+    done
+    
+    echo "Completed processing $type files: $success_count succeeded, $fail_count failed"
+    echo "----------------------------------------"
 }
 
-# Process customer files (excluding *_all.csv)
-find /data -maxdepth 1 -name "Customer_[0-9]*.csv" -type f | while read -r f; do
-    process_file "$f" "customers process" "customer"
-done
+# Process customer files
+count=$(count_files "Customer_[0-9]*.csv")
+echo "Found $count customer files to process"
+process_files "Customer_[0-9]*.csv" "customers process" "customer"
 
-# Process invoice files (excluding *_all.csv)
-find /data -maxdepth 1 -name "Invoice_[0-9]*.csv" -type f | while read -r f; do
-    process_file "$f" "process-invoices" "invoice"
-done
+# Process invoice files
+count=$(count_files "Invoice_[0-9]*.csv")
+echo "Found $count invoice files to process"
+process_files "Invoice_[0-9]*.csv" "process-invoices" "invoice"
 
-# Process sales receipt files (excluding *_all.csv)
-find /data -maxdepth 1 -name "Sales Receipt_[0-9]*.csv" -type f | while read -r f; do
-    process_file "$f" "process-receipts" "sales receipt"
-done
+# Process sales receipt files
+count=$(count_files "Sales Receipt_[0-9]*.csv")
+echo "Found $count sales receipt files to process"
+process_files "Sales Receipt_[0-9]*.csv" "process-receipts" "sales receipt"
 
 echo "Cleaning up old processed/failed files (older than 30 days)..."
 find /data/processed/* -type d -mtime +30 -exec rm -rf {} \; 2>/dev/null || true
 find /data/failed/* -type d -mtime +30 -exec rm -rf {} \; 2>/dev/null || true
 
-# Rotate logs if they get too large (keep last 100MB)
-LOG_FILE="/var/log/importer/import.log"
-if [ -f "$LOG_FILE" ] && [ $(stat --format=%s "$LOG_FILE") -gt 104857600 ]; then
-    mv "$LOG_FILE" "${LOG_FILE}.1"
-fi
-
+echo "=== Import Summary ==="
+echo "Processed files moved to: /data/processed/$TODAY/"
+echo "Failed files moved to: /data/failed/$TODAY/"
 echo "Import process completed at $(date)"

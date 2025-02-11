@@ -71,14 +71,9 @@ COPY crontab.txt /app/crontab.txt
 # Ensure scripts are executable
 RUN chmod +x /app/scripts/run_import.sh /app/startup.sh
 
-# Create directory for logs 
-RUN mkdir -p /var/log/importer \
-    && touch /var/log/importer/import.log \
-    && chmod 666 /var/log/importer/import.log
-
 # Create non-root user
 RUN useradd -m -u 1000 importer_user \
-    && chown -R importer_user:importer_user /app /var/log/importer
+    && chown -R importer_user:importer_user /app
 
 # Switch to non-root user
 USER importer_user
