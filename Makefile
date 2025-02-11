@@ -2,10 +2,13 @@ VERSION := $(shell poetry version -s)  # Extract version from pyproject.toml
 REGISTRY := ghcr.io/asphaltanchors
 IMAGE_NAME := py-importer
 
-.PHONY: build tag push all version-patch version-minor version-major
+.PHONY: build build-local tag push all version-patch version-minor version-major
 
 build:
 	docker build --platform linux/amd64 -t $(IMAGE_NAME):$(VERSION) .
+
+build-local:
+	docker build -t $(IMAGE_NAME):$(VERSION) .
 
 tag:
 	docker tag $(IMAGE_NAME):$(VERSION) $(REGISTRY)/$(IMAGE_NAME):$(VERSION)
@@ -34,7 +37,8 @@ all: build tag push
 # Help target
 help:
 	@echo "Available targets:"
-	@echo "  build         - Build Docker image with current version"
+	@echo "  build         - Build Docker image for linux/amd64"
+	@echo "  build-local   - Build Docker image for local architecture"
 	@echo "  tag          - Tag Docker image for registry"
 	@echo "  push         - Push Docker image to registry"
 	@echo "  all          - Build, tag, and push Docker image"
