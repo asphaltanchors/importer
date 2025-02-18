@@ -26,7 +26,7 @@ process_files() {
     echo "Processing $type files..."
     find /data -maxdepth 1 -name "$pattern" -type f | while read -r f; do
         echo "  → Processing: $(basename "$f")"
-        if poetry run importer $cmd "$f"; then
+        if importer $cmd "$f"; then
             echo "    ✓ Successfully processed $(basename "$f")"
             mv "$f" "/data/processed/$TODAY/"
             ((success_count++))

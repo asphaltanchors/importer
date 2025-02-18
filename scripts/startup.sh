@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Ensure Poetry is in PATH
+export PATH="/opt/poetry/bin:$PATH"
+
 if [ $# -gt 0 ]; then
     # If arguments are passed, execute them
     exec "$@"

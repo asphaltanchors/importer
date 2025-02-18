@@ -1,8 +1,8 @@
-VERSION := $(shell poetry version -s)  # Extract version from pyproject.toml
+VERSION := $(shell python3 -c "import re;print(re.search('version=\"(.+?)\"', open('setup.py').read()).group(1))")
 REGISTRY := ghcr.io/asphaltanchors
 IMAGE_NAME := py-importer
 
-.PHONY: build build-local tag push all version-patch version-minor version-major
+.PHONY: build build-local tag push all
 
 build:
 	docker build --platform linux/amd64 -t $(IMAGE_NAME):$(VERSION) .
@@ -18,19 +18,6 @@ push:
 	docker push $(REGISTRY)/$(IMAGE_NAME):$(VERSION)
 	docker push $(REGISTRY)/$(IMAGE_NAME):latest
 
-# Version bumping targets
-version-patch:
-	poetry version patch
-	@echo "Bumped to version: $(shell poetry version -s)"
-
-version-minor:
-	poetry version minor
-	@echo "Bumped to version: $(shell poetry version -s)"
-
-version-major:
-	poetry version major
-	@echo "Bumped to version: $(shell poetry version -s)"
-
 # Build and push all
 all: build tag push
 
@@ -42,8 +29,5 @@ help:
 	@echo "  tag          - Tag Docker image for registry"
 	@echo "  push         - Push Docker image to registry"
 	@echo "  all          - Build, tag, and push Docker image"
-	@echo "  version-patch - Bump patch version (0.1.0 -> 0.1.1)"
-	@echo "  version-minor - Bump minor version (0.1.0 -> 0.2.0)"
-	@echo "  version-major - Bump major version (0.1.0 -> 1.0.0)"
 	@echo ""
 	@echo "Current version: $(VERSION)"

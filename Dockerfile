@@ -3,17 +3,16 @@ FROM python:3.11-slim
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
-ENV POETRY_VERSION=2.0.1
-ENV POETRY_HOME=/opt/poetry
-ENV POETRY_NO_INTERACTION=1
-ENV POETRY_VIRTUALENVS_CREATE=false
-ENV PATH="/opt/poetry/bin:$PATH"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         curl \
+        postgresql-client \
+        postgresql-server-dev-all \
+        gcc \
+        python3-dev \
+        libc-dev \
     && rm -rf /var/lib/apt/lists/*
-
 
 # Install supercronic
 ENV SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/v0.2.33/supercronic-linux-amd64 \
@@ -28,12 +27,17 @@ RUN curl -fsSLO "$SUPERCRONIC_URL" \
 
 WORKDIR /app
 
+# Copy requirements and setup files
+COPY requirements.txt setup.py ./
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
 # Copy project files
-COPY pyproject.toml poetry.lock* ./
 COPY importer ./importer
 
-# Install dependencies and project
-RUN pip install poetry && poetry install --only main
+# Install the package
+RUN pip install --no-cache-dir -e .
 
 # Copy scripts and config
 COPY scripts ./scripts
