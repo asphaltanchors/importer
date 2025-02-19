@@ -10,7 +10,7 @@ mkdir -p "/data/processed/$TODAY" "/data/failed/$TODAY"
 # Function to count files matching a pattern
 count_files() {
     local pattern="$1"
-    local count=$(find /data -maxdepth 1 -name "$pattern" -type f | wc -l)
+    local count=$(find /data/input -maxdepth 1 -name "$pattern" -type f | wc -l)
     echo "$count"
 }
 
@@ -24,7 +24,7 @@ process_files() {
     local fail_count=0
     
     echo "Processing $type files..."
-    find /data -maxdepth 1 -name "$pattern" -type f | while read -r f; do
+    find /data/input -maxdepth 1 -name "$pattern" -type f | while read -r f; do
         echo "  → Processing: $(basename "$f")"
         if importer $cmd "$f"; then
             echo "    ✓ Successfully processed $(basename "$f")"
