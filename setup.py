@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="py-importer",
-    version="1.6.0",
+    version="1.7.0",
     description="CSV import processor for database ingestion",
     packages=find_packages(),
     python_requires=">=3.11",

@@ -24,7 +24,8 @@ process_files() {
     local fail_count=0
     
     echo "Processing $type files..."
-    find /data/input -maxdepth 1 -name "$pattern" -type f | while read -r f; do
+    # Find files matching pattern and sort them chronologically by year, month, day
+    find /data/input -maxdepth 1 -name "$pattern" -type f | sort -t_ -k4,4n -k2,2n -k3,3n | while read -r f; do
         echo "  → Processing: $(basename "$f")"
         if importer $cmd "$f"; then
             echo "    ✓ Successfully processed $(basename "$f")"
@@ -42,19 +43,19 @@ process_files() {
 }
 
 # Process customer files
-count=$(count_files "Customer_[0-9]*.csv")
+count=$(count_files "Customer_*.csv")
 echo "Found $count customer files to process"
-process_files "Customer_[0-9]*.csv" "customers process" "customer"
+process_files "Customer_*.csv" "customers process" "customer"
 
 # Process invoice files
-count=$(count_files "Invoice_[0-9]*.csv")
+count=$(count_files "Invoice_*.csv")
 echo "Found $count invoice files to process"
-process_files "Invoice_[0-9]*.csv" "process-invoices" "invoice"
+process_files "Invoice_*.csv" "process-invoices" "invoice"
 
 # Process sales receipt files
-count=$(count_files "Sales Receipt_[0-9]*.csv")
+count=$(count_files "Sales Receipt_*.csv")
 echo "Found $count sales receipt files to process"
-process_files "Sales Receipt_[0-9]*.csv" "process-receipts" "sales receipt"
+process_files "Sales Receipt_*.csv" "process-receipts" "sales receipt"
 
 echo "Cleaning up old processed/failed files (older than 30 days)..."
 find /data/processed/* -type d -mtime +30 -exec rm -rf {} \; 2>/dev/null || true
