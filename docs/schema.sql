@@ -5,25 +5,45 @@
 -- Dumped from database version 14.15 (Homebrew)
 -- Dumped by pg_dump version 17.0
 
--- Started on 2025-02-07 21:20:30 PST
+-- Started on 2025-03-10 16:27:45 PDT
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
 
 --
--- TOC entry 834 (class 1247 OID 41306)
+-- TOC entry 4 (class 2615 OID 2200)
+-- Name: public; Type: SCHEMA; Schema: -; Owner: -
+--
+
+-- *not* creating schema, since initdb creates it
+
+
+--
+-- TOC entry 832 (class 1247 OID 57015)
 -- Name: EmailType; Type: TYPE; Schema: public; Owner: -
 --
 
-CREATE TYPE "EmailType" AS ENUM (
+CREATE TYPE public."EmailType" AS ENUM (
     'MAIN',
     'CC'
 );
 
 
 --
--- TOC entry 840 (class 1247 OID 41328)
+-- TOC entry 835 (class 1247 OID 57020)
 -- Name: OrderStatus; Type: TYPE; Schema: public; Owner: -
 --
 
-CREATE TYPE "OrderStatus" AS ENUM (
+CREATE TYPE public."OrderStatus" AS ENUM (
     'OPEN',
     'CLOSED',
     'VOID',
@@ -32,11 +52,11 @@ CREATE TYPE "OrderStatus" AS ENUM (
 
 
 --
--- TOC entry 843 (class 1247 OID 41338)
+-- TOC entry 838 (class 1247 OID 57030)
 -- Name: PaymentStatus; Type: TYPE; Schema: public; Owner: -
 --
 
-CREATE TYPE "PaymentStatus" AS ENUM (
+CREATE TYPE public."PaymentStatus" AS ENUM (
     'UNPAID',
     'PAID',
     'PARTIAL',
@@ -46,11 +66,11 @@ CREATE TYPE "PaymentStatus" AS ENUM (
 
 
 --
--- TOC entry 837 (class 1247 OID 41312)
+-- TOC entry 841 (class 1247 OID 57042)
 -- Name: PhoneType; Type: TYPE; Schema: public; Owner: -
 --
 
-CREATE TYPE "PhoneType" AS ENUM (
+CREATE TYPE public."PhoneType" AS ENUM (
     'MAIN',
     'MOBILE',
     'WORK',
@@ -61,11 +81,11 @@ CREATE TYPE "PhoneType" AS ENUM (
 SET default_table_access_method = heap;
 
 --
--- TOC entry 213 (class 1259 OID 41372)
+-- TOC entry 209 (class 1259 OID 57051)
 -- Name: Address; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE "Address" (
+CREATE TABLE public."Address" (
     id text NOT NULL,
     line1 text NOT NULL,
     line2 text,
@@ -78,11 +98,11 @@ CREATE TABLE "Address" (
 
 
 --
--- TOC entry 214 (class 1259 OID 41379)
+-- TOC entry 210 (class 1259 OID 57056)
 -- Name: Company; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE "Company" (
+CREATE TABLE public."Company" (
     id text NOT NULL,
     domain text NOT NULL,
     name text,
@@ -96,11 +116,11 @@ CREATE TABLE "Company" (
 
 
 --
--- TOC entry 210 (class 1259 OID 41349)
+-- TOC entry 211 (class 1259 OID 57062)
 -- Name: Customer; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE "Customer" (
+CREATE TABLE public."Customer" (
     id text NOT NULL,
     "quickbooksId" text NOT NULL,
     "customerName" text NOT NULL,
@@ -120,19 +140,19 @@ CREATE TABLE "Customer" (
 
 
 --
--- TOC entry 216 (class 1259 OID 41394)
+-- TOC entry 212 (class 1259 OID 57067)
 -- Name: Order; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE "Order" (
+CREATE TABLE public."Order" (
     id text NOT NULL,
     "orderNumber" text NOT NULL,
     "orderDate" timestamp(3) without time zone NOT NULL,
     "customerId" text NOT NULL,
     "billingAddressId" text,
     "shippingAddressId" text,
-    status "OrderStatus" NOT NULL,
-    "paymentStatus" "PaymentStatus" NOT NULL,
+    status public."OrderStatus" NOT NULL,
+    "paymentStatus" public."PaymentStatus" NOT NULL,
     "paymentMethod" text,
     "paymentDate" timestamp(3) without time zone,
     "dueDate" timestamp(3) without time zone,
@@ -153,54 +173,54 @@ CREATE TABLE "Order" (
 
 
 --
--- TOC entry 218 (class 1259 OID 43307)
+-- TOC entry 213 (class 1259 OID 57072)
 -- Name: CompanyStats; Type: VIEW; Schema: public; Owner: -
 --
 
-CREATE VIEW "CompanyStats" AS
+CREATE VIEW public."CompanyStats" AS
  SELECT c.id,
     count(DISTINCT cust.id) AS "customerCount",
     COALESCE(sum(o."totalAmount"), (0)::numeric) AS "totalOrders"
-   FROM (("Company" c
-     LEFT JOIN "Customer" cust ON ((cust."companyDomain" = c.domain)))
-     LEFT JOIN "Order" o ON ((o."customerId" = cust.id)))
+   FROM ((public."Company" c
+     LEFT JOIN public."Customer" cust ON ((cust."companyDomain" = c.domain)))
+     LEFT JOIN public."Order" o ON ((o."customerId" = cust.id)))
   GROUP BY c.id;
 
 
 --
--- TOC entry 211 (class 1259 OID 41356)
+-- TOC entry 214 (class 1259 OID 57077)
 -- Name: CustomerEmail; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE "CustomerEmail" (
+CREATE TABLE public."CustomerEmail" (
     id text NOT NULL,
     email text NOT NULL,
-    type "EmailType" NOT NULL,
+    type public."EmailType" NOT NULL,
     "isPrimary" boolean DEFAULT false NOT NULL,
     "customerId" text NOT NULL
 );
 
 
 --
--- TOC entry 212 (class 1259 OID 41364)
+-- TOC entry 215 (class 1259 OID 57083)
 -- Name: CustomerPhone; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE "CustomerPhone" (
+CREATE TABLE public."CustomerPhone" (
     id text NOT NULL,
     phone text NOT NULL,
-    type "PhoneType" NOT NULL,
+    type public."PhoneType" NOT NULL,
     "isPrimary" boolean DEFAULT false NOT NULL,
     "customerId" text NOT NULL
 );
 
 
 --
--- TOC entry 217 (class 1259 OID 41401)
+-- TOC entry 216 (class 1259 OID 57089)
 -- Name: OrderItem; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE "OrderItem" (
+CREATE TABLE public."OrderItem" (
     id text NOT NULL,
     "orderId" text NOT NULL,
     "productCode" text NOT NULL,
@@ -214,356 +234,429 @@ CREATE TABLE "OrderItem" (
 
 
 --
--- TOC entry 215 (class 1259 OID 41387)
+-- TOC entry 217 (class 1259 OID 57094)
 -- Name: Product; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE "Product" (
+CREATE TABLE public."Product" (
     id text NOT NULL,
     "productCode" text NOT NULL,
     name text NOT NULL,
     description text,
     "createdAt" timestamp(3) without time zone NOT NULL,
-    "modifiedAt" timestamp(3) without time zone NOT NULL
+    "modifiedAt" timestamp(3) without time zone NOT NULL,
+    cost numeric(10,2),
+    "listPrice" numeric(10,2),
+    "unitsPerPackage" integer DEFAULT 6 NOT NULL
 );
 
 
 --
--- TOC entry 3522 (class 2606 OID 41378)
+-- TOC entry 219 (class 1259 OID 58020)
+-- Name: ProductPriceHistory; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."ProductPriceHistory" (
+    id text NOT NULL,
+    "productId" text NOT NULL,
+    cost numeric(10,2) NOT NULL,
+    "listPrice" numeric(10,2) NOT NULL,
+    "effectiveDate" timestamp(3) without time zone NOT NULL,
+    notes text
+);
+
+
+--
+-- TOC entry 218 (class 1259 OID 57099)
+-- Name: _prisma_migrations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public._prisma_migrations (
+    id character varying(36) NOT NULL,
+    checksum character varying(64) NOT NULL,
+    finished_at timestamp with time zone,
+    migration_name character varying(255) NOT NULL,
+    logs text,
+    rolled_back_at timestamp with time zone,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    applied_steps_count integer DEFAULT 0 NOT NULL
+);
+
+
+--
+-- TOC entry 3510 (class 2606 OID 57186)
 -- Name: Address Address_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "Address"
+ALTER TABLE ONLY public."Address"
     ADD CONSTRAINT "Address_pkey" PRIMARY KEY (id);
 
 
 --
--- TOC entry 3525 (class 2606 OID 41386)
+-- TOC entry 3513 (class 2606 OID 57188)
 -- Name: Company Company_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "Company"
+ALTER TABLE ONLY public."Company"
     ADD CONSTRAINT "Company_pkey" PRIMARY KEY (id);
 
 
 --
--- TOC entry 3516 (class 2606 OID 41363)
+-- TOC entry 3533 (class 2606 OID 57190)
 -- Name: CustomerEmail CustomerEmail_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "CustomerEmail"
+ALTER TABLE ONLY public."CustomerEmail"
     ADD CONSTRAINT "CustomerEmail_pkey" PRIMARY KEY (id);
 
 
 --
--- TOC entry 3520 (class 2606 OID 41371)
+-- TOC entry 3537 (class 2606 OID 57192)
 -- Name: CustomerPhone CustomerPhone_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "CustomerPhone"
+ALTER TABLE ONLY public."CustomerPhone"
     ADD CONSTRAINT "CustomerPhone_pkey" PRIMARY KEY (id);
 
 
 --
--- TOC entry 3510 (class 2606 OID 41355)
+-- TOC entry 3518 (class 2606 OID 57194)
 -- Name: Customer Customer_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "Customer"
+ALTER TABLE ONLY public."Customer"
     ADD CONSTRAINT "Customer_pkey" PRIMARY KEY (id);
 
 
 --
--- TOC entry 3540 (class 2606 OID 41407)
+-- TOC entry 3540 (class 2606 OID 57196)
 -- Name: OrderItem OrderItem_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "OrderItem"
+ALTER TABLE ONLY public."OrderItem"
     ADD CONSTRAINT "OrderItem_pkey" PRIMARY KEY (id);
 
 
 --
--- TOC entry 3534 (class 2606 OID 41400)
+-- TOC entry 3526 (class 2606 OID 57198)
 -- Name: Order Order_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "Order"
+ALTER TABLE ONLY public."Order"
     ADD CONSTRAINT "Order_pkey" PRIMARY KEY (id);
 
 
 --
--- TOC entry 3527 (class 2606 OID 41393)
+-- TOC entry 3550 (class 2606 OID 58026)
+-- Name: ProductPriceHistory ProductPriceHistory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ProductPriceHistory"
+    ADD CONSTRAINT "ProductPriceHistory_pkey" PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3544 (class 2606 OID 57200)
 -- Name: Product Product_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "Product"
+ALTER TABLE ONLY public."Product"
     ADD CONSTRAINT "Product_pkey" PRIMARY KEY (id);
 
 
 --
--- TOC entry 3505 (class 2606 OID 41304)
+-- TOC entry 3547 (class 2606 OID 57202)
 -- Name: _prisma_migrations _prisma_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
+ALTER TABLE ONLY public._prisma_migrations
+    ADD CONSTRAINT _prisma_migrations_pkey PRIMARY KEY (id);
+
+
 --
--- TOC entry 3523 (class 1259 OID 41417)
+-- TOC entry 3511 (class 1259 OID 57203)
 -- Name: Company_domain_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX "Company_domain_key" ON "Company" USING btree (domain);
+CREATE UNIQUE INDEX "Company_domain_key" ON public."Company" USING btree (domain);
 
 
 --
--- TOC entry 3513 (class 1259 OID 41414)
+-- TOC entry 3530 (class 1259 OID 57204)
 -- Name: CustomerEmail_customerId_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX "CustomerEmail_customerId_idx" ON "CustomerEmail" USING btree ("customerId");
+CREATE INDEX "CustomerEmail_customerId_idx" ON public."CustomerEmail" USING btree ("customerId");
 
 
 --
--- TOC entry 3514 (class 1259 OID 41413)
+-- TOC entry 3531 (class 1259 OID 57205)
 -- Name: CustomerEmail_email_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX "CustomerEmail_email_idx" ON "CustomerEmail" USING btree (email);
+CREATE INDEX "CustomerEmail_email_idx" ON public."CustomerEmail" USING btree (email);
 
 
 --
--- TOC entry 3517 (class 1259 OID 41416)
+-- TOC entry 3534 (class 1259 OID 57206)
 -- Name: CustomerPhone_customerId_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX "CustomerPhone_customerId_idx" ON "CustomerPhone" USING btree ("customerId");
+CREATE INDEX "CustomerPhone_customerId_idx" ON public."CustomerPhone" USING btree ("customerId");
 
 
 --
--- TOC entry 3518 (class 1259 OID 41415)
+-- TOC entry 3535 (class 1259 OID 57207)
 -- Name: CustomerPhone_phone_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX "CustomerPhone_phone_idx" ON "CustomerPhone" USING btree (phone);
+CREATE INDEX "CustomerPhone_phone_idx" ON public."CustomerPhone" USING btree (phone);
 
 
 --
--- TOC entry 3506 (class 1259 OID 41479)
+-- TOC entry 3514 (class 1259 OID 57208)
 -- Name: Customer_billingAddressId_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX "Customer_billingAddressId_idx" ON "Customer" USING btree ("billingAddressId");
+CREATE INDEX "Customer_billingAddressId_idx" ON public."Customer" USING btree ("billingAddressId");
 
 
 --
--- TOC entry 3507 (class 1259 OID 41412)
+-- TOC entry 3515 (class 1259 OID 57209)
 -- Name: Customer_companyDomain_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX "Customer_companyDomain_idx" ON "Customer" USING btree ("companyDomain");
+CREATE INDEX "Customer_companyDomain_idx" ON public."Customer" USING btree ("companyDomain");
 
 
 --
--- TOC entry 3508 (class 1259 OID 41411)
+-- TOC entry 3516 (class 1259 OID 57210)
 -- Name: Customer_customerName_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX "Customer_customerName_idx" ON "Customer" USING btree ("customerName");
+CREATE INDEX "Customer_customerName_idx" ON public."Customer" USING btree ("customerName");
 
 
 --
--- TOC entry 3511 (class 1259 OID 41408)
+-- TOC entry 3519 (class 1259 OID 57211)
 -- Name: Customer_quickbooksId_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX "Customer_quickbooksId_key" ON "Customer" USING btree ("quickbooksId");
+CREATE UNIQUE INDEX "Customer_quickbooksId_key" ON public."Customer" USING btree ("quickbooksId");
 
 
 --
--- TOC entry 3512 (class 1259 OID 41480)
+-- TOC entry 3520 (class 1259 OID 57212)
 -- Name: Customer_shippingAddressId_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX "Customer_shippingAddressId_idx" ON "Customer" USING btree ("shippingAddressId");
+CREATE INDEX "Customer_shippingAddressId_idx" ON public."Customer" USING btree ("shippingAddressId");
 
 
 --
--- TOC entry 3538 (class 1259 OID 41426)
+-- TOC entry 3538 (class 1259 OID 57213)
 -- Name: OrderItem_orderId_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX "OrderItem_orderId_idx" ON "OrderItem" USING btree ("orderId");
+CREATE INDEX "OrderItem_orderId_idx" ON public."OrderItem" USING btree ("orderId");
 
 
 --
--- TOC entry 3541 (class 1259 OID 41427)
+-- TOC entry 3541 (class 1259 OID 57214)
 -- Name: OrderItem_productCode_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX "OrderItem_productCode_idx" ON "OrderItem" USING btree ("productCode");
+CREATE INDEX "OrderItem_productCode_idx" ON public."OrderItem" USING btree ("productCode");
 
 
 --
--- TOC entry 3542 (class 1259 OID 41428)
+-- TOC entry 3542 (class 1259 OID 57215)
 -- Name: OrderItem_serviceDate_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX "OrderItem_serviceDate_idx" ON "OrderItem" USING btree ("serviceDate");
+CREATE INDEX "OrderItem_serviceDate_idx" ON public."OrderItem" USING btree ("serviceDate");
 
 
 --
--- TOC entry 3529 (class 1259 OID 41481)
+-- TOC entry 3521 (class 1259 OID 57216)
 -- Name: Order_billingAddressId_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX "Order_billingAddressId_idx" ON "Order" USING btree ("billingAddressId");
+CREATE INDEX "Order_billingAddressId_idx" ON public."Order" USING btree ("billingAddressId");
 
 
 --
--- TOC entry 3530 (class 1259 OID 41422)
+-- TOC entry 3522 (class 1259 OID 57217)
 -- Name: Order_customerId_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX "Order_customerId_idx" ON "Order" USING btree ("customerId");
+CREATE INDEX "Order_customerId_idx" ON public."Order" USING btree ("customerId");
 
 
 --
--- TOC entry 3531 (class 1259 OID 41423)
+-- TOC entry 3523 (class 1259 OID 57218)
 -- Name: Order_orderDate_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX "Order_orderDate_idx" ON "Order" USING btree ("orderDate");
+CREATE INDEX "Order_orderDate_idx" ON public."Order" USING btree ("orderDate");
 
 
 --
--- TOC entry 3532 (class 1259 OID 41419)
+-- TOC entry 3524 (class 1259 OID 57219)
 -- Name: Order_orderNumber_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX "Order_orderNumber_key" ON "Order" USING btree ("orderNumber");
+CREATE UNIQUE INDEX "Order_orderNumber_key" ON public."Order" USING btree ("orderNumber");
 
 
 --
--- TOC entry 3535 (class 1259 OID 41425)
+-- TOC entry 3527 (class 1259 OID 57220)
 -- Name: Order_quickbooksId_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX "Order_quickbooksId_idx" ON "Order" USING btree ("quickbooksId");
+CREATE INDEX "Order_quickbooksId_idx" ON public."Order" USING btree ("quickbooksId");
 
 
 --
--- TOC entry 3536 (class 1259 OID 41482)
+-- TOC entry 3528 (class 1259 OID 57221)
 -- Name: Order_shippingAddressId_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX "Order_shippingAddressId_idx" ON "Order" USING btree ("shippingAddressId");
+CREATE INDEX "Order_shippingAddressId_idx" ON public."Order" USING btree ("shippingAddressId");
 
 
 --
--- TOC entry 3537 (class 1259 OID 41424)
+-- TOC entry 3529 (class 1259 OID 57222)
 -- Name: Order_status_paymentStatus_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX "Order_status_paymentStatus_idx" ON "Order" USING btree (status, "paymentStatus");
+CREATE INDEX "Order_status_paymentStatus_idx" ON public."Order" USING btree (status, "paymentStatus");
 
 
 --
--- TOC entry 3528 (class 1259 OID 41418)
+-- TOC entry 3548 (class 1259 OID 58028)
+-- Name: ProductPriceHistory_effectiveDate_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "ProductPriceHistory_effectiveDate_idx" ON public."ProductPriceHistory" USING btree ("effectiveDate");
+
+
+--
+-- TOC entry 3551 (class 1259 OID 58027)
+-- Name: ProductPriceHistory_productId_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "ProductPriceHistory_productId_idx" ON public."ProductPriceHistory" USING btree ("productId");
+
+
+--
+-- TOC entry 3545 (class 1259 OID 57223)
 -- Name: Product_productCode_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX "Product_productCode_key" ON "Product" USING btree ("productCode");
+CREATE UNIQUE INDEX "Product_productCode_key" ON public."Product" USING btree ("productCode");
 
 
 --
--- TOC entry 3546 (class 2606 OID 41444)
+-- TOC entry 3558 (class 2606 OID 57224)
 -- Name: CustomerEmail CustomerEmail_customerId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "CustomerEmail"
-    ADD CONSTRAINT "CustomerEmail_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+ALTER TABLE ONLY public."CustomerEmail"
+    ADD CONSTRAINT "CustomerEmail_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES public."Customer"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 
 --
--- TOC entry 3547 (class 2606 OID 41449)
+-- TOC entry 3559 (class 2606 OID 57229)
 -- Name: CustomerPhone CustomerPhone_customerId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "CustomerPhone"
-    ADD CONSTRAINT "CustomerPhone_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+ALTER TABLE ONLY public."CustomerPhone"
+    ADD CONSTRAINT "CustomerPhone_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES public."Customer"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 
 --
--- TOC entry 3543 (class 2606 OID 41434)
+-- TOC entry 3552 (class 2606 OID 57234)
 -- Name: Customer Customer_billingAddressId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "Customer"
-    ADD CONSTRAINT "Customer_billingAddressId_fkey" FOREIGN KEY ("billingAddressId") REFERENCES "Address"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+ALTER TABLE ONLY public."Customer"
+    ADD CONSTRAINT "Customer_billingAddressId_fkey" FOREIGN KEY ("billingAddressId") REFERENCES public."Address"(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --
--- TOC entry 3544 (class 2606 OID 41429)
+-- TOC entry 3553 (class 2606 OID 57239)
 -- Name: Customer Customer_companyDomain_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "Customer"
-    ADD CONSTRAINT "Customer_companyDomain_fkey" FOREIGN KEY ("companyDomain") REFERENCES "Company"(domain) ON UPDATE CASCADE ON DELETE SET NULL;
+ALTER TABLE ONLY public."Customer"
+    ADD CONSTRAINT "Customer_companyDomain_fkey" FOREIGN KEY ("companyDomain") REFERENCES public."Company"(domain) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --
--- TOC entry 3545 (class 2606 OID 41439)
+-- TOC entry 3554 (class 2606 OID 57244)
 -- Name: Customer Customer_shippingAddressId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "Customer"
-    ADD CONSTRAINT "Customer_shippingAddressId_fkey" FOREIGN KEY ("shippingAddressId") REFERENCES "Address"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+ALTER TABLE ONLY public."Customer"
+    ADD CONSTRAINT "Customer_shippingAddressId_fkey" FOREIGN KEY ("shippingAddressId") REFERENCES public."Address"(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --
--- TOC entry 3551 (class 2606 OID 41469)
+-- TOC entry 3560 (class 2606 OID 57249)
 -- Name: OrderItem OrderItem_orderId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "OrderItem"
-    ADD CONSTRAINT "OrderItem_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+ALTER TABLE ONLY public."OrderItem"
+    ADD CONSTRAINT "OrderItem_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES public."Order"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 
 --
--- TOC entry 3552 (class 2606 OID 41474)
+-- TOC entry 3561 (class 2606 OID 57254)
 -- Name: OrderItem OrderItem_productCode_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "OrderItem"
-    ADD CONSTRAINT "OrderItem_productCode_fkey" FOREIGN KEY ("productCode") REFERENCES "Product"("productCode") ON UPDATE CASCADE ON DELETE RESTRICT;
+ALTER TABLE ONLY public."OrderItem"
+    ADD CONSTRAINT "OrderItem_productCode_fkey" FOREIGN KEY ("productCode") REFERENCES public."Product"("productCode") ON UPDATE CASCADE ON DELETE RESTRICT;
 
 
 --
--- TOC entry 3548 (class 2606 OID 41459)
+-- TOC entry 3555 (class 2606 OID 57259)
 -- Name: Order Order_billingAddressId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "Order"
-    ADD CONSTRAINT "Order_billingAddressId_fkey" FOREIGN KEY ("billingAddressId") REFERENCES "Address"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+ALTER TABLE ONLY public."Order"
+    ADD CONSTRAINT "Order_billingAddressId_fkey" FOREIGN KEY ("billingAddressId") REFERENCES public."Address"(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --
--- TOC entry 3549 (class 2606 OID 41454)
+-- TOC entry 3556 (class 2606 OID 57264)
 -- Name: Order Order_customerId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "Order"
-    ADD CONSTRAINT "Order_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+ALTER TABLE ONLY public."Order"
+    ADD CONSTRAINT "Order_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES public."Customer"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 
 --
--- TOC entry 3550 (class 2606 OID 41464)
+-- TOC entry 3557 (class 2606 OID 57269)
 -- Name: Order Order_shippingAddressId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY "Order"
-    ADD CONSTRAINT "Order_shippingAddressId_fkey" FOREIGN KEY ("shippingAddressId") REFERENCES "Address"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+ALTER TABLE ONLY public."Order"
+    ADD CONSTRAINT "Order_shippingAddressId_fkey" FOREIGN KEY ("shippingAddressId") REFERENCES public."Address"(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
--- Completed on 2025-02-07 21:20:30 PST
+--
+-- TOC entry 3562 (class 2606 OID 58029)
+-- Name: ProductPriceHistory ProductPriceHistory_productId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ProductPriceHistory"
+    ADD CONSTRAINT "ProductPriceHistory_productId_fkey" FOREIGN KEY ("productId") REFERENCES public."Product"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+-- Completed on 2025-03-10 16:27:45 PDT
 
 --
 -- PostgreSQL database dump complete
