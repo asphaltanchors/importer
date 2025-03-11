@@ -9,7 +9,7 @@ from .config import Config
 from .logging import setup_logging, get_logger
 from ..commands.validate import ValidateCustomersCommand, ValidateSalesCommand
 from ..commands.utils import TestConnectionCommand
-from ..commands.sales import sales, process_invoices, process_receipts
+from ..commands.sales import sales, process_invoices, process_receipts, import_products
 from ..commands.verify import VerifyCommand
 from ..commands.customers import (
     ListCompaniesCommand,
@@ -186,6 +186,7 @@ def verify_import(output: Path | None):
 # Register top-level process commands
 cli.add_command(process_invoices)
 cli.add_command(process_receipts)
+cli.add_command(import_products)
 
 # Register sales commands (specialized operations)
 cli.add_command(sales)

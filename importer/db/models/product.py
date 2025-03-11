@@ -1,6 +1,6 @@
 """Product model definition."""
 
-from sqlalchemy import Column, String, DateTime
+from sqlalchemy import Column, String, DateTime, Numeric, Integer
 from sqlalchemy.sql import func
 
 from .base import Base
@@ -16,6 +16,9 @@ class Product(Base):
     description = Column(String)
     createdAt = Column(DateTime, nullable=False)
     modifiedAt = Column(DateTime, nullable=False)
+    cost = Column(Numeric(10, 2))
+    listPrice = Column(Numeric(10, 2))
+    unitsPerPackage = Column(Integer, default=6, nullable=False)
     
     def __repr__(self):
         """Return string representation."""

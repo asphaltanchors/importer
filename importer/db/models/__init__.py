@@ -7,6 +7,7 @@ from .customer import Customer
 from .customer_email import CustomerEmail
 from .customer_phone import CustomerPhone
 from .product import Product
+from .product_price_history import ProductPriceHistory
 from .order import Order, OrderStatus, PaymentStatus
 from .order_item import OrderItem
 
@@ -18,6 +19,7 @@ __all__ = [
     'CustomerEmail',
     'CustomerPhone',
     'Product',
+    'ProductPriceHistory',
     'Order',
     'OrderStatus',
     'PaymentStatus',
