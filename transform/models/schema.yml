@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: companies
+    description: "Extracted company information from customer data"
+    columns:
+      - name: quickbooks_id
+        description: "QuickBooks Internal Id"
+        tests:
+          - not_null
+          - unique
+      - name: company_domain
+        description: "Company domain extracted from email"
+      - name: company_name
+        description: "Company name from CSV"
+        
+  - name: customers
+    description: "Customer information with company references"
+    columns:
+      - name: quickbooks_id
+        description: "QuickBooks Internal Id"
+        tests:
+          - not_null
+          - unique
+      - name: customer_name
+        description: "Customer name from CSV"
+      - name: first_name
+        description: "Customer first name"
+      - name: last_name
+        description: "Customer last name"
+      - name: customer_type
+        description: "Type of customer (e.g., Retail, US Customer)"
+      - name: company_domain
+        description: "Company domain reference"
+      - name: company_name
+        description: "Company name reference"
