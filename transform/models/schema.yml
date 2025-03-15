@@ -28,18 +28,54 @@ models:
       - name: total_amount
         description: "Total amount from invoice or sales receipt"
         
-  - name: companies
-    description: "Extracted company information from customer data"
+  - name: order_items
+    description: "Line items from sales receipts and invoices linked to their parent orders"
     columns:
-      - name: quickbooks_id
-        description: "QuickBooks Internal Id"
+      - name: order_id
+        description: "Reference to orders.quickbooks_id"
+        tests:
+          - not_null
+      - name: order_number
+        description: "Invoice number or Sales Receipt number"
+        tests:
+          - not_null
+      - name: order_type
+        description: "Type of order (invoice or sales_receipt)"
+        tests:
+          - not_null
+      - name: product_code
+        description: "Product or service code/name"
+      - name: product_description
+        description: "Description of the product or service"
+      - name: quantity
+        description: "Quantity ordered"
+      - name: unit_price
+        description: "Unit price of the product or service"
+      - name: line_amount
+        description: "Total amount for this line item"
+      - name: product_class
+        description: "Classification of the product or service"
+      - name: service_date
+        description: "Service date if applicable"
+      - name: sales_tax_code
+        description: "Sales tax code for the product or service"
+        
+  - name: companies
+    description: "Unique company records identified by domain"
+    columns:
+      - name: company_id
+        description: "Surrogate key for the company (MD5 hash of domain)"
         tests:
           - not_null
           - unique
       - name: company_domain
-        description: "Company domain extracted from email"
+        description: "Domain extracted from email"
       - name: company_name
-        description: "Company name from CSV"
+        description: "Most common company name associated with this domain"
+      - name: reference_id
+        description: "Reference to a sample QuickBooks ID for this company"
+      - name: created_at
+        description: "Timestamp when the record was created"
         
   - name: customers
     description: "Customer information with company references"
@@ -57,7 +93,5 @@ models:
         description: "Customer last name"
       - name: customer_type
         description: "Type of customer (e.g., Retail, US Customer)"
-      - name: company_domain
-        description: "Company domain reference"
-      - name: company_name
-        description: "Company name reference"
+      - name: company_id
+        description: "Reference to companies.company_id"

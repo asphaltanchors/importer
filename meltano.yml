@@ -12,14 +12,14 @@ plugins:
     pip_url: git+https://github.com/MeltanoLabs/tap-csv.git
     config:
       files:
-      - path: sample-data/customers_daily.csv
+      - path: ${CUSTOMERS_FILE_PATH}
         entity: customers
         keys: [QuickBooks Internal Id]
-      - path: sample-data/invoice_daily.csv
+      - path: ${INVOICES_FILE_PATH}
         entity: invoices
           # keys: ["Product/Service", "Product/Service  Amount", "Product/Service Description", "QuickBooks Internal Id",]
         keys: [Invoice No, Product/Service, QuickBooks Internal Id]
-      - path: sample-data/sales_daily.csv
+      - path: ${SALES_RECEIPTS_FILE_PATH}
         entity: sales_receipts
         keys: [Sales Receipt No, Product/Service, Product/Service Description, QuickBooks Internal Id]
   loaders:
