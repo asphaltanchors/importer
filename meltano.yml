@@ -21,7 +21,7 @@ plugins:
         keys: [Invoice No, Product/Service, QuickBooks Internal Id]
       - path: sample-data/sales_daily.csv
         entity: sales_receipts
-        keys: [Sales Receipt No, QuickBooks Internal Id]
+        keys: [Sales Receipt No, Product/Service, Product/Service Description, QuickBooks Internal Id]
   loaders:
   - name: target-postgres
     variant: meltanolabs

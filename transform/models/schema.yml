@@ -2,7 +2,7 @@ version: 2
 
 models:
   - name: orders
-    description: "Order information derived from invoices"
+    description: "Order information derived from invoices and sales receipts"
     columns:
       - name: quickbooks_id
         description: "QuickBooks Internal Id"
@@ -10,17 +10,23 @@ models:
           - not_null
           - unique
       - name: order_number
-        description: "Invoice number used as order identifier"
+        description: "Invoice number or Sales Receipt number used as order identifier"
+      - name: order_type
+        description: "Type of order (invoice or sales_receipt)"
       - name: class
         description: "Class categorization"
       - name: terms
         description: "Payment terms"
+      - name: payment_method
+        description: "Payment method"
       - name: status
         description: "Order status"
       - name: po_number
         description: "Purchase Order number"
+      - name: order_date
+        description: "Invoice date or Sales Receipt date (PostgreSQL DATE type)"
       - name: total_amount
-        description: "Total invoice amount"
+        description: "Total amount from invoice or sales receipt"
         
   - name: companies
     description: "Extracted company information from customer data"
