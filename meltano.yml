@@ -10,11 +10,28 @@ plugins:
   - name: tap-csv
     variant: meltanolabs
     pip_url: git+https://github.com/MeltanoLabs/tap-csv.git
+    config:
+      files:
+        - path: sample-data/customers_daily.csv
+          entity: customers
+          keys: ["QuickBooks Internal Id"]
   loaders:
   - name: target-postgres
     variant: meltanolabs
     pip_url: meltanolabs-target-postgres
+    config:
+      user: aac
+      database: mqi
+      add_record_metadata: true
+      host: localhost
+      default_target_schema: raw
   utilities:
   - name: dbt-postgres
     variant: dbt-labs
     pip_url: dbt-core dbt-postgres meltano-dbt-ext~=0.3.0
+    config:
+      host: localhost
+      port: 5432
+      user: aac
+      dbname: mqi
+      schema: analytics
