@@ -7,3 +7,7 @@ sources:
     tables:
       - name: customers
         identifier: customers  # The table name in the database
+      - name: invoices
+        identifier: invoices
+      - name: sales_receipts
+        identifier: sales_receipts

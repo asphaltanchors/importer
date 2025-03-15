@@ -1,6 +1,25 @@
 version: 2
 
 models:
+  - name: orders
+    description: "Order information derived from invoices"
+    columns:
+      - name: quickbooks_id
+        description: "QuickBooks Internal Id"
+        tests:
+          - not_null
+          - unique
+      - name: order_number
+        description: "Invoice number used as order identifier"
+      - name: class
+        description: "Class categorization"
+      - name: terms
+        description: "Payment terms"
+      - name: status
+        description: "Order status"
+      - name: po_number
+        description: "Purchase Order number"
+        
   - name: companies
     description: "Extracted company information from customer data"
     columns:

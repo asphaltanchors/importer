@@ -12,9 +12,16 @@ plugins:
     pip_url: git+https://github.com/MeltanoLabs/tap-csv.git
     config:
       files:
-        - path: sample-data/customers_daily.csv
-          entity: customers
-          keys: ["QuickBooks Internal Id"]
+      - path: sample-data/customers_daily.csv
+        entity: customers
+        keys: [QuickBooks Internal Id]
+      - path: sample-data/invoice_daily.csv
+        entity: invoices
+          # keys: ["Product/Service", "Product/Service  Amount", "Product/Service Description", "QuickBooks Internal Id",]
+        keys: [Invoice No, Product/Service, QuickBooks Internal Id]
+      - path: sample-data/sales_daily.csv
+        entity: sales_receipts
+        keys: [Sales Receipt No, QuickBooks Internal Id]
   loaders:
   - name: target-postgres
     variant: meltanolabs
@@ -25,6 +32,7 @@ plugins:
       add_record_metadata: true
       host: localhost
       default_target_schema: raw
+      load_method: upsert
   utilities:
   - name: dbt-postgres
     variant: dbt-labs
