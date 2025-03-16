@@ -120,3 +120,25 @@ models:
         description: "Count of distinct customers associated with this company"
       - name: total_orders
         description: "Sum of all order amounts for this company's customers"
+        
+  - name: order_matching_stats
+    description: "Diagnostic statistics for order-to-company matching"
+    columns:
+      - name: total_orders
+        description: "Total number of orders with non-null amounts"
+      - name: matched_orders
+        description: "Number of orders that were matched to a company"
+      - name: unmatched_orders
+        description: "Number of orders that were not matched to a company"
+      - name: percent_orders_matched
+        description: "Percentage of orders that were matched to a company"
+      - name: total_amount
+        description: "Total dollar amount of all orders"
+      - name: matched_amount
+        description: "Total dollar amount of orders matched to companies"
+      - name: unmatched_amount
+        description: "Total dollar amount of orders not matched to companies"
+      - name: percent_amount_matched
+        description: "Percentage of total dollar amount that was matched to companies"
+      - name: generated_at
+        description: "Timestamp when this diagnostic data was generated"

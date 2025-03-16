@@ -14,6 +14,7 @@ test-paths:
 - tests
 seed-paths:
 - data
+- seeds
 macro-paths:
 - macros
 snapshot-paths:
@@ -34,3 +35,9 @@ models:
       +materialized: table
     customers:
       +materialized: table
+
+seeds:
+  my_meltano_project:
+    company_terms:
+      +schema: seeds  # Optional, ensures seeds are organized
+      +quote_columns: false  # Ensures column names are not quoted
