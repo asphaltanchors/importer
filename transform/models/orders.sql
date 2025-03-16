@@ -14,6 +14,7 @@ WITH invoices AS (
     TO_DATE("Invoice Date", 'MM-DD-YYYY') as order_date,
     MAX(CAST(NULLIF("Total Amount", '') AS NUMERIC)) as total_amount  -- Handle empty strings and cast to NUMERIC
   FROM {{ source('raw', 'invoices') }}
+  WHERE "QuickBooks Internal Id" != ''
   GROUP BY
     "QuickBooks Internal Id",
     "Invoice No",
@@ -38,15 +39,25 @@ sales_receipts AS (
     TO_DATE("Sales Receipt Date", 'MM-DD-YYYY') as order_date,
     MAX(CAST(NULLIF("Total Amount", '') AS NUMERIC)) as total_amount
   FROM {{ source('raw', 'sales_receipts') }}
+  WHERE "QuickBooks Internal Id" != ''
   GROUP BY
     "QuickBooks Internal Id",
     "Sales Receipt No",  
     "Sales Receipt Date",
     "Class",
     "Payment Method"
-)
+),
 
 -- Combine both sources
-SELECT * FROM invoices
-UNION ALL
-SELECT * FROM sales_receipts
+combined_orders AS (
+  SELECT * FROM invoices
+  UNION ALL
+  SELECT * FROM sales_receipts
+)
+
+-- Join with order_companies to add company_id
+SELECT
+  o.*,
+  oc.company_id
+FROM combined_orders o
+LEFT JOIN {{ ref('order_companies') }} oc ON o.quickbooks_id = oc.order_id

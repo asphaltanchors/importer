@@ -27,6 +27,18 @@ models:
         description: "Invoice date or Sales Receipt date (PostgreSQL DATE type)"
       - name: total_amount
         description: "Total amount from invoice or sales receipt"
+      - name: company_id
+        description: "Reference to companies.company_id, matched using company name heuristics"
+        
+  - name: order_companies
+    description: "Mapping between orders and companies using name matching heuristics"
+    columns:
+      - name: order_id
+        description: "Reference to orders.quickbooks_id"
+        tests:
+          - not_null
+      - name: company_id
+        description: "Reference to companies.company_id"
         
   - name: order_items
     description: "Line items from sales receipts and invoices linked to their parent orders"
@@ -95,3 +107,16 @@ models:
         description: "Type of customer (e.g., Retail, US Customer)"
       - name: company_id
         description: "Reference to companies.company_id"
+        
+  - name: company_stats
+    description: "Aggregated statistics for companies including customer counts and order totals"
+    columns:
+      - name: company_id
+        description: "Reference to companies.company_id"
+        tests:
+          - not_null
+          - unique
+      - name: customer_count
+        description: "Count of distinct customers associated with this company"
+      - name: total_orders
+        description: "Sum of all order amounts for this company's customers"
