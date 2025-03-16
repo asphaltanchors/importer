@@ -20,6 +20,7 @@ WITH sales_receipt_items AS (
     AND o.order_type = 'sales_receipt'
   WHERE sr."Product/Service" IS NOT NULL
     AND sr."Product/Service" != ''
+    AND sr."Product/Service Rate" NOT LIKE '%\%%'  -- Skip records with % symbol
 ),
 
 -- Invoice line items
@@ -42,6 +43,7 @@ invoice_items AS (
     AND o.order_type = 'invoice'
   WHERE inv."Product/Service" IS NOT NULL
     AND inv."Product/Service" != ''
+    AND inv."Product/Service Rate" NOT LIKE '%\%%'  -- Skip records with % symbol
 )
 
 -- Combine both sources
