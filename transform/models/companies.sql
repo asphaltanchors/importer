@@ -61,7 +61,13 @@ customer_domains AS (
             LOWER(SUBSTRING(c."Main Email" FROM POSITION('@' IN c."Main Email") + 1))
           ELSE NULL
         END
-      ) as company_domain
+      ) as company_domain,
+      -- Convert Created Date to proper date format if it exists
+      CASE
+        WHEN c."Created Date" IS NOT NULL AND c."Created Date" != '' 
+        THEN TO_DATE(c."Created Date", 'MM-DD-YYYY')
+        ELSE NULL
+      END as created_date
     FROM {{ source('raw', 'customers') }} c
     LEFT JOIN ranked_domains rd ON c."QuickBooks Internal Id" = rd.quickbooks_id AND rd.domain_rank = 1
     WHERE 
@@ -89,12 +95,10 @@ unique_domains AS (
                 -- Then use the first one alphabetically
                 customer_name
         ) AS customer_name,
-        LOWER(TRIM(FIRST_VALUE(company_name) OVER (
-            PARTITION BY company_domain 
-            ORDER BY 
-                CASE WHEN company_name IS NOT NULL AND TRIM(company_name) != '' THEN 0 ELSE 1 END,
-                company_name
-        ))) AS company_name_lower
+        -- Get the earliest created date for this domain
+        MIN(created_date) OVER (
+            PARTITION BY company_domain
+        ) AS earliest_created_date
     FROM customer_domains
     WHERE company_domain IS NOT NULL
 )
@@ -103,7 +107,8 @@ SELECT
     MD5(company_domain) AS company_id,
     company_name,
     customer_name,
-    company_name_lower,
     company_domain,
-    CURRENT_TIMESTAMP AS created_at
+    -- Use the earliest created date if available, otherwise use current date
+    -- Cast to DATE type to remove time component
+    COALESCE(earliest_created_date, CURRENT_DATE) AS created_at
 FROM unique_domains
