@@ -1,14 +1,16 @@
 {{ config(materialized='table') }}
 
--- Diagnostic table to track order matching statistics
+-- Diagnostic table for order statistics
+-- Note: Company matching has been moved to a separate Python process
+-- This table now only tracks basic order statistics
 WITH order_stats AS (
   SELECT
     COUNT(*) AS total_orders,
-    SUM(CASE WHEN company_id IS NOT NULL THEN 1 ELSE 0 END) AS matched_orders,
-    SUM(CASE WHEN company_id IS NULL THEN 1 ELSE 0 END) AS unmatched_orders,
+    0 AS matched_orders,  -- Set to 0 as matching is now done in Python
+    COUNT(*) AS unmatched_orders,
     SUM(total_amount) AS total_amount,
-    SUM(CASE WHEN company_id IS NOT NULL THEN total_amount ELSE 0 END) AS matched_amount,
-    SUM(CASE WHEN company_id IS NULL THEN total_amount ELSE 0 END) AS unmatched_amount
+    0 AS matched_amount,  -- Set to 0 as matching is now done in Python
+    SUM(total_amount) AS unmatched_amount
   FROM {{ ref('orders') }}
   WHERE total_amount IS NOT NULL
 )
@@ -17,10 +19,10 @@ SELECT
   total_orders,
   matched_orders,
   unmatched_orders,
-  ROUND((matched_orders::numeric / NULLIF(total_orders, 0)) * 100, 2) AS percent_orders_matched,
+  0 AS percent_orders_matched,  -- Set to 0 as matching is now done in Python
   total_amount,
   matched_amount,
   unmatched_amount,
-  ROUND((matched_amount / NULLIF(total_amount, 0)) * 100, 2) AS percent_amount_matched,
+  0 AS percent_amount_matched,  -- Set to 0 as matching is now done in Python
   CURRENT_TIMESTAMP AS generated_at
 FROM order_stats

@@ -35,6 +35,9 @@ models:
       +materialized: table
     customers:
       +materialized: table
+    # History tracking models
+    item_history:
+      +materialized: table
 
 seeds:
   my_meltano_project:

@@ -11,3 +11,5 @@ sources:
         identifier: invoices
       - name: sales_receipts
         identifier: sales_receipts
+      - name: items
+        identifier: items

@@ -22,6 +22,13 @@ plugins:
       - path: ${SALES_RECEIPTS_FILE_PATH}
         entity: sales_receipts
         keys: [Sales Receipt No, Product/Service, Product/Service Description, QuickBooks Internal Id]
+  - name: tap-csv-items
+    inherit_from: tap-csv
+    config:
+      files:
+      - path: /Users/oren/Dropbox-AAC/AAC/Oren/CSV/item_all.csv
+        entity: items
+        keys: [Item Name]
   loaders:
   - name: target-postgres
     variant: meltanolabs

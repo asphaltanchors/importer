@@ -12,7 +12,8 @@ WITH invoices AS (
     "PO Number" as po_number,
     'Invoice' as payment_method,
     TO_DATE("Invoice Date", 'MM-DD-YYYY') as order_date,
-    MAX(CAST(NULLIF("Total Amount", '') AS NUMERIC)) as total_amount  -- Handle empty strings and cast to NUMERIC
+    MAX(CAST(NULLIF("Total Amount", '') AS NUMERIC)) as total_amount,  -- Handle empty strings and cast to NUMERIC
+    "Customer" as customer_name
   FROM {{ source('raw', 'invoices') }}
   WHERE "QuickBooks Internal Id" != ''
   GROUP BY
@@ -22,7 +23,8 @@ WITH invoices AS (
     "Terms",
     "Status",
     "PO Number",
-    "Invoice Date"
+    "Invoice Date",
+    "Customer"
 ),
 
 -- Sales Receipts data
@@ -37,7 +39,8 @@ sales_receipts AS (
     NULL as po_number,
     "Payment Method" as payment_method,
     TO_DATE("Sales Receipt Date", 'MM-DD-YYYY') as order_date,
-    MAX(CAST(NULLIF("Total Amount", '') AS NUMERIC)) as total_amount
+    MAX(CAST(NULLIF("Total Amount", '') AS NUMERIC)) as total_amount,
+    "Customer" as customer_name
   FROM {{ source('raw', 'sales_receipts') }}
   WHERE "QuickBooks Internal Id" != ''
   GROUP BY
@@ -45,19 +48,11 @@ sales_receipts AS (
     "Sales Receipt No",  
     "Sales Receipt Date",
     "Class",
-    "Payment Method"
-),
-
--- Combine both sources
-combined_orders AS (
-  SELECT * FROM invoices
-  UNION ALL
-  SELECT * FROM sales_receipts
+    "Payment Method",
+    "Customer"
 )
 
--- Join with order_companies to add company_id
-SELECT
-  o.*,
-  oc.company_id
-FROM combined_orders o
-LEFT JOIN {{ ref('order_companies') }} oc ON o.quickbooks_id = oc.order_id
+-- Combine both sources
+SELECT * FROM invoices
+UNION ALL
+SELECT * FROM sales_receipts

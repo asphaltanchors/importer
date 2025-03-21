@@ -14,7 +14,5 @@ echo "Invoices: $INVOICES_FILE_PATH"
 echo "Sales Receipts: $SALES_RECEIPTS_FILE_PATH"
 
 # Run the Meltano pipeline
-meltano run tap-csv target-postgres
+meltano run --full-refresh tap-csv target-postgres dbt-postgres:run
 
-# Run dbt transformation with our diagnostic model
-meltano run dbt-postgres:run --models diagnostic_find_percentage

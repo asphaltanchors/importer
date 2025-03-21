@@ -27,18 +27,8 @@ models:
         description: "Invoice date or Sales Receipt date (PostgreSQL DATE type)"
       - name: total_amount
         description: "Total amount from invoice or sales receipt"
-      - name: company_id
-        description: "Reference to companies.company_id, matched using company name heuristics"
-        
-  - name: order_companies
-    description: "Mapping between orders and companies using name matching heuristics"
-    columns:
-      - name: order_id
-        description: "Reference to orders.quickbooks_id"
-        tests:
-          - not_null
-      - name: company_id
-        description: "Reference to companies.company_id"
+      - name: customer_name
+        description: "Customer name from the source data"
         
   - name: order_items
     description: "Line items from sales receipts and invoices linked to their parent orders"
@@ -73,19 +63,17 @@ models:
         description: "Sales tax code for the product or service"
         
   - name: companies
-    description: "Unique company records identified by domain"
+    description: "Unique company records identified by lowercase company name"
     columns:
       - name: company_id
-        description: "Surrogate key for the company (MD5 hash of domain)"
+        description: "Surrogate key for the company (MD5 hash of lowercase company name)"
         tests:
           - not_null
           - unique
-      - name: company_domain
-        description: "Domain extracted from email"
       - name: company_name
-        description: "Most common company name associated with this domain"
-      - name: reference_id
-        description: "Reference to a sample QuickBooks ID for this company"
+        description: "Original company name"
+      - name: company_name_lower
+        description: "Lowercase version of company name for matching"
       - name: created_at
         description: "Timestamp when the record was created"
         
@@ -142,3 +130,54 @@ models:
         description: "Percentage of total dollar amount that was matched to companies"
       - name: generated_at
         description: "Timestamp when this diagnostic data was generated"
+        
+  - name: products
+    description: "Product information derived from items"
+    columns:
+      - name: item_name
+        description: "Name of the item/product"
+        tests:
+          - not_null
+          - unique
+      - name: sales_description
+        description: "Description of the item/product for sales purposes"
+        
+  - name: item_history
+    description: "Historical record of changes to item attributes"
+    columns:
+      - name: item_name
+        description: "Name of the item/product (reference to products.item_name)"
+        tests:
+          - not_null
+      - name: column_name
+        description: "Name of the column that changed (e.g., purchase_cost, sales_price)"
+        tests:
+          - not_null
+      - name: old_value
+        description: "Previous value before the change (NULL for initial records)"
+      - name: new_value
+        description: "New value after the change"
+      - name: changed_at
+        description: "Timestamp when the change was detected (from _sdc_extracted_at)"
+        tests:
+          - not_null
+          
+  - name: item_history_view
+    description: "User-friendly view of item attribute changes with additional calculations"
+    columns:
+      - name: item_name
+        description: "Name of the item/product"
+      - name: sales_description
+        description: "Description of the item/product from the products table"
+      - name: column_name
+        description: "Name of the column that changed"
+      - name: old_value
+        description: "Previous value before the change"
+      - name: new_value
+        description: "New value after the change"
+      - name: changed_at
+        description: "Timestamp when the change was detected"
+      - name: numeric_change
+        description: "Calculated difference between new and old values for numeric columns"
+      - name: percent_change
+        description: "Calculated percentage change for price and cost columns"
