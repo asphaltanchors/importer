@@ -3,3 +3,4 @@
 .env
 .sailplane
 sample-data
+__pycache__/

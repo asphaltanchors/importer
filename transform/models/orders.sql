@@ -13,7 +13,11 @@ WITH invoices AS (
     'Invoice' as payment_method,
     TO_DATE("Invoice Date", 'MM-DD-YYYY') as order_date,
     MAX(CAST(NULLIF("Total Amount", '') AS NUMERIC)) as total_amount,  -- Handle empty strings and cast to NUMERIC
-    "Customer" as customer_name
+    "Customer" as customer_name,
+    "Billing Address Line1" as billing_address_line_1,
+    "Billing Address Line2" as billing_address_line_2,
+    "Shipping Address Line1" as shipping_address_line_1,
+    "Shipping Address Line2" as shipping_address_line_2
   FROM {{ source('raw', 'invoices') }}
   WHERE "QuickBooks Internal Id" != ''
   GROUP BY
@@ -24,7 +28,11 @@ WITH invoices AS (
     "Status",
     "PO Number",
     "Invoice Date",
-    "Customer"
+    "Customer",
+    "Billing Address Line1",
+    "Billing Address Line2",
+    "Shipping Address Line1",
+    "Shipping Address Line2"
 ),
 
 -- Sales Receipts data
@@ -40,7 +48,11 @@ sales_receipts AS (
     "Payment Method" as payment_method,
     TO_DATE("Sales Receipt Date", 'MM-DD-YYYY') as order_date,
     MAX(CAST(NULLIF("Total Amount", '') AS NUMERIC)) as total_amount,
-    "Customer" as customer_name
+    "Customer" as customer_name,
+    "Billing Address Line 1" as billing_address_line_1,
+    "Billing Address Line 2" as billing_address_line_2,
+    "Shipping Address Line 1" as shipping_address_line_1,
+    "Shipping Address Line 2" as shipping_address_line_2
   FROM {{ source('raw', 'sales_receipts') }}
   WHERE "QuickBooks Internal Id" != ''
   GROUP BY
@@ -49,7 +61,11 @@ sales_receipts AS (
     "Sales Receipt Date",
     "Class",
     "Payment Method",
-    "Customer"
+    "Customer",
+    "Billing Address Line 1",
+    "Billing Address Line 2",
+    "Shipping Address Line 1",
+    "Shipping Address Line 2"
 )
 
 -- Combine both sources

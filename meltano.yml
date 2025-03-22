@@ -50,3 +50,6 @@ plugins:
       user: aac
       dbname: mqi
       schema: analytics
+  - name: company-matcher
+    executable: $MELTANO_PROJECT_ROOT/matcher.py
+    pip_url: sqlalchemy python-dotenv
