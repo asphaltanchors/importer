@@ -27,7 +27,7 @@ plugins:
     inherit_from: tap-csv
     config:
       files:
-      - path: /Users/oren/Dropbox-AAC/AAC/Oren/CSV/item_all.csv
+      - path: ${ITEMS_FILE_PATH}
         entity: items
         keys: [Item Name]
   loaders:
