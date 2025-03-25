@@ -21,7 +21,8 @@ plugins:
         keys: [Invoice No, Product/Service, QuickBooks Internal Id]
       - path: ${SALES_RECEIPTS_FILE_PATH}
         entity: sales_receipts
-        keys: [Sales Receipt No, Product/Service, Product/Service Description, QuickBooks Internal Id]
+        keys: [Sales Receipt No, Product/Service, Product/Service Description, QuickBooks
+            Internal Id]
   - name: tap-csv-items
     inherit_from: tap-csv
     config:
@@ -49,7 +50,6 @@ plugins:
       port: 5432
       user: aac
       dbname: mqi
-      schema: analytics
-  - name: company-matcher
-    executable: $MELTANO_PROJECT_ROOT/matcher.py
-    pip_url: sqlalchemy python-dotenv
+      schema: public
+venv:
+  backend: uv

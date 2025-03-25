@@ -161,3 +161,15 @@ models:
         description: "Calculated difference between new and old values for numeric columns"
       - name: percent_change
         description: "Calculated percentage change for price and cost columns"
+        
+  - name: product_families
+    description: "Grouping of products into logical families based on naming patterns and characteristics"
+    columns:
+      - name: item_name
+        description: "Name of the item/product (reference to products.item_name)"
+        tests:
+          - not_null
+      - name: product_family
+        description: "Family group the product belongs to (e.g., SP10, SP12, SP18, SP58, AM625, Kits, Adhesives)"
+        tests:
+          - not_null

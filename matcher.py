@@ -215,7 +215,7 @@ def create_company_order_mapping_table(connection, matches_df, first_batch=False
     """
     # Create the table if it doesn't exist
     create_table_sql = """
-    CREATE TABLE IF NOT EXISTS analytics.company_order_mapping (
+    CREATE TABLE IF NOT EXISTS public.company_order_mapping (
         quickbooks_id VARCHAR(255) NOT NULL,
         company_id VARCHAR(255) NOT NULL,
         order_number VARCHAR(255),
@@ -252,7 +252,7 @@ def create_company_order_mapping_table(connection, matches_df, first_batch=False
     # Clear existing data only for the first batch
     if first_batch:
         print("Truncating existing company_order_mapping table...")
-        connection.execute(text("TRUNCATE TABLE analytics.company_order_mapping"))
+        connection.execute(text("TRUNCATE TABLE public.company_order_mapping"))
         connection.commit()  # Explicitly commit the transaction
     
     # Insert new data
@@ -263,7 +263,7 @@ def create_company_order_mapping_table(connection, matches_df, first_batch=False
         # Use pandas to_sql for bulk insertion
         insert_df.to_sql('company_order_mapping', 
                          connection, 
-                         schema='analytics', 
+                         schema='public', 
                          if_exists='append', 
                          index=False,
                          method='multi')
@@ -275,8 +275,8 @@ def create_company_order_mapping_table(connection, matches_df, first_batch=False
         try:
             # Create a view for easy querying
             create_view_sql = """
-            DROP VIEW IF EXISTS analytics.order_company_view;
-            CREATE VIEW analytics.order_company_view AS
+            DROP VIEW IF EXISTS public.order_company_view;
+            CREATE VIEW public.order_company_view AS
             SELECT 
                 o.quickbooks_id,
                 o.order_number,
@@ -291,21 +291,21 @@ def create_company_order_mapping_table(connection, matches_df, first_batch=False
                 m.match_type,
                 m.confidence
             FROM 
-                analytics.orders o
+                public.orders o
             JOIN 
-                analytics.company_order_mapping m ON o.quickbooks_id = m.quickbooks_id
+                public.company_order_mapping m ON o.quickbooks_id = m.quickbooks_id
             JOIN 
-                analytics.companies c ON m.company_id = c.company_id
+                public.companies c ON m.company_id = c.company_id
             ORDER BY 
                 o.order_date DESC
             """
             
             # Execute as separate statements
-            connection.execute(text("DROP VIEW IF EXISTS analytics.order_company_view"))
+            connection.execute(text("DROP VIEW IF EXISTS public.order_company_view"))
             connection.commit()  # Commit after dropping view
             
             connection.execute(text("""
-            CREATE VIEW analytics.order_company_view AS
+            CREATE VIEW public.order_company_view AS
             SELECT 
                 o.quickbooks_id,
                 o.order_number,
@@ -320,11 +320,11 @@ def create_company_order_mapping_table(connection, matches_df, first_batch=False
                 m.match_type,
                 m.confidence
             FROM 
-                analytics.orders o
+                public.orders o
             JOIN 
-                analytics.company_order_mapping m ON o.quickbooks_id = m.quickbooks_id
+                public.company_order_mapping m ON o.quickbooks_id = m.quickbooks_id
             JOIN 
-                analytics.companies c ON m.company_id = c.company_id
+                public.companies c ON m.company_id = c.company_id
             ORDER BY 
                 o.order_date DESC
             """))
@@ -335,7 +335,7 @@ def create_company_order_mapping_table(connection, matches_df, first_batch=False
             SELECT EXISTS (
                 SELECT 1 
                 FROM information_schema.views 
-                WHERE table_schema = 'analytics' 
+                WHERE table_schema = 'public' 
                 AND table_name = 'order_company_view'
             )
             """))
@@ -345,7 +345,7 @@ def create_company_order_mapping_table(connection, matches_df, first_batch=False
                 print("Created order_company_view for easy querying")
                 
                 # Check if there are records in the view
-                count_check = connection.execute(text("SELECT COUNT(*) FROM analytics.order_company_view"))
+                count_check = connection.execute(text("SELECT COUNT(*) FROM public.order_company_view"))
                 record_count = count_check.scalar()
                 print(f"The view contains {record_count} records")
             else:
@@ -377,7 +377,7 @@ def main():
             # Get company data
             companies_query = """
             SELECT company_id, company_name, company_domain 
-            FROM analytics.companies
+            FROM public.companies
             """
             companies_df = pd.read_sql(companies_query, connection)
             
@@ -388,7 +388,7 @@ def main():
             save_to_db = True
             
             # Get total order count
-            count_query = "SELECT COUNT(*) FROM analytics.orders"
+            count_query = "SELECT COUNT(*) FROM public.orders"
             total_orders = pd.read_sql(count_query, connection).iloc[0, 0]
             
             # Process in batches to improve performance
@@ -441,7 +441,7 @@ def main():
                 orders_query = f"""
                 SELECT quickbooks_id, customer_name, billing_address_line_1, 
                        shipping_address_line_1, order_number
-                FROM analytics.orders
+                FROM public.orders
                 ORDER BY quickbooks_id
                 LIMIT {batch_size} OFFSET {offset}
                 """
@@ -647,7 +647,7 @@ def main():
                 if save_to_db:
                     print("\nCreating order_company_view...")
                     create_view_sql = """
-                    CREATE OR REPLACE VIEW analytics.order_company_view AS
+                    CREATE OR REPLACE VIEW public.order_company_view AS
                     SELECT 
                         o.quickbooks_id,
                         o.order_number,
@@ -662,11 +662,11 @@ def main():
                         m.match_type,
                         m.confidence
                     FROM 
-                        analytics.orders o
+                        public.orders o
                     JOIN 
-                        analytics.company_order_mapping m ON o.quickbooks_id = m.quickbooks_id
+                        public.company_order_mapping m ON o.quickbooks_id = m.quickbooks_id
                     JOIN 
-                        analytics.companies c ON m.company_id = c.company_id
+                        public.companies c ON m.company_id = c.company_id
                     ORDER BY 
                         o.order_date DESC
                     """
