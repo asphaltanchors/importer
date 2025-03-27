@@ -103,11 +103,47 @@ unique_domains AS (
     WHERE company_domain IS NOT NULL
 )
 
+, consumer_domains AS (
+    SELECT 
+        UNNEST(ARRAY[
+            'gmail.com',
+            'yahoo.com',
+            'yahoo.com.mx',
+            'yahoo.com.br'
+            'hotmail.com',
+            'outlook.com',
+            'aol.com',
+            'icloud.com',
+            'protonmail.com',
+            'marketplace.amazon.com',
+            'comcast.net',
+            'verizon.net',
+            'msn.com',
+            'me.com',
+            'att.net',
+            'live.com',
+            'bellsouth.net',
+            'sbcglobal.net',
+            'cox.net',
+            'mac.com',
+            'mail.com',
+            'unknown-domain.com',
+            'amazon-fba.com',
+            'amazon.com',
+            'zoho.com',
+            'yandex.com',
+            'gmx.com'
+            -- Add more consumer domains as needed
+        ]) AS domain
+)
+
 SELECT
     MD5(company_domain) AS company_id,
     company_name,
     customer_name,
     company_domain,
+    -- Add the is_consumer_domain flag
+    EXISTS (SELECT 1 FROM consumer_domains WHERE domain = company_domain) AS is_consumer_domain,
     -- Use the earliest created date if available, otherwise use current date
     -- Cast to DATE type to remove time component
     COALESCE(earliest_created_date, CURRENT_DATE) AS created_at

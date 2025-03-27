@@ -345,7 +345,6 @@ def create_company_order_mapping_table(connection, matches_df, first_batch=False
                 # Check if there are records in the view
                 count_check = connection.execute(text("SELECT COUNT(*) FROM public.order_company_view"))
                 record_count = count_check.scalar()
-                print(f"The view contains {record_count} records")
             else:
                 print("WARNING: Failed to create order_company_view")
         except Exception as e:
@@ -448,9 +447,8 @@ def main():
                 if orders_df.empty:
                     break
                 
-                # Only print batch progress every 5 batches to reduce output
-                if batch_num % 5 == 0 or batch_num == total_batches - 1:
-                    print(f"\nProcessing batch {batch_num + 1}/{total_batches} ({offset+1}-{offset+len(orders_df)} of {total_orders})")
+                # Print progress for all batches
+                print(f"\nProcessing batch {batch_num + 1}/{total_batches} ({offset+1}-{offset+len(orders_df)} of {total_orders})")
                 
                 # Normalize order fields
                 orders_df['normalized_customer_name'] = orders_df['customer_name'].apply(normalize_company_name)
@@ -591,16 +589,9 @@ def main():
                 matched_count = len(batch_matches)
                 batch_match_rate = matched_count / len(orders_df) * 100
                 
-                # Only print batch progress every 5 batches to reduce output
-                if batch_num % 5 == 0 or batch_num == total_batches - 1:
-                    print(f"  Batch {batch_num + 1}: {matched_count}/{len(orders_df)} orders matched ({batch_match_rate:.2f}%)")
-                
                 # Save batch results to database if enabled
                 if save_to_db and batch_matches:
                     batch_df = pd.DataFrame(batch_matches)
-                    # Only print saving message every 5 batches to reduce output
-                    if batch_num % 5 == 0 or batch_num == total_batches - 1:
-                        print(f"  Saving batch {batch_num + 1} results to database...")
                     create_company_order_mapping_table(connection, batch_df, first_batch=(batch_num == 0))
                 
                 # Stop after first batch if in sample mode
