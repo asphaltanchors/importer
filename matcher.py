@@ -342,8 +342,6 @@ def create_company_order_mapping_table(connection, matches_df, first_batch=False
             view_exists = view_check.scalar()
             
             if view_exists:
-                print("Created order_company_view for easy querying")
-                
                 # Check if there are records in the view
                 count_check = connection.execute(text("SELECT COUNT(*) FROM public.order_company_view"))
                 record_count = count_check.scalar()
@@ -672,7 +670,6 @@ def main():
                     """
                     connection.execute(text(create_view_sql))
                     connection.commit()  # Commit after creating view
-                    print("Created order_company_view for easy querying")
             else:
                 print("\nNo matches found")
             

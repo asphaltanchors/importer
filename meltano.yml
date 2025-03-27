@@ -17,7 +17,6 @@ plugins:
         keys: [QuickBooks Internal Id]
       - path: ${INVOICES_FILE_PATH}
         entity: invoices
-          # keys: ["Product/Service", "Product/Service  Amount", "Product/Service Description", "QuickBooks Internal Id",]
         keys: [Invoice No, Product/Service, QuickBooks Internal Id]
       - path: ${SALES_RECEIPTS_FILE_PATH}
         entity: sales_receipts

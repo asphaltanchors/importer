@@ -121,6 +121,14 @@ models:
           - unique
       - name: sales_description
         description: "Description of the item/product for sales purposes"
+      - name: product_family
+        description: "Family group the product belongs to (e.g., SP10, SP12, SP18, SP58, AM625, Kits, Adhesives)"
+      - name: material_type
+        description: "Material of the product (e.g., Stainless Steel, Zinc Plated, Dacromet, Adhesives, Plastic, Tools, NULL if unknown)"
+      - name: is_kit
+        description: "Boolean indicating whether the product is a kit (TRUE) or not (FALSE)"
+      - name: item_quantity
+        description: "Quantity of items in a package or carton"
         
   - name: item_history
     description: "Historical record of changes to item attributes"
@@ -161,15 +169,3 @@ models:
         description: "Calculated difference between new and old values for numeric columns"
       - name: percent_change
         description: "Calculated percentage change for price and cost columns"
-        
-  - name: product_families
-    description: "Grouping of products into logical families based on naming patterns and characteristics"
-    columns:
-      - name: item_name
-        description: "Name of the item/product (reference to products.item_name)"
-        tests:
-          - not_null
-      - name: product_family
-        description: "Family group the product belongs to (e.g., SP10, SP12, SP18, SP58, AM625, Kits, Adhesives)"
-        tests:
-          - not_null
