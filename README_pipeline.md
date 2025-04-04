@@ -20,15 +20,19 @@ This script replaces the original `run_pipeline.sh` with a more flexible Python 
 
 ### Full Import
 
-To run a full import (similar to the original script):
+To run a full import (drops schemas and recreates all data):
 
 ```bash
+# Using default file paths
 ./pipeline.py --full
+
+# Using files from a specific directory
+./pipeline.py --full --dir /path/to/files/directory
 ```
 
 This will:
-1. Import the full dataset
-2. Import the 90-day dataset
+1. Drop schemas (raw and public)
+2. Import the full dataset (using files with pattern `[type]_all_MM_DD_YYYY.csv`)
 3. Run the matcher
 
 ### Daily Import
@@ -36,7 +40,7 @@ This will:
 To process files from a directory in date sequence:
 
 ```bash
-./pipeline.py --daily /path/to/files/directory
+./pipeline.py --daily --dir /path/to/files/directory
 ```
 
 This will:
@@ -52,7 +56,7 @@ This will:
 To see what files would be processed without actually running any imports:
 
 ```bash
-./pipeline.py --daily /path/to/files/directory --test
+./pipeline.py --daily --dir /path/to/files/directory --test
 ```
 
 This will show a detailed report of which dates have all required files and which ones would be skipped.
@@ -62,18 +66,30 @@ This will show a detailed report of which dates have all required files and whic
 To see what commands would be executed without actually running them:
 
 ```bash
-./pipeline.py --daily /path/to/files/directory --dry-run
+./pipeline.py --daily --dir /path/to/files/directory --dry-run
 ```
 
 ## File Naming Requirements
 
-The script expects files to follow this naming pattern:
+### Daily Import Files
+
+For daily imports, the script expects files to follow this naming pattern:
 - `Invoice_MM_DD_YYYY_H_MM_SS.csv`
 - `Sales Receipt_MM_DD_YYYY_H_MM_SS.csv`
 - `Customer_MM_DD_YYYY_H_MM_SS.csv`
 - `Item_MM_DD_YYYY_H_MM_SS.csv`
 
 All four file types must be present for a date to be processed.
+
+### Full Import Files
+
+For full imports with the `--dir` option, the script looks for files with this naming pattern:
+- `item_all_MM_DD_YYYY.csv`
+- `customer_all_MM_DD_YYYY.csv`
+- `invoice_all_MM_DD_YYYY.csv`
+- `sales_receipt_all_MM_DD_YYYY.csv`
+
+The script will use the most recent files of each type based on the date in the filename.
 
 ## Future Enhancements
 

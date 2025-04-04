@@ -7,8 +7,12 @@ This script replaces run_pipeline.sh and provides two main modes of operation:
 2. Daily import: Processes files from a directory in date sequence
 
 Usage:
-  Full import: ./pipeline.py --full
-  Daily import: ./pipeline.py --daily /path/to/files/directory
+  Full import (default paths): ./pipeline.py --full
+  Full import (custom dir): ./pipeline.py --full --dir /path/to/files/directory
+  Full import test: ./pipeline.py --full --dir /path/to/files/directory --test
+  Daily import: ./pipeline.py --daily --dir /path/to/files/directory
+  Daily import test: ./pipeline.py --daily --dir /path/to/files/directory --test
+  Dry run: ./pipeline.py --daily --dir /path/to/files/directory --dry-run
 """
 
 import os
@@ -46,8 +50,12 @@ def parse_arguments():
     mode_group = parser.add_mutually_exclusive_group(required=True)
     mode_group.add_argument('--full', action='store_true', 
                            help='Run full import (drops and recreates all data)')
-    mode_group.add_argument('--daily', metavar='DIRECTORY',
+    mode_group.add_argument('--daily', action='store_true',
                            help='Run daily import from the specified directory')
+    
+    # Directory option (can be used with either mode)
+    parser.add_argument('--dir', metavar='DIRECTORY',
+                       help='Directory containing the files to process')
     
     # Additional options
     parser.add_argument('--move-files', action='store_true',
@@ -80,32 +88,89 @@ def run_command(command, dry_run=False):
         logger.error(f"Error output: {e.stderr}")
         return e.returncode
 
-def run_full_import(dry_run=False):
-    """Run the full import process (similar to original run_pipeline.sh)."""
+def find_latest_full_files(directory):
+    """Find the latest full dataset files in the directory."""
+    # Pattern: item_all_MM_DD_YYYY.csv, customer_all_MM_DD_YYYY.csv, etc.
+    latest_files = {
+        "item": None,
+        "customer": None,
+        "invoice": None,
+        "sales_receipt": None
+    }
+    latest_dates = {
+        "item": None,
+        "customer": None,
+        "invoice": None,
+        "sales_receipt": None
+    }
+    
+    # Get all CSV files in the directory
+    csv_files = glob.glob(os.path.join(directory, "*.csv"))
+    
+    for file_path in csv_files:
+        filename = os.path.basename(file_path)
+        
+        # Check for full dataset files
+        for file_type in ["item", "customer", "invoice", "sales_receipt"]:
+            pattern = rf"{file_type}_all_(\d{{2}})_(\d{{2}})_(\d{{4}})\.csv"
+            match = re.match(pattern, filename)
+            
+            if match:
+                month, day, year = match.groups()
+                try:
+                    file_date = datetime(int(year), int(month), int(day))
+                    
+                    # If this is the first file of this type or it's newer than what we have
+                    if latest_dates[file_type] is None or file_date > latest_dates[file_type]:
+                        latest_files[file_type] = file_path
+                        latest_dates[file_type] = file_date
+                except ValueError:
+                    logger.warning(f"Invalid date in filename: {filename}")
+    
+    # Check if we found all required files
+    missing_types = []
+    for file_type in ["item", "customer", "invoice", "sales_receipt"]:
+        if latest_files[file_type] is None:
+            missing_types.append(file_type)
+    
+    if missing_types:
+        logger.error(f"Missing full dataset files: {', '.join(missing_types)}")
+        return None
+    
+    return latest_files
+
+def run_full_import(directory=None, dry_run=False):
+    """Run the full import process (drops schemas and recreates all data)."""
     logger.info("Starting full import process")
     
-    # Import the big set
-    logger.info("Importing full dataset")
-    os.environ["ITEMS_FILE_PATH"] = "/Users/oren/Dropbox-AAC/AAC/Oren/CSV/item_all.csv"
-    os.environ["CUSTOMERS_FILE_PATH"] = "/Users/oren/Dropbox-AAC/AAC/Oren/CSV/customers_all.csv"
-    os.environ["INVOICES_FILE_PATH"] = "/Users/oren/Dropbox-AAC/AAC/Oren/CSV/invoice_all.csv"
-    os.environ["SALES_RECEIPTS_FILE_PATH"] = "/Users/oren/Dropbox-AAC/AAC/Oren/CSV/sales_all.csv"
+    # If directory is provided, look for files there
+    if directory:
+        logger.info(f"Looking for full dataset files in: {directory}")
+        full_files = find_latest_full_files(directory)
+        
+        if not full_files:
+            logger.error("Could not find all required full dataset files")
+            return 1
+        
+        # Import the full dataset
+        logger.info("Importing full dataset from directory")
+        os.environ["ITEMS_FILE_PATH"] = full_files["item"]
+        os.environ["CUSTOMERS_FILE_PATH"] = full_files["customer"]
+        os.environ["INVOICES_FILE_PATH"] = full_files["invoice"]
+        os.environ["SALES_RECEIPTS_FILE_PATH"] = full_files["sales_receipt"]
+    else:
+        # Use the default paths from the original script
+        logger.info("Importing full dataset from default paths")
+        os.environ["ITEMS_FILE_PATH"] = "/Users/oren/Dropbox-AAC/AAC/Oren/CSV/item_all.csv"
+        os.environ["CUSTOMERS_FILE_PATH"] = "/Users/oren/Dropbox-AAC/AAC/Oren/CSV/customers_all.csv"
+        os.environ["INVOICES_FILE_PATH"] = "/Users/oren/Dropbox-AAC/AAC/Oren/CSV/invoice_all.csv"
+        os.environ["SALES_RECEIPTS_FILE_PATH"] = "/Users/oren/Dropbox-AAC/AAC/Oren/CSV/sales_all.csv"
     
+    # Drop schemas and run full refresh
+    logger.info("Dropping schemas and running full refresh")
     result = run_command("meltano run --full-refresh tap-csv target-postgres dbt-postgres:run", dry_run)
     if result != 0:
         logger.error("Full dataset import failed")
-        return result
-    
-    # Import the 90 day set
-    logger.info("Importing 90-day dataset")
-    os.environ["ITEMS_FILE_PATH"] = "/Users/oren/Dropbox-AAC/AAC/Oren/CSV/item_all.csv"
-    os.environ["CUSTOMERS_FILE_PATH"] = "/Users/oren/Dropbox-AAC/AAC/Oren/CSV/customer_90.csv"
-    os.environ["INVOICES_FILE_PATH"] = "/Users/oren/Dropbox-AAC/AAC/Oren/CSV/invoice_90.csv"
-    os.environ["SALES_RECEIPTS_FILE_PATH"] = "/Users/oren/Dropbox-AAC/AAC/Oren/CSV/sales_90.csv"
-    
-    result = run_command("meltano run --full-refresh tap-csv target-postgres dbt-postgres:run", dry_run)
-    if result != 0:
-        logger.error("90-day dataset import failed")
         return result
     
     # Run the matcher
@@ -273,19 +338,91 @@ def process_daily_files(directory, move_files=False, archive=False, dry_run=Fals
     logger.info("Daily import process completed")
     return 0
 
+def test_full_import(directory):
+    """Test the full import process without executing any commands."""
+    logger.info("TEST MODE: Checking full import files")
+    logger.info("=" * 80)
+    
+    if directory:
+        logger.info(f"Looking for full dataset files in: {directory}")
+        
+        # Check if directory exists
+        if not os.path.isdir(directory):
+            logger.error(f"Directory does not exist: {directory}")
+            return 1
+        
+        # Get all CSV files in the directory
+        csv_files = glob.glob(os.path.join(directory, "*.csv"))
+        logger.info(f"Found {len(csv_files)} CSV files in directory")
+        
+        # Group files by type
+        full_files = {
+            "item": [],
+            "customer": [],
+            "invoice": [],
+            "sales_receipt": []
+        }
+        
+        for file_path in csv_files:
+            filename = os.path.basename(file_path)
+            
+            # Check for full dataset files
+            for file_type in ["item", "customer", "invoice", "sales_receipt"]:
+                pattern = rf"{file_type}_all_(\d{{2}})_(\d{{2}})_(\d{{4}})\.csv"
+                if re.match(pattern, filename):
+                    full_files[file_type].append(file_path)
+        
+        # Display results
+        logger.info("\nFull dataset files found:")
+        all_types_present = True
+        for file_type in ["item", "customer", "invoice", "sales_receipt"]:
+            if full_files[file_type]:
+                files_str = ", ".join([os.path.basename(f) for f in full_files[file_type]])
+                logger.info(f"  ✓ {file_type.capitalize()}: {files_str}")
+            else:
+                logger.info(f"  ✗ {file_type.capitalize()}: MISSING")
+                all_types_present = False
+        
+        if all_types_present:
+            logger.info("\nStatus: WILL PROCESS (all required files present)")
+        else:
+            logger.info("\nStatus: WILL SKIP (missing required files)")
+    else:
+        logger.info("Using default file paths:")
+        logger.info(f"  ITEMS_FILE_PATH: /Users/oren/Dropbox-AAC/AAC/Oren/CSV/item_all.csv")
+        logger.info(f"  CUSTOMERS_FILE_PATH: /Users/oren/Dropbox-AAC/AAC/Oren/CSV/customers_all.csv")
+        logger.info(f"  INVOICES_FILE_PATH: /Users/oren/Dropbox-AAC/AAC/Oren/CSV/invoice_all.csv")
+        logger.info(f"  SALES_RECEIPTS_FILE_PATH: /Users/oren/Dropbox-AAC/AAC/Oren/CSV/sales_all.csv")
+    
+    logger.info("\nCommands that would be executed:")
+    logger.info("  1. meltano run --full-refresh tap-csv target-postgres dbt-postgres:run (drops schemas and imports data)")
+    logger.info("  2. ./matcher.py")
+    
+    logger.info("=" * 80)
+    return 0
+
 def main():
     """Main entry point for the script."""
     args = parse_arguments()
     
+    # Check if directory is provided
+    if not args.dir and args.daily:
+        logger.error("Directory must be specified with --dir when using --daily")
+        return 1
+    
     try:
         if args.full:
-            return run_full_import(args.dry_run)
+            if args.test:
+                return test_full_import(args.dir)
+            else:
+                # Use the directory if provided
+                return run_full_import(args.dir, args.dry_run)
         elif args.daily:
             if args.test:
-                return process_daily_files(args.daily, args.move_files, args.archive, 
+                return process_daily_files(args.dir, args.move_files, args.archive, 
                                           dry_run=True, test_mode=True)
             else:
-                return process_daily_files(args.daily, args.move_files, args.archive, 
+                return process_daily_files(args.dir, args.move_files, args.archive, 
                                           args.dry_run, test_mode=False)
     except Exception as e:
         logger.error(f"Unhandled exception: {str(e)}")
