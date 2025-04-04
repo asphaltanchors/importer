@@ -208,6 +208,9 @@ def process_daily_files(directory, move_files=False, archive=False, dry_run=Fals
         logger.info("\n" + "=" * 80)
         return 0
     
+    # Track if we processed any files successfully
+    processed_any = False
+    
     # Process each date
     for date_str in sorted_dates:
         files = files_by_date[date_str]
@@ -244,14 +247,8 @@ def process_daily_files(directory, move_files=False, archive=False, dry_run=Fals
             logger.error(f"Transformations failed for date: {date_str}")
             continue
         
-        # Run matcher
-        logger.info(f"Running matcher for {date_str}")
-        result = run_command("./matcher.py", dry_run)
-        if result != 0:
-            logger.error(f"Matcher failed for date: {date_str}")
-            continue
-        
         logger.info(f"Successfully processed files for date: {date_str}")
+        processed_any = True
         
         # Handle processed files if requested
         if move_files:
@@ -261,6 +258,17 @@ def process_daily_files(directory, move_files=False, archive=False, dry_run=Fals
         if archive:
             logger.info("File archiving not implemented yet")
             # TODO: Implement file archiving logic
+    
+    # Run matcher once at the end if any files were processed
+    if processed_any:
+        logger.info("All imports complete. Running matcher...")
+        result = run_command("./matcher.py", dry_run)
+        if result != 0:
+            logger.error("Matcher failed")
+            return result
+        logger.info("Matcher completed successfully")
+    else:
+        logger.warning("No files were processed, skipping matcher")
     
     logger.info("Daily import process completed")
     return 0
