@@ -69,6 +69,9 @@ SELECT
     c."First Name" as first_name,
     c."Last Name" as last_name,
     c."Customer Type" as customer_type,
+    c."Billing Address City" as billing_city,
+    c."Shipping Address City" as shipping_city,
+    c."Main Email" as email,
     -- Only include the company_id as a foreign key
     comp.company_id
 FROM {{ source('raw', 'customers') }} c

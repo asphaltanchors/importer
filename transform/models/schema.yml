@@ -95,6 +95,12 @@ models:
         description: "Customer last name"
       - name: customer_type
         description: "Type of customer (e.g., Retail, US Customer)"
+      - name: billing_city
+        description: "Customer's billing address city"
+      - name: shipping_city
+        description: "Customer's shipping address city"
+      - name: email
+        description: "Customer's main email address"
       - name: company_id
         description: "Reference to companies.company_id"
         
