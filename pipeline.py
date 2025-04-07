@@ -6,13 +6,20 @@ This script replaces run_pipeline.sh and provides two main modes of operation:
 1. Full import: Drops and recreates all data (similar to original script)
 2. Daily import: Processes files from a directory in date sequence
 
+For daily imports, the script expects the following directory structure:
+- <parent_dir>/input/     - Directory containing files to process
+- <parent_dir>/processed/ - Directory where successfully processed files are moved
+- <parent_dir>/failed/    - Directory where failed files are moved
+
+The processed/ and failed/ directories will be created automatically if they don't exist.
+
 Usage:
   Full import (default paths): ./pipeline.py --full
   Full import (custom dir): ./pipeline.py --full --dir /path/to/files/directory
   Full import test: ./pipeline.py --full --dir /path/to/files/directory --test
-  Daily import: ./pipeline.py --daily --dir /path/to/files/directory
-  Daily import test: ./pipeline.py --daily --dir /path/to/files/directory --test
-  Dry run: ./pipeline.py --daily --dir /path/to/files/directory --dry-run
+  Daily import: ./pipeline.py --daily --dir /path/to/parent/directory
+  Daily import test: ./pipeline.py --daily --dir /path/to/parent/directory --test
+  Dry run: ./pipeline.py --daily --dir /path/to/parent/directory --dry-run
 """
 
 import os
@@ -229,15 +236,25 @@ def group_files_by_date(directory):
 
 def process_daily_files(directory, move_files=False, archive=False, dry_run=False, test_mode=False):
     """Process files from directory in date sequence."""
-    logger.info(f"Starting daily import from directory: {directory}")
+    logger.info(f"Starting daily import from parent directory: {directory}")
     
-    # Check if directory exists
-    if not os.path.isdir(directory):
-        logger.error(f"Directory does not exist: {directory}")
+    # Define directory structure
+    input_dir = os.path.join(directory, "input")
+    processed_dir = os.path.join(directory, "processed")
+    failed_dir = os.path.join(directory, "failed")
+    
+    # Check if input directory exists
+    if not os.path.isdir(input_dir):
+        logger.error(f"Input directory does not exist: {input_dir}")
         return 1
     
+    # Create processed and failed directories if they don't exist
+    if not dry_run and not test_mode:
+        os.makedirs(processed_dir, exist_ok=True)
+        os.makedirs(failed_dir, exist_ok=True)
+    
     # Group files by date
-    files_by_date = group_files_by_date(directory)
+    files_by_date = group_files_by_date(input_dir)
     
     if not files_by_date:
         logger.warning("No valid files found in directory")
@@ -303,6 +320,21 @@ def process_daily_files(directory, move_files=False, archive=False, dry_run=Fals
         result = run_command("meltano run tap-csv target-postgres", dry_run)
         if result != 0:
             logger.error(f"Import failed for date: {date_str}")
+            
+            # Move files to failed directory if not in dry run or test mode
+            if not dry_run and not test_mode:
+                logger.info(f"Moving files for {date_str} to failed directory")
+                for file_type in ["item", "customer", "invoice", "sales_receipt"]:
+                    if file_type in files:
+                        file_path = files[file_type]
+                        filename = os.path.basename(file_path)
+                        failed_path = os.path.join(failed_dir, filename)
+                        try:
+                            os.rename(file_path, failed_path)
+                            logger.info(f"Moved {filename} to failed directory")
+                        except Exception as e:
+                            logger.error(f"Failed to move {filename}: {str(e)}")
+            
             continue
         
         # Run DBT transformations
@@ -310,16 +342,41 @@ def process_daily_files(directory, move_files=False, archive=False, dry_run=Fals
         result = run_command("meltano invoke dbt-postgres:run", dry_run)
         if result != 0:
             logger.error(f"Transformations failed for date: {date_str}")
+            
+            # Move files to failed directory if not in dry run or test mode
+            if not dry_run and not test_mode:
+                logger.info(f"Moving files for {date_str} to failed directory")
+                for file_type in ["item", "customer", "invoice", "sales_receipt"]:
+                    if file_type in files:
+                        file_path = files[file_type]
+                        filename = os.path.basename(file_path)
+                        failed_path = os.path.join(failed_dir, filename)
+                        try:
+                            os.rename(file_path, failed_path)
+                            logger.info(f"Moved {filename} to failed directory")
+                        except Exception as e:
+                            logger.error(f"Failed to move {filename}: {str(e)}")
+            
             continue
         
         logger.info(f"Successfully processed files for date: {date_str}")
         processed_any = True
         
-        # Handle processed files if requested
-        if move_files:
-            logger.info("File moving not implemented yet")
-            # TODO: Implement file moving logic
+        # Move successfully processed files to processed directory
+        if not dry_run and not test_mode:
+            logger.info(f"Moving files for {date_str} to processed directory")
+            for file_type in ["item", "customer", "invoice", "sales_receipt"]:
+                if file_type in files:
+                    file_path = files[file_type]
+                    filename = os.path.basename(file_path)
+                    processed_path = os.path.join(processed_dir, filename)
+                    try:
+                        os.rename(file_path, processed_path)
+                        logger.info(f"Moved {filename} to processed directory")
+                    except Exception as e:
+                        logger.error(f"Failed to move {filename}: {str(e)}")
         
+        # Handle archived files if requested
         if archive:
             logger.info("File archiving not implemented yet")
             # TODO: Implement file archiving logic
@@ -336,6 +393,61 @@ def process_daily_files(directory, move_files=False, archive=False, dry_run=Fals
         logger.warning("No files were processed, skipping matcher")
     
     logger.info("Daily import process completed")
+    return 0
+
+def test_daily_import(directory):
+    """Test the daily import process without executing any commands."""
+    logger.info("TEST MODE: Checking daily import files")
+    logger.info("=" * 80)
+    
+    # Define directory structure
+    input_dir = os.path.join(directory, "input")
+    processed_dir = os.path.join(directory, "processed")
+    failed_dir = os.path.join(directory, "failed")
+    
+    # Check if input directory exists
+    if not os.path.isdir(input_dir):
+        logger.error(f"Input directory does not exist: {input_dir}")
+        return 1
+    
+    logger.info(f"Directory structure:")
+    logger.info(f"  Input directory: {input_dir}")
+    logger.info(f"  Processed directory: {processed_dir} (will be created if needed)")
+    logger.info(f"  Failed directory: {failed_dir} (will be created if needed)")
+    
+    # Group files by date
+    files_by_date = group_files_by_date(input_dir)
+    
+    if not files_by_date:
+        logger.warning("No valid files found in input directory")
+        return 0
+    
+    # Sort dates
+    sorted_dates = sorted(files_by_date.keys())
+    logger.info(f"Found files for {len(sorted_dates)} dates: {', '.join(sorted_dates)}")
+    
+    # Show detailed information about what would be processed
+    logger.info("\nFiles that would be processed:")
+    for date_str in sorted_dates:
+        files = files_by_date[date_str]
+        logger.info(f"\nDate: {date_str}")
+        
+        # Check for required file types
+        all_types_present = True
+        for file_type in ["item", "customer", "invoice", "sales_receipt"]:
+            if file_type in files:
+                logger.info(f"  ✓ {file_type.capitalize()}: {os.path.basename(files[file_type])}")
+            else:
+                logger.info(f"  ✗ {file_type.capitalize()}: MISSING")
+                all_types_present = False
+        
+        if all_types_present:
+            logger.info(f"  Status: WILL PROCESS (all required files present)")
+            logger.info(f"  After processing: Files will be moved to {processed_dir}")
+        else:
+            logger.info(f"  Status: WILL SKIP (missing required files)")
+    
+    logger.info("\n" + "=" * 80)
     return 0
 
 def test_full_import(directory):
@@ -419,10 +531,9 @@ def main():
                 return run_full_import(args.dir, args.dry_run)
         elif args.daily:
             if args.test:
-                return process_daily_files(args.dir, args.move_files, args.archive, 
-                                          dry_run=True, test_mode=True)
+                return test_daily_import(args.dir)
             else:
-                return process_daily_files(args.dir, args.move_files, args.archive, 
+                return process_daily_files(args.dir, True, args.archive, 
                                           args.dry_run, test_mode=False)
     except Exception as e:
         logger.error(f"Unhandled exception: {str(e)}")
