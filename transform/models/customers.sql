@@ -70,7 +70,11 @@ SELECT
     c."Last Name" as last_name,
     c."Customer Type" as customer_type,
     c."Billing Address City" as billing_city,
+    c."Billing Address State" as billing_state,
+    c."Billing Address Postal Code" as billing_zip,
     c."Shipping Address City" as shipping_city,
+    c."Shipping Address State" as shipping_state,
+    c."Shipping Address Postal Code" as shipping_zip,
     c."Main Email" as email,
     -- Only include the company_id as a foreign key
     comp.company_id

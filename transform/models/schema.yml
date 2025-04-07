@@ -97,8 +97,16 @@ models:
         description: "Type of customer (e.g., Retail, US Customer)"
       - name: billing_city
         description: "Customer's billing address city"
+      - name: billing_state
+        description: "Customer's billing address state/province"
+      - name: billing_zip
+        description: "Customer's billing address postal code"
       - name: shipping_city
         description: "Customer's shipping address city"
+      - name: shipping_state
+        description: "Customer's shipping address state/province"
+      - name: shipping_zip
+        description: "Customer's shipping address postal code"
       - name: email
         description: "Customer's main email address"
       - name: company_id
