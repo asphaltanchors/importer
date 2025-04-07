@@ -16,8 +16,20 @@ WITH invoices AS (
     "Customer" as customer_name,
     "Billing Address Line1" as billing_address_line_1,
     "Billing Address Line2" as billing_address_line_2,
+    "Billing Address Line3" as billing_address_line_3,
+    "Billing Address City" as billing_address_city,
+    "Billing Address State" as billing_address_state,
+    "Billing Address Postal Code" as billing_address_postal_code,
+    "Billing Address Country" as billing_address_country,
     "Shipping Address Line1" as shipping_address_line_1,
-    "Shipping Address Line2" as shipping_address_line_2
+    "Shipping Address Line2" as shipping_address_line_2,
+    "Shipping Address Line3" as shipping_address_line_3,
+    "Shipping Address City" as shipping_address_city,
+    "Shipping Address State" as shipping_address_state,
+    "Shipping Address Postal Code" as shipping_address_postal_code,
+    "Shipping Address Country" as shipping_address_country,
+    NULL as industry,
+    NULL as sourcechannel
   FROM {{ source('raw', 'invoices') }}
   WHERE "QuickBooks Internal Id" != ''
   GROUP BY
@@ -31,8 +43,18 @@ WITH invoices AS (
     "Customer",
     "Billing Address Line1",
     "Billing Address Line2",
+    "Billing Address Line3",
+    "Billing Address City",
+    "Billing Address State",
+    "Billing Address Postal Code",
+    "Billing Address Country",
     "Shipping Address Line1",
-    "Shipping Address Line2"
+    "Shipping Address Line2",
+    "Shipping Address Line3",
+    "Shipping Address City",
+    "Shipping Address State",
+    "Shipping Address Postal Code",
+    "Shipping Address Country"
 ),
 
 -- Sales Receipts data
@@ -51,8 +73,20 @@ sales_receipts AS (
     "Customer" as customer_name,
     "Billing Address Line 1" as billing_address_line_1,
     "Billing Address Line 2" as billing_address_line_2,
+    "Billing Address Line 3" as billing_address_line_3,
+    "Billing Address City" as billing_address_city,
+    "Billing Address State" as billing_address_state,
+    "Billing Address Postal Code" as billing_address_postal_code,
+    "Billing Address Country" as billing_address_country,
     "Shipping Address Line 1" as shipping_address_line_1,
-    "Shipping Address Line 2" as shipping_address_line_2
+    "Shipping Address Line 2" as shipping_address_line_2,
+    "Shipping Address Line 3" as shipping_address_line_3,
+    "Shipping Address City" as shipping_address_city,
+    "Shipping Address State" as shipping_address_state,
+    "Shipping Address Postal Code" as shipping_address_postal_code,
+    "Shipping Address Country" as shipping_address_country,
+    "Industry" as industry,
+    "SourceChannel" as sourcechannel
   FROM {{ source('raw', 'sales_receipts') }}
   WHERE "QuickBooks Internal Id" != ''
   GROUP BY
@@ -64,8 +98,20 @@ sales_receipts AS (
     "Customer",
     "Billing Address Line 1",
     "Billing Address Line 2",
+    "Billing Address Line 3",
+    "Billing Address City",
+    "Billing Address State",
+    "Billing Address Postal Code",
+    "Billing Address Country",
     "Shipping Address Line 1",
-    "Shipping Address Line 2"
+    "Shipping Address Line 2",
+    "Shipping Address Line 3",
+    "Shipping Address City",
+    "Shipping Address State",
+    "Shipping Address Postal Code",
+    "Shipping Address Country",
+    "Industry",
+    "SourceChannel"
 )
 
 -- Combine both sources
