@@ -175,9 +175,16 @@ def run_full_import(directory=None, dry_run=False):
     
     # Drop schemas and run full refresh
     logger.info("Dropping schemas and running full refresh")
-    result = run_command("meltano run --full-refresh tap-csv target-postgres dbt-postgres:run", dry_run)
+    result = run_command("meltano run --full-refresh tap-csv target-postgres", dry_run)
     if result != 0:
         logger.error("Full dataset import failed")
+        return result
+    
+    # Run DBT build to handle all dependencies (models, snapshots, etc.)
+    logger.info("Running DBT build to create models and snapshots")
+    result = run_command("meltano invoke dbt-postgres:build", dry_run)
+    if result != 0:
+        logger.error("DBT build failed")
         return result
     
     # Run the matcher
@@ -337,11 +344,11 @@ def process_daily_files(directory, move_files=False, archive=False, dry_run=Fals
             
             continue
         
-        # Run DBT transformations
-        logger.info(f"Running transformations for {date_str}")
-        result = run_command("meltano invoke dbt-postgres:run", dry_run)
+        # Run DBT build to handle all dependencies (models, snapshots, etc.)
+        logger.info(f"Running DBT build for {date_str}")
+        result = run_command("meltano invoke dbt-postgres:build", dry_run)
         if result != 0:
-            logger.error(f"Transformations failed for date: {date_str}")
+            logger.error(f"DBT build failed for date: {date_str}")
             
             # Move files to failed directory if not in dry run or test mode
             if not dry_run and not test_mode:
@@ -507,8 +514,9 @@ def test_full_import(directory):
         logger.info(f"  SALES_RECEIPTS_FILE_PATH: /Users/oren/Dropbox-AAC/AAC/Oren/CSV/sales_all.csv")
     
     logger.info("\nCommands that would be executed:")
-    logger.info("  1. meltano run --full-refresh tap-csv target-postgres dbt-postgres:run (drops schemas and imports data)")
-    logger.info("  2. ./matcher.py")
+    logger.info("  1. meltano run --full-refresh tap-csv target-postgres (drops schemas and imports data)")
+    logger.info("  2. meltano invoke dbt-postgres:build (runs DBT build to create models and snapshots)")
+    logger.info("  3. ./matcher.py")
     
     logger.info("=" * 80)
     return 0

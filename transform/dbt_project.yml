@@ -31,6 +31,8 @@ models:
     # Config defaults for all models in this project
     +materialized: view
     # Specific configurations for different model directories
+    staging:
+      +materialized: view
     companies:
       +materialized: table
     customers:

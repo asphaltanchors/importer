@@ -35,7 +35,7 @@ plugins:
       add_record_metadata: true
       host: localhost
       default_target_schema: raw
-      load_method: upsert
+      load_method: append-only
   utilities:
   - name: dbt-postgres
     variant: dbt-labs

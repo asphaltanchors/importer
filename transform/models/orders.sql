@@ -85,7 +85,7 @@ sales_receipts AS (
     "Shipping Address State" as shipping_address_state,
     "Shipping Address Postal Code" as shipping_address_postal_code,
     "Shipping Address Country" as shipping_address_country,
-    "Industry" as industry,
+    LOWER("Industry") as industry,
     "SourceChannel" as sourcechannel
   FROM {{ source('raw', 'sales_receipts') }}
   WHERE "QuickBooks Internal Id" != ''
@@ -110,7 +110,7 @@ sales_receipts AS (
     "Shipping Address State",
     "Shipping Address Postal Code",
     "Shipping Address Country",
-    "Industry",
+    LOWER("Industry"),
     "SourceChannel"
 )
 

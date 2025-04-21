@@ -1,5 +1,7 @@
 # Item History Tracking
 
+THIS DOCUIMENT MAY BE OUTDATED. DO NOT TRUST IT. USE FOR INSPIRATION ONLY. VERIFY eVERYTHING!
+
 This document describes the history tracking functionality for items data in the MQI project.
 
 ## Overview
@@ -15,17 +17,27 @@ The history tracking system captures changes to key attributes of items over tim
 
 The history tracking is implemented using the following components:
 
-### 1. `item_history` dbt Model
+### 1. `items_snapshot` dbt Snapshot
 
-This incremental model:
-- Compares current values with previous values
+This snapshot:
+- Captures the state of items at each point in time
+- Uses dbt's snapshot functionality to track changes
+- Stores historical records with valid_from and valid_to timestamps
+- Provides the foundation for robust history tracking
+
+File: `transform/snapshots/items_snapshot.sql`
+
+### 2. `item_history` dbt Model
+
+This model:
+- Compares current snapshot with previous snapshots
 - Records changes to key attributes (purchase_cost, sales_price, quantity_on_hand, status)
 - Stores the old value, new value, and when the change was detected
-- Uses dbt's incremental materialization to efficiently track changes
+- Uses dbt's snapshot data to accurately track history
 
 File: `transform/models/item_history.sql`
 
-### 2. `item_history_view` dbt Model
+### 3. `item_history_view` dbt Model
 
 This view provides a user-friendly interface to the history data:
 - Joins with the products table to get additional item information
@@ -35,7 +47,7 @@ This view provides a user-friendly interface to the history data:
 
 File: `transform/models/item_history_view.sql`
 
-### 3. Sample Analysis Queries
+### 4. Sample Analysis Queries
 
 A set of sample queries demonstrates how to analyze the history data:
 - Find items with the largest price increases/decreases
@@ -50,6 +62,7 @@ File: `transform/analysis/item_history_analysis.sql`
 1. When the `import_items.sh` script runs, it:
    - Extracts data from the items CSV file
    - Loads it into the raw.items table
+   - Creates snapshots to capture the state at this point in time
    - Transforms it into the products table
    - Runs the item_history model to detect and record changes
    - Creates the item_history_view for easy querying
@@ -60,7 +73,8 @@ File: `transform/analysis/item_history_analysis.sql`
    - Set new_value to the current value
 
 3. On subsequent runs, it will:
-   - Compare current values with the most recent values in the history table
+   - Create a new snapshot if there are changes
+   - Compare current snapshot with previous snapshots
    - Record only the changes (when a value is different)
    - Store both the old and new values
 
@@ -95,3 +109,15 @@ The following columns are currently tracked:
 - `status`: Item status
 
 Additional columns can be added to the tracking by modifying the `item_history.sql` model.
+
+## Benefits of Using Snapshots
+
+The snapshot-based approach provides several advantages:
+
+1. **Robust History Tracking**: dbt snapshots are specifically designed for tracking slowly changing dimensions and maintaining history.
+
+2. **Complete Historical Record**: Every state of each item is preserved, allowing for point-in-time analysis.
+
+3. **Accurate Change Detection**: By comparing snapshots, we can accurately identify what changed and when.
+
+4. **Simplified Maintenance**: dbt handles the complexity of tracking changes, making the system more maintainable.
