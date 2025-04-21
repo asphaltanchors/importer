@@ -184,7 +184,9 @@ def run_full_import(directory=None, dry_run=False):
     
     # Run DBT build to handle all dependencies (models, snapshots, etc.)
     logger.info("Running DBT build to create models and snapshots")
-    result = run_command("meltano invoke dbt-postgres:build", dry_run)
+    # For full import, use current date as the file_date
+    current_date = datetime.now().date()
+    result = run_command(f"meltano invoke dbt-postgres:build --vars 'file_date: {current_date}'", dry_run)
     if result != 0:
         logger.error("DBT build failed")
         return result
@@ -432,7 +434,8 @@ def process_daily_files(directory, move_files=False, archive=False, dry_run=Fals
         
         # Run DBT build to handle all dependencies (models, snapshots, etc.)
         logger.info(f"Running DBT build for {date_str}")
-        result = run_command("meltano invoke dbt-postgres:build", dry_run)
+        file_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        result = run_command(f"meltano invoke dbt-postgres:build --vars 'file_date: {file_date}'", dry_run)
         if result != 0:
             logger.error(f"DBT build failed for date: {date_str}")
             

@@ -10,7 +10,7 @@ WITH changes AS (
         'purchase_cost' as column_name,
         LAG(purchase_cost) OVER (PARTITION BY item_name ORDER BY dbt_valid_from) as old_value,
         purchase_cost as new_value,
-        dbt_valid_from as changed_at
+        '{{ var("file_date", dbt_valid_from) }}'::date as changed_at
     FROM {{ ref('items_snapshot') }}
     
     UNION ALL
@@ -21,7 +21,7 @@ WITH changes AS (
         'sales_price' as column_name,
         LAG(sales_price) OVER (PARTITION BY item_name ORDER BY dbt_valid_from) as old_value,
         sales_price as new_value,
-        dbt_valid_from as changed_at
+        '{{ var("file_date", dbt_valid_from) }}'::date as changed_at
     FROM {{ ref('items_snapshot') }}
     
     UNION ALL
@@ -32,7 +32,7 @@ WITH changes AS (
         'quantity_on_hand' as column_name,
         LAG(quantity_on_hand) OVER (PARTITION BY item_name ORDER BY dbt_valid_from) as old_value,
         quantity_on_hand as new_value,
-        dbt_valid_from as changed_at
+        '{{ var("file_date", dbt_valid_from) }}'::date as changed_at
     FROM {{ ref('items_snapshot') }}
     
     UNION ALL
@@ -43,7 +43,7 @@ WITH changes AS (
         'status' as column_name,
         LAG(status) OVER (PARTITION BY item_name ORDER BY dbt_valid_from) as old_value,
         status as new_value,
-        dbt_valid_from as changed_at
+        '{{ var("file_date", dbt_valid_from) }}'::date as changed_at
     FROM {{ ref('items_snapshot') }}
 )
 
