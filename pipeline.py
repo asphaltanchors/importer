@@ -6,12 +6,8 @@ This script replaces run_pipeline.sh and provides two main modes of operation:
 1. Full import: Drops and recreates all data (similar to original script)
 2. Daily import: Processes files from a directory in date sequence
 
-For daily imports, the script expects the following directory structure:
-- <parent_dir>/input/     - Directory containing files to process
-- <parent_dir>/processed/ - Directory where successfully processed files are moved
-- <parent_dir>/failed/    - Directory where failed files are moved
-
-The processed/ and failed/ directories will be created automatically if they don't exist.
+For daily imports, the script uses a database table to track processed files instead of
+physically moving them. This allows for easier reprocessing and provides a record of all imports.
 
 Usage:
   Full import (default paths): ./pipeline.py --full
@@ -30,6 +26,12 @@ import glob
 import re
 from datetime import datetime
 import logging
+import psycopg2
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -241,24 +243,94 @@ def group_files_by_date(directory):
     
     return files_by_date
 
+def get_db_connection():
+    """Get a connection to the PostgreSQL database."""
+    conn = psycopg2.connect(
+        host="localhost",
+        database="mqi",
+        user="aac",
+        password=os.getenv("TARGET_POSTGRES_PASSWORD")
+    )
+    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+    return conn
+
+def initialize_imported_files_table():
+    """Create the imported_files table if it doesn't exist."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS imported_files (
+                id SERIAL PRIMARY KEY,
+                filename TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                file_type TEXT NOT NULL,
+                import_date TIMESTAMP NOT NULL DEFAULT NOW(),
+                status TEXT NOT NULL,
+                file_date DATE
+            )
+        """)
+        logger.info("Initialized imported_files table")
+    except Exception as e:
+        logger.error(f"Error initializing imported_files table: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+def is_file_processed(file_path):
+    """Check if a file has already been processed by querying the database."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT status FROM imported_files WHERE file_path = %s",
+            (file_path,)
+        )
+        result = cursor.fetchone()
+        return result is not None
+    except Exception as e:
+        logger.error(f"Error checking if file is processed: {str(e)}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+def record_file_import(file_path, file_type, status, file_date=None):
+    """Record a file import in the database."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        filename = os.path.basename(file_path)
+        cursor.execute(
+            """
+            INSERT INTO imported_files 
+            (filename, file_path, file_type, status, file_date)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (filename, file_path, file_type, status, file_date)
+        )
+        logger.info(f"Recorded {status} import for {filename}")
+    except Exception as e:
+        logger.error(f"Error recording file import: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
 def process_daily_files(directory, move_files=False, archive=False, dry_run=False, test_mode=False):
     """Process files from directory in date sequence."""
     logger.info(f"Starting daily import from parent directory: {directory}")
     
-    # Define directory structure
+    # Initialize the imported_files table
+    if not dry_run and not test_mode:
+        initialize_imported_files_table()
+    
+    # Define input directory
     input_dir = os.path.join(directory, "input")
-    processed_dir = os.path.join(directory, "processed")
-    failed_dir = os.path.join(directory, "failed")
     
     # Check if input directory exists
     if not os.path.isdir(input_dir):
         logger.error(f"Input directory does not exist: {input_dir}")
         return 1
-    
-    # Create processed and failed directories if they don't exist
-    if not dry_run and not test_mode:
-        os.makedirs(processed_dir, exist_ok=True)
-        os.makedirs(failed_dir, exist_ok=True)
     
     # Group files by date
     files_by_date = group_files_by_date(input_dir)
@@ -284,7 +356,11 @@ def process_daily_files(directory, move_files=False, archive=False, dry_run=Fals
             all_types_present = True
             for file_type in ["item", "customer", "invoice", "sales_receipt"]:
                 if file_type in files:
-                    logger.info(f"  ✓ {file_type.capitalize()}: {os.path.basename(files[file_type])}")
+                    file_path = files[file_type]
+                    filename = os.path.basename(file_path)
+                    processed = is_file_processed(file_path) if not dry_run else False
+                    status = "ALREADY PROCESSED" if processed else "WILL PROCESS"
+                    logger.info(f"  ✓ {file_type.capitalize()}: {filename} ({status})")
                 else:
                     logger.info(f"  ✗ {file_type.capitalize()}: MISSING")
                     all_types_present = False
@@ -316,6 +392,18 @@ def process_daily_files(directory, move_files=False, archive=False, dry_run=Fals
             logger.warning(f"Skipping date: {date_str}")
             continue
         
+        # Check if all files have already been processed
+        all_processed = True
+        for file_type in ["item", "customer", "invoice", "sales_receipt"]:
+            file_path = files[file_type]
+            if not is_file_processed(file_path):
+                all_processed = False
+                break
+        
+        if all_processed:
+            logger.info(f"All files for {date_str} have already been processed. Skipping.")
+            continue
+        
         # Set environment variables for file paths
         os.environ["ITEMS_FILE_PATH"] = files["item"]
         os.environ["CUSTOMERS_FILE_PATH"] = files["customer"]
@@ -328,19 +416,13 @@ def process_daily_files(directory, move_files=False, archive=False, dry_run=Fals
         if result != 0:
             logger.error(f"Import failed for date: {date_str}")
             
-            # Move files to failed directory if not in dry run or test mode
+            # Record failed imports in the database
             if not dry_run and not test_mode:
-                logger.info(f"Moving files for {date_str} to failed directory")
+                file_date = datetime.strptime(date_str, "%Y-%m-%d").date()
                 for file_type in ["item", "customer", "invoice", "sales_receipt"]:
                     if file_type in files:
                         file_path = files[file_type]
-                        filename = os.path.basename(file_path)
-                        failed_path = os.path.join(failed_dir, filename)
-                        try:
-                            os.rename(file_path, failed_path)
-                            logger.info(f"Moved {filename} to failed directory")
-                        except Exception as e:
-                            logger.error(f"Failed to move {filename}: {str(e)}")
+                        record_file_import(file_path, file_type, "failed", file_date)
             
             continue
         
@@ -350,38 +432,26 @@ def process_daily_files(directory, move_files=False, archive=False, dry_run=Fals
         if result != 0:
             logger.error(f"DBT build failed for date: {date_str}")
             
-            # Move files to failed directory if not in dry run or test mode
+            # Record failed imports in the database
             if not dry_run and not test_mode:
-                logger.info(f"Moving files for {date_str} to failed directory")
+                file_date = datetime.strptime(date_str, "%Y-%m-%d").date()
                 for file_type in ["item", "customer", "invoice", "sales_receipt"]:
                     if file_type in files:
                         file_path = files[file_type]
-                        filename = os.path.basename(file_path)
-                        failed_path = os.path.join(failed_dir, filename)
-                        try:
-                            os.rename(file_path, failed_path)
-                            logger.info(f"Moved {filename} to failed directory")
-                        except Exception as e:
-                            logger.error(f"Failed to move {filename}: {str(e)}")
+                        record_file_import(file_path, file_type, "failed", file_date)
             
             continue
         
         logger.info(f"Successfully processed files for date: {date_str}")
         processed_any = True
         
-        # Move successfully processed files to processed directory
+        # Record successful imports in the database
         if not dry_run and not test_mode:
-            logger.info(f"Moving files for {date_str} to processed directory")
+            file_date = datetime.strptime(date_str, "%Y-%m-%d").date()
             for file_type in ["item", "customer", "invoice", "sales_receipt"]:
                 if file_type in files:
                     file_path = files[file_type]
-                    filename = os.path.basename(file_path)
-                    processed_path = os.path.join(processed_dir, filename)
-                    try:
-                        os.rename(file_path, processed_path)
-                        logger.info(f"Moved {filename} to processed directory")
-                    except Exception as e:
-                        logger.error(f"Failed to move {filename}: {str(e)}")
+                    record_file_import(file_path, file_type, "success", file_date)
         
         # Handle archived files if requested
         if archive:
@@ -531,6 +601,10 @@ def main():
         return 1
     
     try:
+        # Initialize the imported_files table if not in test mode
+        if not args.test and not args.dry_run:
+            initialize_imported_files_table()
+            
         if args.full:
             if args.test:
                 return test_full_import(args.dir)
