@@ -261,12 +261,12 @@ def initialize_imported_files_table():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # First ensure the raw schema exists
-        cursor.execute("CREATE SCHEMA IF NOT EXISTS raw")
+        # First ensure the analytics_meta schema exists
+        cursor.execute("CREATE SCHEMA IF NOT EXISTS analytics_meta")
         
-        # Create the table in the raw schema
+        # Create the table in the analytics_meta schema
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS raw.imported_files (
+            CREATE TABLE IF NOT EXISTS analytics_meta.imported_files (
                 id SERIAL PRIMARY KEY,
                 filename TEXT NOT NULL,
                 file_path TEXT NOT NULL,
@@ -276,7 +276,7 @@ def initialize_imported_files_table():
                 file_date DATE
             )
         """)
-        logger.info("Initialized imported_files table in raw schema")
+        logger.info("Initialized imported_files table in analytics_meta schema")
     except Exception as e:
         logger.error(f"Error initializing imported_files table: {str(e)}")
     finally:
@@ -289,7 +289,7 @@ def is_file_processed(file_path):
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "SELECT status FROM raw.imported_files WHERE file_path = %s",
+            "SELECT status FROM analytics_meta.imported_files WHERE file_path = %s",
             (file_path,)
         )
         result = cursor.fetchone()
@@ -309,7 +309,7 @@ def record_file_import(file_path, file_type, status, file_date=None):
         filename = os.path.basename(file_path)
         cursor.execute(
             """
-            INSERT INTO raw.imported_files 
+            INSERT INTO analytics_meta.imported_files 
             (filename, file_path, file_type, status, file_date)
             VALUES (%s, %s, %s, %s, %s)
             """,

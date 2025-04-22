@@ -34,7 +34,7 @@ plugins:
       database: mqi
       add_record_metadata: true
       host: localhost
-      default_target_schema: raw
+      default_target_schema: analytics_raw
       load_method: append-only
   utilities:
   - name: dbt-postgres
@@ -45,6 +45,6 @@ plugins:
       port: 5432
       user: aac
       dbname: mqi
-      schema: public
+      schema: analytics
 venv:
   backend: uv

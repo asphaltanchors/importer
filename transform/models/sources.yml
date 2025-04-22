@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: raw
     database: mqi  # From meltano.yml config
-    schema: raw    # From meltano.yml config
+    schema: analytics_raw    # From meltano.yml config
     tables:
       - name: customers
         identifier: customers  # The table name in the database

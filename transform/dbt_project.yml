@@ -27,11 +27,12 @@ clean-targets:
 - dbt_packages
 - logs
 models:
-  my_meltano_project:
+  meltano_quickbooks_importer:
     # Config defaults for all models in this project
     +materialized: view
     # Specific configurations for different model directories
     staging:
+      +schema: staging  # Add this line
       +materialized: view
     companies:
       +materialized: table
@@ -41,8 +42,12 @@ models:
     item_history:
       +materialized: table
 
+snapshots:
+  meltano_quickbooks_importer:
+    +target_schema: analytics_snapshots
+
 seeds:
-  my_meltano_project:
+  meltano_quickbooks_importer:
     company_terms:
       +schema: seeds  # Optional, ensures seeds are organized
       +quote_columns: false  # Ensures column names are not quoted
