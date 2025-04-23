@@ -75,10 +75,14 @@ SELECT
     c."Shipping Address City" as shipping_city,
     c."Shipping Address State" as shipping_state,
     c."Shipping Address Postal Code" as shipping_zip,
-    c."Main Email" as email,
+    -- Use the primary email from customer_emails instead of raw email
+    ce.email_address as email,
     -- Only include the company_id as a foreign key
     comp.company_id
 FROM {{ source('raw', 'customers') }} c
+LEFT JOIN {{ ref('customer_emails') }} ce 
+    ON c."QuickBooks Internal Id" = ce.quickbooks_id 
+    AND ce.is_primary_email = TRUE
 LEFT JOIN customer_company_data ccd ON c."QuickBooks Internal Id" = ccd.quickbooks_id
 LEFT JOIN {{ ref('companies') }} comp ON 
     MD5(COALESCE(LOWER(TRIM(ccd.company_domain)), '')) = comp.company_id

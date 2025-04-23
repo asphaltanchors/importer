@@ -108,9 +108,35 @@ models:
       - name: shipping_zip
         description: "Customer's shipping address postal code"
       - name: email
-        description: "Customer's main email address"
+        description: "Customer's primary email address (from customer_emails)"
       - name: company_id
         description: "Reference to companies.company_id"
+        
+  - name: customer_emails
+    description: "Normalized table of customer emails (one row per customer-email combination)"
+    columns:
+      - name: quickbooks_id
+        description: "QuickBooks Internal ID for the customer"
+        tests:
+          - not_null
+      - name: customer_name
+        description: "Customer name"
+      - name: company_name
+        description: "Company name"
+      - name: email_address
+        description: "Individual email address (split from Main Email)"
+        tests:
+          - not_null
+      - name: email_rank
+        description: "Rank of the email address (1 = primary)"
+        tests:
+          - not_null
+      - name: email_domain
+        description: "Domain extracted from the email address"
+      - name: is_primary_email
+        description: "Flag indicating if this is the primary email (rank 1)"
+        tests:
+          - not_null
         
   - name: company_stats
     description: "Aggregated statistics for companies including customer counts and order totals"
