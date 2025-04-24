@@ -101,9 +101,65 @@ unique_domains AS (
         ) AS earliest_created_date
     FROM customer_domains
     WHERE company_domain IS NOT NULL
-)
+),
 
-, consumer_domains AS (
+-- Combine data from both sales_receipts and invoices
+combined_transactions AS (
+    -- Sales receipts data
+    SELECT 
+        c."Customer Name" as customer_name,
+        LOWER(SPLIT_PART(c."Main Email", '@', 2)) as company_domain,
+        sr."Product/Service Class" as class,
+        TO_DATE(sr."Sales Receipt Date", 'MM-DD-YYYY') as transaction_date,
+        'sales_receipt' as source
+    FROM {{ source('raw', 'sales_receipts') }} sr
+    JOIN {{ source('raw', 'customers') }} c ON sr."Customer" = c."Customer Name"
+    WHERE sr."Product/Service Class" IS NOT NULL AND sr."Product/Service Class" != ''
+    
+    UNION ALL
+    
+    -- Invoices data
+    SELECT 
+        c."Customer Name" as customer_name,
+        LOWER(SPLIT_PART(c."Main Email", '@', 2)) as company_domain,
+        i."Product/Service Class" as class,
+        TO_DATE(i."Invoice Date", 'MM-DD-YYYY') as transaction_date,
+        'invoice' as source
+    FROM {{ source('raw', 'invoices') }} i
+    JOIN {{ source('raw', 'customers') }} c ON i."Customer" = c."Customer Name"
+    WHERE i."Product/Service Class" IS NOT NULL AND i."Product/Service Class" != ''
+),
+
+-- Rank classes by priority and recency
+ranked_classes AS (
+    SELECT
+        company_domain,
+        class,
+        transaction_date,
+        ROW_NUMBER() OVER (
+            PARTITION BY company_domain 
+            ORDER BY 
+                -- If eStore is present with other classes, other classes take precedence
+                CASE WHEN class = 'eStore' THEN 1 ELSE 0 END,
+                -- Most recent date takes precedence for same priority classes
+                transaction_date DESC
+        ) as class_rank
+    FROM combined_transactions
+    WHERE company_domain IS NOT NULL
+),
+
+-- Get the highest priority class for each company
+company_classes AS (
+    SELECT DISTINCT
+        company_domain,
+        FIRST_VALUE(class) OVER (
+            PARTITION BY company_domain
+            ORDER BY class_rank
+        ) as company_class
+    FROM ranked_classes
+),
+
+consumer_domains AS (
     SELECT 
         UNNEST(ARRAY[
             'gmail.com',
@@ -138,13 +194,16 @@ unique_domains AS (
 )
 
 SELECT
-    MD5(company_domain) AS company_id,
+    MD5(ud.company_domain) AS company_id,
     company_name,
     customer_name,
-    company_domain,
+    ud.company_domain,
     -- Add the is_consumer_domain flag
-    EXISTS (SELECT 1 FROM consumer_domains WHERE domain = company_domain) AS is_consumer_domain,
+    EXISTS (SELECT 1 FROM consumer_domains WHERE domain = ud.company_domain) AS is_consumer_domain,
+    -- Add the class field
+    COALESCE(cc.company_class, 'Unknown') AS class,
     -- Use the earliest created date if available, otherwise use current date
     -- Cast to DATE type to remove time component
     COALESCE(earliest_created_date, CURRENT_DATE) AS created_at
-FROM unique_domains
+FROM unique_domains ud
+LEFT JOIN company_classes cc ON ud.company_domain = cc.company_domain
