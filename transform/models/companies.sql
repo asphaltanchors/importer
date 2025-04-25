@@ -108,26 +108,42 @@ combined_transactions AS (
     -- Sales receipts data
     SELECT 
         c."Customer Name" as customer_name,
-        LOWER(SPLIT_PART(c."Main Email", '@', 2)) as company_domain,
+        -- Extract domain using the same method as email_domains CTE
+        (SELECT domain FROM (
+            SELECT LOWER(TRIM(SUBSTRING(email FROM POSITION('@' IN email) + 1))) as domain
+            FROM regexp_split_to_table(c."Main Email", E';') as email
+            WHERE POSITION('@' IN email) > 0
+            LIMIT 1
+        ) d) as company_domain,
         sr."Product/Service Class" as class,
         TO_DATE(sr."Sales Receipt Date", 'MM-DD-YYYY') as transaction_date,
         'sales_receipt' as source
     FROM {{ source('raw', 'sales_receipts') }} sr
     JOIN {{ source('raw', 'customers') }} c ON sr."Customer" = c."Customer Name"
-    WHERE sr."Product/Service Class" IS NOT NULL AND sr."Product/Service Class" != ''
+    WHERE sr."Product/Service Class" IS NOT NULL 
+      AND sr."Product/Service Class" != ''
+      AND sr."Product/Service Class" != 'Unknown'
     
     UNION ALL
     
     -- Invoices data
     SELECT 
         c."Customer Name" as customer_name,
-        LOWER(SPLIT_PART(c."Main Email", '@', 2)) as company_domain,
+        -- Extract domain using the same method as email_domains CTE
+        (SELECT domain FROM (
+            SELECT LOWER(TRIM(SUBSTRING(email FROM POSITION('@' IN email) + 1))) as domain
+            FROM regexp_split_to_table(c."Main Email", E';') as email
+            WHERE POSITION('@' IN email) > 0
+            LIMIT 1
+        ) d) as company_domain,
         i."Product/Service Class" as class,
         TO_DATE(i."Invoice Date", 'MM-DD-YYYY') as transaction_date,
         'invoice' as source
     FROM {{ source('raw', 'invoices') }} i
     JOIN {{ source('raw', 'customers') }} c ON i."Customer" = c."Customer Name"
-    WHERE i."Product/Service Class" IS NOT NULL AND i."Product/Service Class" != ''
+    WHERE i."Product/Service Class" IS NOT NULL 
+      AND i."Product/Service Class" != ''
+      AND i."Product/Service Class" != 'Unknown'
 ),
 
 -- Rank classes by priority and recency
