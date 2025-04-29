@@ -68,7 +68,6 @@ SELECT
     c."Customer Name" as customer_name,
     c."First Name" as first_name,
     c."Last Name" as last_name,
-    c."Customer Type" as customer_type,
     c."Billing Address City" as billing_city,
     c."Billing Address State" as billing_state,
     c."Billing Address Postal Code" as billing_zip,

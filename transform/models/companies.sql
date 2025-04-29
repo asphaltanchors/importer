@@ -217,7 +217,12 @@ SELECT
     -- Add the is_consumer_domain flag
     EXISTS (SELECT 1 FROM consumer_domains WHERE domain = ud.company_domain) AS is_consumer_domain,
     -- Add the class field
-    COALESCE(cc.company_class, 'Unknown') AS class,
+    -- If is_consumer_domain is true, always set class to 'consumer'
+    -- Otherwise use the existing class logic
+    CASE 
+        WHEN EXISTS (SELECT 1 FROM consumer_domains WHERE domain = ud.company_domain) THEN 'consumer'
+        ELSE COALESCE(cc.company_class, 'Unknown')
+    END AS class,
     -- Use the earliest created date if available, otherwise use current date
     -- Cast to DATE type to remove time component
     COALESCE(earliest_created_date, CURRENT_DATE) AS created_at
