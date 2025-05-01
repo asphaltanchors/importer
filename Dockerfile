@@ -12,6 +12,9 @@ RUN pip install -r requirements.txt
 COPY . .
 RUN meltano install
 
+# Make sure pipeline.py is executable
+RUN chmod +x /project/pipeline.py
+
 # Don't allow changes to containerized project files
 ENV MELTANO_PROJECT_READONLY=1
 
@@ -21,6 +24,8 @@ COPY cronjob /etc/cron.d/pipeline-cron
 # Give it the right permissions so cron will read it
 RUN chmod 0644 /etc/cron.d/pipeline-cron \
     # (optional) install it to root's crontab, so you don't need the 'user' field in cronjob
-    && crontab /etc/cron.d/pipeline-cron 
+    && crontab /etc/cron.d/pipeline-cron
 
+# Override the entrypoint from the base image
+ENTRYPOINT []
 CMD ["cron", "-f"]
