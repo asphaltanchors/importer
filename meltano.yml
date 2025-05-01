@@ -30,10 +30,8 @@ plugins:
     variant: meltanolabs
     pip_url: meltanolabs-target-postgres
     config:
-      user: aac
-      database: mqi
+      sqlalchemy_url: ${DATABASE_URL}
       add_record_metadata: true
-      host: localhost
       default_target_schema: analytics_raw
       load_method: append-only
   utilities:
@@ -41,10 +39,11 @@ plugins:
     variant: dbt-labs
     pip_url: dbt-core dbt-postgres meltano-dbt-ext~=0.3.0
     config:
-      host: localhost
-      port: 5432
-      user: aac
-      dbname: mqi
+      target: prod
       schema: analytics
+      profiles:
+        prod:
+          type: postgres
+          url: ${DATABASE_URL}
 venv:
   backend: uv
