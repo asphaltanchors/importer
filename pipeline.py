@@ -604,9 +604,62 @@ def test_full_import(directory):
     logger.info("=" * 80)
     return 0
 
+def setup_db_environment_variables():
+    """Parse DATABASE_URL and set environment variables for dbt-postgres."""
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        logger.info("DATABASE_URL not set, using default connection parameters")
+        return
+    
+    logger.info("Parsing DATABASE_URL to set DBT_POSTGRES_* environment variables")
+    
+    try:
+        # Format: postgresql://username:password@hostname:port/database
+        # Remove the protocol part
+        url_without_protocol = database_url.split("://")[1]
+        
+        # Split into credentials and host parts
+        credentials, host_part = url_without_protocol.split("@")
+        
+        # Extract username and password
+        if ":" in credentials:
+            username, password = credentials.split(":")
+            os.environ["DBT_POSTGRES_USER"] = username
+            os.environ["DBT_POSTGRES_PASSWORD"] = password
+        else:
+            os.environ["DBT_POSTGRES_USER"] = credentials
+        
+        # Extract host, port, and database
+        if ":" in host_part:
+            # Format: hostname:port/database
+            host, port_db = host_part.split(":")
+            if "/" in port_db:
+                port, database = port_db.split("/")
+                os.environ["DBT_POSTGRES_PORT"] = port
+                os.environ["DBT_POSTGRES_DBNAME"] = database
+            else:
+                os.environ["DBT_POSTGRES_PORT"] = port_db
+        else:
+            # Format: hostname/database
+            if "/" in host_part:
+                host, database = host_part.split("/")
+                os.environ["DBT_POSTGRES_DBNAME"] = database
+            else:
+                host = host_part
+        
+        os.environ["DBT_POSTGRES_HOST"] = host
+        
+        logger.info("Successfully set DBT_POSTGRES_* environment variables from DATABASE_URL")
+    except Exception as e:
+        logger.error(f"Error parsing DATABASE_URL: {str(e)}")
+        logger.error("Using default connection parameters")
+
 def main():
     """Main entry point for the script."""
     args = parse_arguments()
+    
+    # Set up environment variables from DATABASE_URL
+    setup_db_environment_variables()
     
     # Check if directory is provided
     if not args.dir and args.daily:

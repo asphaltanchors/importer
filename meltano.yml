@@ -39,11 +39,11 @@ plugins:
     variant: dbt-labs
     pip_url: dbt-core dbt-postgres meltano-dbt-ext~=0.3.0
     config:
-      target: prod
+      host: ${DBT_POSTGRES_HOST}
+      port: ${DBT_POSTGRES_PORT}
+      user: ${DBT_POSTGRES_USER}
+      password: ${DBT_POSTGRES_PASSWORD}
+      dbname: ${DBT_POSTGRES_DBNAME}
       schema: analytics
-      profiles:
-        prod:
-          type: postgres
-          url: ${DATABASE_URL}
 venv:
   backend: uv
