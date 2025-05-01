@@ -358,15 +358,22 @@ def main():
         load_dotenv()
     
     # Get database connection details
-    db_user = 'aac'
-    db_password = os.getenv('DBT_POSTGRES_PASSWORD')
-    db_host = 'localhost'
-    db_port = '5432'
-    db_name = 'mqi'
+    database_url = os.getenv('DATABASE_URL')
     
-    # Create SQLAlchemy engine
-    connection_string = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-    engine = create_engine(connection_string)
+    if database_url:
+        # Use the DATABASE_URL environment variable if available
+        engine = create_engine(database_url)
+    else:
+        # Fall back to hardcoded values if DATABASE_URL is not set
+        db_user = 'aac'
+        db_password = os.getenv('DBT_POSTGRES_PASSWORD')
+        db_host = 'localhost'
+        db_port = '5432'
+        db_name = 'mqi'
+        
+        # Create SQLAlchemy engine
+        connection_string = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+        engine = create_engine(connection_string)
     
     try:
         # Connect to the database and load data

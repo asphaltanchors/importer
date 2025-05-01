@@ -247,12 +247,18 @@ def group_files_by_date(directory):
 
 def get_db_connection():
     """Get a connection to the PostgreSQL database."""
-    conn = psycopg2.connect(
-        host="localhost",
-        database="mqi",
-        user="aac",
-        password=os.getenv("TARGET_POSTGRES_PASSWORD")
-    )
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        # Use the DATABASE_URL environment variable if available
+        conn = psycopg2.connect(database_url)
+    else:
+        # Fall back to hardcoded values if DATABASE_URL is not set
+        conn = psycopg2.connect(
+            host="localhost",
+            database="mqi",
+            user="aac",
+            password=os.getenv("TARGET_POSTGRES_PASSWORD")
+        )
     conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
     return conn
 
