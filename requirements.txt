@@ -1,0 +1,1 @@
+dlt[filesystem,postgres]>=1.10.0
