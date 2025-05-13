@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: fct_orders
+    description: >
+      Order-level fact table aggregated from line items. 
+      One row per order from QuickBooks, containing order metadata and aggregated measures.
+    columns:
+      - name: order_number
+        description: Unique identifier for the order
+        tests:
+          - not_null
+          - unique
+      
+      - name: order_date
+        description: Date when the order was placed
+        tests:
+          - not_null
+      
+      - name: customer
+        description: Name of the customer who placed the order
+      
+      - name: total_order_amount
+        description: Total monetary value of the order
+        tests:
+          - not_null
+      
+      - name: is_tax_exempt
+        description: Boolean flag indicating if the order is tax exempt
+      
+      - name: number_of_items
+        description: Count of line items in the order
+        tests:
+          - not_null
+          - positive_value:
+              zero_allowed: true
+      
+      - name: source_type
+        description: Source of the order (invoice or sales_receipt)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['invoice', 'sales_receipt']

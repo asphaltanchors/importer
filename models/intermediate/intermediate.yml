@@ -1,0 +1,63 @@
+version: 2
+
+models:
+  - name: int_quickbooks__order_items_typed
+    description: >
+      Intermediate model that handles type casting and data quality for order items
+      before aggregation. Ensures proper data types for all fields.
+    columns:
+      - name: order_number
+        description: Unique identifier for the order
+        tests:
+          - not_null
+      
+      - name: total_tax
+        description: Total tax amount for the line item (properly cast to NUMERIC)
+        tests:
+          - not_null
+      
+      - name: product_service_amount
+        description: Amount for the individual line item (properly cast to NUMERIC)
+        tests:
+          - not_null
+      
+      - name: total_amount
+        description: Total amount for the order line (properly cast to NUMERIC)
+        tests:
+          - not_null
+      
+      - name: is_tax_exempt
+        description: Boolean flag indicating if the item is tax exempt
+
+  - name: int_quickbooks__orders
+    description: >
+      Intermediate model that aggregates order items to order level but still
+      requires additional business logic to be applied.
+    columns:
+      - name: order_number
+        description: Unique identifier for the order
+        tests:
+          - not_null
+          - unique
+      
+      - name: customer
+        description: Name of the customer who placed the order
+      
+      - name: order_date
+        description: Date when the order was placed
+        tests:
+          - not_null
+      
+      - name: total_amount
+        description: Total monetary value of the order
+        tests:
+          - not_null
+      
+      - name: is_tax_exempt
+        description: Boolean flag indicating if the order is tax exempt
+      
+      - name: item_count
+        description: Number of items in the order
+        tests:
+          - not_null
+          - positive_value

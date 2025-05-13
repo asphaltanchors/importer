@@ -1,0 +1,3 @@
+packages:
+  - package: dbt-labs/dbt_utils
+    version: 1.3.0 # This is a stable version, you can adjust as needed

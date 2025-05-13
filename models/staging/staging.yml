@@ -1,0 +1,42 @@
+version: 2
+
+models:
+  - name: base_quickbooks__order_items
+    description: >
+      Base model that unions order items data from invoices and sales receipts in QuickBooks.
+      Standardizes field names and types across different source tables.
+    columns:
+      - name: order_number
+        description: Unique identifier for the order (invoice_no or sales_receipt_no)
+        tests:
+          - not_null
+      
+      - name: customer
+        description: Name of the customer associated with the order
+      
+      - name: order_date
+        description: Date when the order was created
+      
+      - name: payment_method
+        description: Method of payment for the order
+      
+      - name: status
+        description: Current status of the order
+      
+      - name: source_type
+        description: Source of the order data (invoice or sales_receipt)
+        tests:
+          - accepted_values:
+              values: ['invoice', 'sales_receipt']
+  
+  - name: stg_quickbooks__order_items_tax_status
+    description: >
+      Enriched order items with tax exemption status derived from customer_sales_tax_code.
+    columns:
+      - name: order_number
+        description: Unique identifier for the order
+        tests:
+          - not_null
+      
+      - name: is_tax_exempt
+        description: Boolean flag indicating if the order is tax exempt (TRUE) or not (FALSE)

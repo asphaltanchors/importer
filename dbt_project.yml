@@ -1,0 +1,33 @@
+name: 'dqi'
+version: '1.0.0'
+config-version: 2
+
+# The profile name should match the one in profiles.yml
+profile: 'dqi'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_modules"
+  - "logs"
+
+models:
+  dqi:
+    +materialized: view
+    staging:
+      +schema: staging
+      +tags: ["staging"]
+    intermediate:
+      +schema: intermediate
+      +materialized: view
+      +tags: ["intermediate"]
+    mart:
+      +schema: mart
+      +materialized: table
+      +tags: ["mart"]
