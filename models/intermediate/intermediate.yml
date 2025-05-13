@@ -61,3 +61,66 @@ models:
         tests:
           - not_null
           - positive_value
+
+  - name: int_quickbooks__product_family
+    description: >
+      Intermediate model that derives product family from item attributes.
+      It uses pattern matching on item_name and sales_description to assign product families.
+      Ensures one row per item_name by selecting the most recent record.
+    columns:
+      - name: item_name
+        description: Name of the item
+        tests:
+          - not_null
+          - unique
+      
+      - name: sales_description
+        description: Description of the item used for sales
+      
+      - name: product_family
+        description: Derived product family based on item name and sales description patterns
+        tests:
+          - not_null
+
+  - name: int_quickbooks__material_type
+    description: >
+      Intermediate model that derives material type from item attributes.
+      It uses pattern matching on item_name to assign material types.
+      Ensures one row per item_name by selecting the most recent record.
+    columns:
+      - name: item_name
+        description: Name of the item
+        tests:
+          - not_null
+          - unique
+      
+      - name: sales_description
+        description: Description of the item used for sales
+      
+      - name: material_type
+        description: Derived material type based on item_name patterns
+        tests:
+          - not_null
+
+  - name: int_quickbooks__item_kits
+    description: >
+      Intermediate model that identifies which items are kits based on specific item_name patterns.
+      Items with specific naming patterns or in a predefined list are flagged as kits.
+      Ensures one row per item_name by selecting the most recent record.
+    columns:
+      - name: item_name
+        description: Name of the item
+        tests:
+          - not_null
+          - unique
+      
+      - name: item_type
+        description: Type of the item (e.g., Inventory, Service)
+      
+      - name: item_subtype
+        description: Subtype of the item (e.g., ItemInventory, ItemGroup)
+      
+      - name: is_kit
+        description: Boolean flag indicating if the item is a kit (TRUE) or not (FALSE)
+        tests:
+          - not_null

@@ -40,3 +40,46 @@ models:
       
       - name: is_tax_exempt
         description: Boolean flag indicating if the order is tax exempt (TRUE) or not (FALSE)
+  
+  - name: stg_quickbooks__items
+    description: >
+      Staging model that cleans and standardizes the raw items data from QuickBooks.
+      Selects only the necessary columns for downstream models and casts data types appropriately.
+    columns:
+      - name: quick_books_internal_id
+        description: Unique identifier for the item in QuickBooks
+        tests:
+          - not_null
+      
+      - name: item_name
+        description: Name of the item
+      
+      - name: item_type
+        description: Type of the item (e.g., Inventory, Service)
+      
+      - name: item_subtype
+        description: Subtype of the item (e.g., ItemInventory, ItemGroup)
+      
+      - name: sales_description
+        description: Description of the item used for sales
+      
+      - name: purchase_description
+        description: Description of the item used for purchasing
+      
+      - name: class
+        description: Classification of the item
+      
+      - name: sales_price
+        description: Price at which the item is sold
+      
+      - name: purchase_cost
+        description: Cost at which the item is purchased
+      
+      - name: quantity_on_hand
+        description: Current quantity of the item in inventory
+      
+      - name: unit_of_measure
+        description: Unit of measure for the item
+      
+      - name: status
+        description: Current status of the item

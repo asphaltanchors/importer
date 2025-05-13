@@ -41,3 +41,65 @@ models:
           - not_null
           - accepted_values:
               values: ['invoice', 'sales_receipt']
+
+  - name: fct_products
+    description: >
+      Product-level fact table combining data from multiple intermediate models.
+      One row per unique product item_name from QuickBooks, containing product details and derived attributes.
+      Ensures one row per item_name by selecting the most recent record.
+    columns:
+      - name: quick_books_internal_id
+        description: Unique identifier for the product in QuickBooks
+        tests:
+          - not_null
+      
+      - name: item_name
+        description: Name of the product
+        tests:
+          - not_null
+          - unique
+      
+      - name: sales_description
+        description: Description of the product used for sales
+      
+      - name: product_family
+        description: Derived product family based on item name and sales description patterns
+        tests:
+          - not_null
+      
+      - name: material_type
+        description: Derived material type based on item_name patterns
+        tests:
+          - not_null
+      
+      - name: is_kit
+        description: Boolean flag indicating if the product is a kit (TRUE) or not (FALSE)
+        tests:
+          - not_null
+      
+      - name: item_type
+        description: Type of the product (e.g., Inventory, Service)
+      
+      - name: item_subtype
+        description: Subtype of the product (e.g., ItemInventory, ItemGroup)
+      
+      - name: purchase_description
+        description: Description of the product used for purchasing
+      
+      - name: sales_price
+        description: Price at which the product is sold
+      
+      - name: purchase_cost
+        description: Cost at which the product is purchased
+      
+      - name: manufacturer_s_part_number
+        description: Manufacturer's part number for the product
+      
+      - name: unit_of_measure
+        description: Unit of measure for the product
+      
+      - name: load_date
+        description: Date when the record was loaded
+      
+      - name: snapshot_date
+        description: Date when the snapshot was taken
