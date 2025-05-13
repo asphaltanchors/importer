@@ -75,7 +75,7 @@ products_combined AS (
         
         -- Dates
         i.load_date,
-        i.snapshot_date,
+        i.snapshot_date
         
     FROM distinct_items i
     LEFT JOIN product_family pf ON i.item_name = pf.item_name
