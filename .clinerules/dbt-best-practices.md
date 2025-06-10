@@ -13,6 +13,8 @@ This set of guidelines focuses on DBT best practices for the DQI project, which 
 - Document models with descriptions in YAML files
 - Use CTEs to break down complex logic into readable chunks
 - Prefer SQL functions over complex expressions when possible
+- Avoid common SQL syntax errors like trailing commas in SELECT statements
+- Keep schema YAML files in sync with model changes to ensure documentation accuracy
 
 ## Testing and validation
 - Verify data integrity between model layers (e.g., count checks between source and final models)
@@ -24,6 +26,14 @@ This set of guidelines focuses on DBT best practices for the DQI project, which 
 - Be mindful of join conditions to prevent data loss or duplication
 - Consider materialization strategies based on model usage patterns
 - Use incremental models for large tables when appropriate
+- Use window functions (e.g., ROW_NUMBER()) to deduplicate data when necessary
+- Consider the impact of join keys on row counts and performance
+
+## Data integrity
+- Ensure one row per business entity in fact tables by properly handling duplicates
+- Choose appropriate join keys (business keys vs. system IDs) based on data requirements
+- Add uniqueness tests on business key columns to catch unexpected duplicates
+- When joining multiple sources, verify that join conditions don't create Cartesian products
 
 ## Development workflow
 - When in doubt about a model's structure or complexity, refactor rather than extend
