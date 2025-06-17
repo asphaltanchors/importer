@@ -28,7 +28,12 @@ uv pip install -r requirements.txt
 ```
 
 ### DBT Commands
+**Note**: All DBT commands must be run from within the virtual environment.
+
 ```bash
+# Activate virtual environment first
+source .venv/bin/activate
+
 # Run all DBT models
 dbt run
 
