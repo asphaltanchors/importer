@@ -6,6 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a QuickBooks data pipeline combining DLT (Data Loading Tool) for extraction and DBT (Data Build Tool) for transformation. The pipeline processes QuickBooks CSV exports (customers, items, sales receipts, invoices) from a Dropbox sync folder and loads them into PostgreSQL with transformations.
 
+**Dashboard Integration**: This pipeline feeds data to a NextJS dashboard application. The `fct_*` tables in the mart schema are the final output tables directly consumed by the dashboard for analytics and reporting.
+
+**Cross-Project Communication**: The `DBT_CANDIDATES.md` file serves as an "API" between this data pipeline project and the dashboard application. It tracks:
+- Data quality issues discovered during dashboard development
+- Opportunities to move business logic from the dashboard into the DBT pipeline
+- Schema improvements and pipeline enhancements needed for better dashboard performance
+- Pipeline optimization candidates based on dashboard usage patterns
+
+This file should be consulted when making pipeline improvements but should not be automatically implemented - it represents a backlog of potential improvements discovered through dashboard development.
+
 ## Key Commands
 
 ### Running the Pipeline
@@ -77,6 +87,20 @@ DATABASE_URL=postgresql://user:password@host:port/dbname
 - `models/sources.yml`: DBT source definitions
 - `dbt_project.yml`: DBT project configuration
 - `profiles.yml`: Database connection settings
+- `DBT_CANDIDATES.md`: Cross-project communication file tracking dashboard-driven pipeline improvements
+
+## Current Schema Output
+
+### Mart Tables (Dashboard Consumption)
+- **`fct_orders`**: Order-level fact table with aggregated metrics, one row per order
+  - Primary key: `order_number`
+  - Contains: order metadata, customer info, financial totals, derived flags
+  - Used by dashboard for: order analytics, revenue tracking, customer insights
+
+- **`fct_products`**: Product-level fact table with derived attributes, one row per product
+  - Primary key: `item_name` (deduplicated by most recent record)
+  - Contains: product details, categorization (product_family, material_type, is_kit), pricing
+  - Used by dashboard for: product catalog, inventory analytics, pricing insights
 
 ## DBT Best Practices
 
@@ -113,3 +137,6 @@ DATABASE_URL=postgresql://user:password@host:port/dbname
 - Compare record counts between source and target models
 - Document assumptions and business rules in models
 - When in doubt, refactor rather than extend complex models
+
+## Memories
+- dqi mcp is the output of this pipeline.
