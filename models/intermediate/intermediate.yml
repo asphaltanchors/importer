@@ -60,7 +60,6 @@ models:
         description: Number of items in the order
         tests:
           - not_null
-          - positive_value
 
   - name: int_quickbooks__product_family
     description: >

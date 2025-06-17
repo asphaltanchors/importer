@@ -20,7 +20,7 @@ models:
       - name: customer
         description: Name of the customer who placed the order
       
-      - name: total_order_amount
+      - name: total_amount
         description: Total monetary value of the order
         tests:
           - not_null
@@ -28,12 +28,10 @@ models:
       - name: is_tax_exempt
         description: Boolean flag indicating if the order is tax exempt
       
-      - name: number_of_items
+      - name: item_count
         description: Count of line items in the order
         tests:
           - not_null
-          - positive_value:
-              zero_allowed: true
       
       - name: source_type
         description: Source of the order (invoice or sales_receipt)

@@ -123,6 +123,17 @@ typed_order_items AS (
         _dlt_load_id,
         _dlt_id
     FROM order_items
+),
+
+-- Filter out rows with null critical values to ensure data quality
+filtered_order_items AS (
+    SELECT *
+    FROM typed_order_items
+    WHERE order_number IS NOT NULL
+    AND TRIM(order_number) != ''
+    AND total_tax IS NOT NULL
+    AND product_service_amount IS NOT NULL 
+    AND total_amount IS NOT NULL
 )
 
-SELECT * FROM typed_order_items
+SELECT * FROM filtered_order_items

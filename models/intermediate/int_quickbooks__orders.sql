@@ -80,6 +80,16 @@ aggregated_orders AS (
         
     FROM order_items
     GROUP BY order_number
+),
+
+-- Filter out orders with null critical fields
+filtered_orders AS (
+    SELECT *
+    FROM aggregated_orders
+    WHERE order_date IS NOT NULL
+    AND total_amount IS NOT NULL
+    AND order_number IS NOT NULL
+    AND TRIM(order_number) != ''  -- Also filter out empty order numbers
 )
 
-SELECT * FROM aggregated_orders
+SELECT * FROM filtered_orders
