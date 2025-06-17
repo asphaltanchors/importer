@@ -22,7 +22,16 @@ typed_order_items AS (
         END AS order_date,
         customer,
         payment_method,
-        status,
+        
+        -- Standardized status
+        CASE 
+            WHEN UPPER(TRIM(status)) IN ('PAID', 'COMPLETE', 'COMPLETED') THEN 'PAID'
+            WHEN UPPER(TRIM(status)) IN ('OPEN', 'UNPAID', 'PENDING') THEN 'OPEN'
+            WHEN UPPER(TRIM(status)) IN ('PARTIALLY PAID', 'PARTIAL') THEN 'PARTIALLY_PAID'
+            WHEN UPPER(TRIM(status)) IN ('CANCELLED', 'CANCELED', 'VOID') THEN 'CANCELLED'
+            WHEN UPPER(TRIM(status)) IN ('OVERDUE') THEN 'OVERDUE'
+            ELSE UPPER(TRIM(status))  -- Fallback to uppercase original value
+        END AS status,
         CASE 
             WHEN due_date IS NULL OR TRIM(due_date) = '' THEN NULL
             ELSE CAST(due_date AS DATE)

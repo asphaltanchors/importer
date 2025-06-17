@@ -67,6 +67,19 @@ products_combined AS (
         i.sales_price,
         i.purchase_cost,
         
+        -- Calculated margins
+        CASE 
+            WHEN i.sales_price IS NOT NULL AND i.purchase_cost IS NOT NULL AND i.sales_price > 0 
+            THEN ((i.sales_price - i.purchase_cost) / i.sales_price) * 100
+            ELSE NULL
+        END AS margin_percentage,
+        
+        CASE 
+            WHEN i.sales_price IS NOT NULL AND i.purchase_cost IS NOT NULL 
+            THEN i.sales_price - i.purchase_cost
+            ELSE NULL
+        END AS margin_amount,
+        
         -- Product identifiers
         i.manufacturer_s_part_number,
 

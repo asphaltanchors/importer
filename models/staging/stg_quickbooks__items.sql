@@ -25,9 +25,15 @@ cleaned AS (
         -- Classification
         class,
         
-        -- Pricing
-        NULLIF(sales_price, '') AS sales_price,
-        NULLIF(purchase_cost, '') AS purchase_cost,
+        -- Pricing (cast to numeric for calculations)
+        CASE 
+            WHEN NULLIF(TRIM(sales_price), '') IS NULL THEN NULL
+            ELSE CAST(NULLIF(TRIM(sales_price), '') AS NUMERIC)
+        END AS sales_price,
+        CASE 
+            WHEN NULLIF(TRIM(purchase_cost), '') IS NULL THEN NULL
+            ELSE CAST(NULLIF(TRIM(purchase_cost), '') AS NUMERIC)
+        END AS purchase_cost,
         
         -- Inventory
         NULLIF(quantity_on_hand, '') AS quantity_on_hand,

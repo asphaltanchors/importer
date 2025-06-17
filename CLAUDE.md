@@ -95,12 +95,15 @@ DATABASE_URL=postgresql://user:password@host:port/dbname
 - **`fct_orders`**: Order-level fact table with aggregated metrics, one row per order
   - Primary key: `order_number`
   - Contains: order metadata, customer info, financial totals, derived flags
+  - **Status Standardization**: Clean, consistent status values (PAID, OPEN, PARTIALLY_PAID)
+  - **Date Typing**: Proper DATE/TIMESTAMP types for all date fields
   - Used by dashboard for: order analytics, revenue tracking, customer insights
 
 - **`fct_products`**: Product-level fact table with derived attributes, one row per product
   - Primary key: `item_name` (deduplicated by most recent record)
   - Contains: product details, categorization (product_family, material_type, is_kit), pricing
-  - Used by dashboard for: product catalog, inventory analytics, pricing insights
+  - **Pricing Analytics**: Includes `sales_price`, `purchase_cost` (both NUMERIC), `margin_percentage`, `margin_amount`
+  - Used by dashboard for: product catalog, inventory analytics, pricing insights, profit margin analysis
 
 ## DBT Best Practices
 
@@ -123,6 +126,12 @@ DATABASE_URL=postgresql://user:password@host:port/dbname
 - Implement appropriate tests (unique, not_null, relationships)
 - Validate that all orders and data points are preserved through transformations
 - Always run `dbt test` after model changes
+
+### Data Quality Improvements
+- **Date Fields**: All date fields properly typed as DATE/TIMESTAMP, enabling native date operations
+- **Status Standardization**: Order status values normalized to consistent uppercase format
+- **Pricing Analytics**: Sales prices and purchase costs cast to NUMERIC with automatic margin calculations
+- **Error Handling**: Robust NULL and empty string handling throughout the pipeline
 
 ### Performance and Data Integrity
 - Use window functions (ROW_NUMBER()) for deduplication when necessary
