@@ -101,3 +101,67 @@ models:
       
       - name: snapshot_date
         description: Date when the snapshot was taken
+
+  - name: fct_order_line_items
+    description: >
+      Order line items for frontend invoice recreation. Each row represents a single line item 
+      on an order/invoice with complete order context and enriched product information.
+      Enables frontend applications to recreate customer invoices with all necessary details.
+    columns:
+      - name: line_item_id
+        description: Unique identifier for each line item (from DLT _dlt_id)
+        tests:
+          - unique
+          - not_null
+      
+      - name: order_number
+        description: Order/invoice number this line item belongs to
+        tests:
+          - not_null
+      
+      - name: source_type
+        description: Source of the order (invoice or sales_receipt)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['invoice', 'sales_receipt']
+      
+      - name: product_service
+        description: Product/service code
+      
+      - name: product_service_description
+        description: Description of the product or service
+      
+      - name: product_service_amount
+        description: Line item amount
+        tests:
+          - not_null
+      
+      - name: customer
+        description: Customer name
+        tests:
+          - not_null
+      
+      - name: order_date
+        description: Order date
+        tests:
+          - not_null
+      
+      - name: status
+        description: Order status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['PAID', 'OPEN', 'PARTIALLY_PAID', 'CANCELLED', 'OVERDUE']
+      
+      - name: billing_address
+        description: Formatted billing address for invoice display
+      
+      - name: shipping_address
+        description: Formatted shipping address for invoice display
+      
+      - name: product_family
+        description: Product family from enriched product data
+      
+      - name: material_type
+        description: Material type from enriched product data

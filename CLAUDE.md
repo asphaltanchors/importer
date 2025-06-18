@@ -110,6 +110,14 @@ DATABASE_URL=postgresql://user:password@host:port/dbname
   - **Pricing Analytics**: Includes `sales_price`, `purchase_cost` (both NUMERIC), `margin_percentage`, `margin_amount`
   - Used by dashboard for: product catalog, inventory analytics, pricing insights, profit margin analysis
 
+- **`fct_order_line_items`**: Line item-level fact table for invoice recreation, one row per line item
+  - Primary key: `line_item_id` (unique DLT identifier)
+  - Contains: complete order context, line item details, enriched product data, formatted addresses
+  - **Invoice Recreation**: All fields needed to recreate customer invoices in frontend
+  - **Product Enrichment**: Joined with `fct_products` for enhanced product details
+  - **Clean Data Types**: Robust numeric parsing handles percentage values and data quality issues
+  - Used by dashboard for: invoice display, line item analysis, detailed order breakdowns
+
 ## DBT Best Practices
 
 ### Model Organization
