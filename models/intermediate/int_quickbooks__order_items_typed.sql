@@ -131,9 +131,8 @@ filtered_order_items AS (
     FROM typed_order_items
     WHERE order_number IS NOT NULL
     AND TRIM(order_number) != ''
-    AND total_tax IS NOT NULL
     AND product_service_amount IS NOT NULL 
-    AND total_amount IS NOT NULL
+    -- Removed total_tax and total_amount filters since they're order-level, not line-level
 )
 
 SELECT * FROM filtered_order_items

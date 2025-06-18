@@ -29,7 +29,7 @@ aggregated_orders AS (
         -- Tax information
         MAX(customer_sales_tax_code) AS customer_sales_tax_code,
         BOOL_OR(is_tax_exempt) AS is_tax_exempt,  -- Order is considered tax exempt if any items are tax exempt
-        SUM(total_tax) AS total_tax,
+        MAX(total_tax) AS total_tax,  -- Use MAX instead of SUM since total_tax is order-level like total_amount
         MAX(tax_percentage) AS tax_percentage,
         
         -- Address information
@@ -75,7 +75,7 @@ aggregated_orders AS (
         
         -- Aggregated measures
         SUM(product_service_amount) AS total_line_items_amount,
-        SUM(total_amount) AS total_amount,
+        MAX(total_amount) AS total_amount,  -- Use MAX instead of SUM since total_amount is order-level, not line-level
         COUNT(*) AS item_count
         
     FROM order_items

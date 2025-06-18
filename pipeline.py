@@ -174,7 +174,7 @@ def qb_source():
     @dlt.resource(
         write_disposition="merge",
         name="invoices",
-        primary_key=["QuickBooks Internal Id", "Product/Service Description"]
+        primary_key=["QuickBooks Internal Id", "Product/Service"]
     )
     def extract_invoices():
         # First process backup files
