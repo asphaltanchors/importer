@@ -12,9 +12,7 @@ models:
           - not_null
       
       - name: total_tax
-        description: Total tax amount for the line item (properly cast to NUMERIC)
-        tests:
-          - not_null
+        description: Total tax amount for the line item (properly cast to NUMERIC). NULL for individual line items, populated only for order header/summary rows.
       
       - name: product_service_amount
         description: Amount for the individual line item (properly cast to NUMERIC)
@@ -22,9 +20,7 @@ models:
           - not_null
       
       - name: total_amount
-        description: Total amount for the order line (properly cast to NUMERIC)
-        tests:
-          - not_null
+        description: Total amount for the order line (properly cast to NUMERIC). NULL for individual line items, populated only for order header/summary rows.
       
       - name: is_tax_exempt
         description: Boolean flag indicating if the item is tax exempt
