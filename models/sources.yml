@@ -15,3 +15,12 @@ sources:
         description: "Sales receipt data extracted from QuickBooks"
       - name: invoices
         description: "Invoice data extracted from QuickBooks"
+      - name: domain_mapping
+        description: "Email domain to company consolidation mapping created by domain_consolidation.py"
+        columns:
+          - name: original_domain
+            description: "Original email domain from customer data"
+          - name: normalized_domain
+            description: "Consolidated domain key for company grouping"
+          - name: domain_type
+            description: "Type: corporate, individual, or skip"

@@ -165,3 +165,214 @@ models:
       
       - name: material_type
         description: Material type from enriched product data
+
+  - name: fct_companies
+    description: >
+      Consolidated company master table based on email domain consolidation.
+      One row per company domain with aggregated customer and revenue metrics.
+      Enables analysis of who buys from us by consolidating messy QuickBooks customer names.
+    columns:
+      - name: company_domain_key
+        description: Normalized email domain serving as unique company identifier
+        tests:
+          - unique
+          - not_null
+      
+      - name: domain_type
+        description: Type of domain (corporate, individual)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['corporate', 'individual']
+      
+      - name: company_name
+        description: Primary company name (best available from consolidated customers)
+        tests:
+          - not_null
+      
+      - name: primary_email
+        description: Primary email address for the company
+      
+      - name: customer_count
+        description: Number of QuickBooks customer records consolidated into this company
+        tests:
+          - not_null
+      
+      - name: total_revenue
+        description: Total revenue across all customers for this company
+        tests:
+          - not_null
+      
+      - name: total_orders
+        description: Total number of orders/invoices across all customers
+        tests:
+          - not_null
+      
+      - name: business_size_category
+        description: Classification based on number of customer records
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Individual Customer', 'Single Location', 'Small Multi-Location', 'Medium Multi-Location', 'Large Multi-Location']
+      
+      - name: revenue_category
+        description: Classification based on total revenue
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['No Revenue', 'Low Value (<$5K)', 'Growing Value ($5K-$25K)', 'Medium Value ($25K-$100K)', 'High Value ($100K+)']
+
+  - name: bridge_customer_company
+    description: >
+      Bridge table linking individual QuickBooks customers to consolidated companies.
+      Enables drill-down analysis from company level to customer level while preserving
+      customer-specific metrics and classifications.
+    columns:
+      - name: customer_id
+        description: QuickBooks internal ID for the individual customer
+        tests:
+          - unique
+          - not_null
+      
+      - name: company_domain_key
+        description: Links to fct_companies.company_domain_key for consolidated company
+        tests:
+          - not_null
+      
+      - name: customer_name
+        description: Individual customer name from QuickBooks
+        tests:
+          - not_null
+      
+      - name: customer_total_revenue
+        description: Total revenue attributed to this specific customer
+        tests:
+          - not_null
+      
+      - name: customer_total_orders
+        description: Total number of orders placed by this customer
+        tests:
+          - not_null
+      
+      - name: customer_value_tier
+        description: Value classification for this specific customer
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['No Revenue', 'Low Value Customer (<$1K)', 'Regular Customer ($1K-$10K)', 'Medium Value Customer ($10K-$50K)', 'High Value Customer ($50K+)']
+      
+      - name: customer_activity_status
+        description: Activity classification based on latest order date
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['No Orders', 'Inactive (2+ Years)', 'Dormant (1-2 Years)', 'Recent (Last Year)', 'Active (Last 90 Days)']
+      
+      - name: domain_type
+        description: Type of email domain (corporate, individual, no_email)
+        tests:
+          - not_null
+      
+      - name: is_individual_customer
+        description: Flag indicating if customer uses individual email domain
+        tests:
+          - not_null
+      
+      - name: has_revenue
+        description: Flag indicating if customer has any revenue
+        tests:
+          - not_null
+
+  - name: fct_company_orders
+    description: >
+      Company-level order analytics enabling analysis of ordering patterns,
+      order sizes, product mix, and purchasing behavior by consolidated company.
+      Each row represents one order from a company.
+    columns:
+      - name: company_domain_key
+        description: Links to fct_companies.company_domain_key
+        tests:
+          - not_null
+      
+      - name: order_number
+        description: Unique order/invoice number
+        tests:
+          - not_null
+      
+      - name: order_date
+        description: Date the order was placed
+        tests:
+          - not_null
+      
+      - name: calculated_order_total
+        description: Sum of line items for this order
+        tests:
+          - not_null
+      
+      - name: order_size_category
+        description: Classification based on order total amount
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Micro Order (<$500)', 'Small Order ($500-$2.5K)', 'Medium Order ($2.5K-$10K)', 'Large Order ($10K+)']
+      
+      - name: product_diversity
+        description: Classification based on number of unique products in order
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Single Product', 'Low Diversity (2-4 products)', 'Medium Diversity (5-9 products)', 'High Diversity (10+ products)']
+      
+      - name: recency_category
+        description: Classification based on how recent the order is
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Recent', 'Last Year', 'Historical', 'Old']
+
+  - name: fct_company_products
+    description: >
+      Company-product analytics showing what each company buys, with quantities,
+      frequencies, pricing, and purchasing patterns. Enables "who buys what" analysis
+      at the product level.
+    columns:
+      - name: company_domain_key
+        description: Links to fct_companies.company_domain_key
+        tests:
+          - not_null
+      
+      - name: product_service
+        description: Product/service code
+        tests:
+          - not_null
+      
+      - name: total_amount_spent
+        description: Total amount this company has spent on this product
+        tests:
+          - not_null
+      
+      - name: total_transactions
+        description: Number of times this company has purchased this product
+        tests:
+          - not_null
+      
+      - name: buyer_status
+        description: Classification based on recency of last purchase
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Active Buyer', 'Recent Buyer', 'Dormant Buyer', 'Inactive Buyer']
+      
+      - name: purchase_volume_category
+        description: Classification based on total amount spent on this product
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Occasional (<$500)', 'Low Volume ($500-$2.5K)', 'Medium Volume ($2.5K-$10K)', 'High Volume ($10K+)']
+      
+      - name: purchase_frequency_category
+        description: Classification based on number of transactions
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Rare Buyer (<5 orders)', 'Occasional Buyer (5-9 orders)', 'Regular Buyer (10-19 orders)', 'Frequent Buyer (20+ orders)']
