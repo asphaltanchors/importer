@@ -40,6 +40,78 @@ models:
           - accepted_values:
               values: ['invoice', 'sales_receipt']
 
+  - name: dim_company_health
+    description: >
+      Company health dimension providing activity indicators, health scoring, and engagement metrics
+      for consolidated companies. Enables business intelligence on account management and growth opportunities.
+    columns:
+      - name: company_domain_key
+        description: Unique identifier for the consolidated company (normalized email domain)
+        tests:
+          - not_null
+          - unique
+      
+      - name: health_score
+        description: Calculated health score from 0-100 based on recency, frequency, growth, and engagement
+        tests:
+          - not_null
+      
+      - name: activity_status
+        description: Current activity classification (Highly Active, Active, Moderately Active, Dormant, Inactive)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Highly Active', 'Active', 'Moderately Active', 'Dormant', 'Inactive']
+      
+      - name: growth_trend_direction
+        description: Year-over-year growth trend (Growing, Declining, Stable, New Customer, Lost Customer)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Growing', 'Declining', 'Stable', 'New Customer', 'Lost Customer']
+      
+      - name: days_since_last_order
+        description: Number of days since the company's most recent order
+        tests:
+          - not_null
+
+  - name: fct_company_orders_time_series
+    description: >
+      Company orders aggregated by quarter for temporal analysis and growth tracking.
+      Enables year-over-year comparisons, trend analysis, and company lifecycle management.
+    columns:
+      - name: company_domain_key
+        description: Unique identifier for the consolidated company
+        tests:
+          - not_null
+      
+      - name: order_year
+        description: Year of the orders in this period
+        tests:
+          - not_null
+      
+      - name: order_quarter
+        description: Quarter of the orders in this period (1-4)
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3, 4]
+      
+      - name: period_key
+        description: Unique period identifier (YYYY-QN format)
+        tests:
+          - not_null
+      
+      - name: order_count
+        description: Number of orders in this period
+        tests:
+          - not_null
+      
+      - name: total_revenue
+        description: Total revenue for this company in this period
+        tests:
+          - not_null
+
   - name: fct_products
     description: >
       Product-level fact table combining data from multiple intermediate models.
