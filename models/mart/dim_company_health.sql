@@ -31,6 +31,10 @@ WITH company_activity AS (
         COUNT(CASE WHEN order_date >= CURRENT_DATE - INTERVAL '1 year' THEN 1 END) as orders_last_year,
         COUNT(CASE WHEN order_date >= CURRENT_DATE - INTERVAL '2 years' AND order_date < CURRENT_DATE - INTERVAL '1 year' THEN 1 END) as orders_prior_year,
         
+        -- Year-over-year revenue for growth component
+        SUM(CASE WHEN order_date >= CURRENT_DATE - INTERVAL '1 year' THEN calculated_order_total ELSE 0 END) as revenue_last_year,
+        SUM(CASE WHEN order_date >= CURRENT_DATE - INTERVAL '2 years' AND order_date < CURRENT_DATE - INTERVAL '1 year' THEN calculated_order_total ELSE 0 END) as revenue_prior_year,
+        
         -- Product diversity
         COUNT(DISTINCT unique_products) as product_diversity_score,
         
@@ -39,6 +43,29 @@ WITH company_activity AS (
         
     FROM {{ ref('fct_company_orders') }}
     GROUP BY company_domain_key
+),
+
+customer_archetypes AS (
+    SELECT 
+        ca.*,
+        -- Customer archetype classification
+        CASE 
+            WHEN ca.avg_order_value >= 5000 AND ca.orders_per_year < 8 THEN 'HVLF'  -- High-Value Low-Frequency
+            WHEN ca.orders_per_year >= 12 THEN 'HF'                                 -- High-Frequency
+            ELSE 'REG'                                                             -- Regular
+        END as customer_archetype,
+        
+        -- Calculate revenue percentile within all customers for revenue component
+        PERCENT_RANK() OVER (ORDER BY ca.total_revenue) as revenue_percentile,
+        
+        -- Calculate expected order interval based on historical pattern
+        CASE 
+            WHEN ca.total_orders >= 3 THEN 
+                (ca.last_order_date - ca.first_order_date) / NULLIF(ca.total_orders - 1, 0)
+            ELSE 90  -- Default to quarterly for new customers
+        END as avg_order_interval_days
+        
+    FROM company_activity ca
 ),
 
 company_health_metrics AS (
@@ -71,7 +98,7 @@ company_health_metrics AS (
             ELSE 'Sporadic'
         END as order_frequency_category,
         
-        -- Growth trend analysis
+        -- Growth trend analysis (original order-based)
         CASE 
             WHEN ca.orders_prior_year = 0 AND ca.orders_last_year > 0 THEN 'New Customer'
             WHEN ca.orders_prior_year > 0 AND ca.orders_last_year = 0 THEN 'Lost Customer'
@@ -79,6 +106,22 @@ company_health_metrics AS (
             WHEN ca.orders_last_year < ca.orders_prior_year * 0.8 THEN 'Declining'
             ELSE 'Stable'
         END as growth_trend_direction,
+        
+        -- Combined revenue + order growth analysis (for new scoring)
+        CASE 
+            WHEN ca.orders_prior_year = 0 AND ca.orders_last_year > 0 THEN 'New Customer'
+            WHEN ca.orders_prior_year > 0 AND ca.orders_last_year = 0 THEN 'Lost Customer'
+            WHEN ca.revenue_prior_year > 0 THEN
+                CASE
+                    -- Weighted growth calculation: revenue growth 60% + order growth 40%
+                    WHEN (ca.revenue_last_year / NULLIF(ca.revenue_prior_year, 0) * 0.6 + 
+                          ca.orders_last_year / NULLIF(ca.orders_prior_year, 0) * 0.4) >= 1.15 THEN 'Growing'
+                    WHEN (ca.revenue_last_year / NULLIF(ca.revenue_prior_year, 0) * 0.6 + 
+                          ca.orders_last_year / NULLIF(ca.orders_prior_year, 0) * 0.4) <= 0.85 THEN 'Declining'  
+                    ELSE 'Stable'
+                END
+            ELSE 'Stable'
+        END as combined_growth_trend,
         
         -- Engagement level
         CASE 
@@ -88,7 +131,7 @@ company_health_metrics AS (
             ELSE 'No Recent Engagement'
         END as engagement_level
         
-    FROM company_activity ca
+    FROM customer_archetypes ca
     INNER JOIN {{ ref('fct_companies') }} fc ON ca.company_domain_key = fc.company_domain_key
 ),
 
@@ -99,32 +142,75 @@ health_scoring AS (
         -- Health score calculation (0-100)
         ROUND(
             LEAST(100, 
-                -- Recency component (40% weight)
+                -- Recency component (35% weight) - pattern-aware for HVLF customers
                 (CASE 
-                    WHEN days_since_last_order <= 30 THEN 40
-                    WHEN days_since_last_order <= 90 THEN 30
-                    WHEN days_since_last_order <= 180 THEN 20
-                    WHEN days_since_last_order <= 365 THEN 10
+                    -- Pattern-aware scoring for High-Value Low-Frequency customers
+                    WHEN customer_archetype = 'HVLF' THEN
+                        CASE 
+                            WHEN days_since_last_order <= avg_order_interval_days * 0.8 THEN 35      -- Early in their cycle
+                            WHEN days_since_last_order <= avg_order_interval_days * 1.1 THEN 30      -- On track with their pattern
+                            WHEN days_since_last_order <= avg_order_interval_days * 1.3 THEN 22      -- Slightly overdue
+                            WHEN days_since_last_order <= avg_order_interval_days * 1.6 THEN 15      -- Moderately overdue
+                            WHEN days_since_last_order <= 365 THEN 9                                 -- Long overdue but < 1 year
+                            ELSE 0
+                        END
+                    -- Standard scoring for High-Frequency and Regular customers
+                    ELSE
+                        CASE 
+                            WHEN days_since_last_order <= 30 THEN 35
+                            WHEN days_since_last_order <= 90 THEN 26
+                            WHEN days_since_last_order <= 180 THEN 18
+                            WHEN days_since_last_order <= 365 THEN 9
+                            ELSE 0
+                        END
+                END) +
+                
+                -- Frequency component (25% weight) - archetype-aware
+                (CASE 
+                    -- High-Value Low-Frequency customers: Focus on consistency vs absolute frequency
+                    WHEN customer_archetype = 'HVLF' THEN
+                        CASE 
+                            WHEN orders_per_year >= 4 THEN 25  -- Quarterly+ is excellent for HVLF
+                            WHEN orders_per_year >= 2 THEN 21  -- Bi-annual is good
+                            WHEN orders_per_year >= 1 THEN 17  -- Annual is acceptable
+                            ELSE 8
+                        END
+                    -- High-Frequency customers: Keep high standards
+                    WHEN customer_archetype = 'HF' THEN
+                        CASE 
+                            WHEN orders_per_year >= 12 THEN 25
+                            WHEN orders_per_year >= 8 THEN 21
+                            WHEN orders_per_year >= 6 THEN 17
+                            ELSE 8
+                        END
+                    -- Regular customers: Moderate expectations
+                    ELSE
+                        CASE 
+                            WHEN orders_per_year >= 12 THEN 25
+                            WHEN orders_per_year >= 6 THEN 21
+                            WHEN orders_per_year >= 4 THEN 17
+                            WHEN orders_per_year >= 2 THEN 13
+                            WHEN orders_per_year >= 1 THEN 8
+                            ELSE 4
+                        END
+                END) +
+                
+                -- Growth component (20% weight) - uses combined revenue + order growth
+                (CASE 
+                    WHEN combined_growth_trend = 'Growing' THEN 20
+                    WHEN combined_growth_trend = 'New Customer' THEN 15
+                    WHEN combined_growth_trend = 'Stable' THEN 10
+                    WHEN combined_growth_trend = 'Declining' THEN 5
                     ELSE 0
                 END) +
                 
-                -- Frequency component (30% weight)
+                -- Revenue component (10% weight) - based on revenue percentile
                 (CASE 
-                    WHEN orders_per_year >= 12 THEN 30
-                    WHEN orders_per_year >= 6 THEN 25
-                    WHEN orders_per_year >= 4 THEN 20
-                    WHEN orders_per_year >= 2 THEN 15
-                    WHEN orders_per_year >= 1 THEN 10
-                    ELSE 5
-                END) +
-                
-                -- Growth component (20% weight)
-                (CASE 
-                    WHEN growth_trend_direction = 'Growing' THEN 20
-                    WHEN growth_trend_direction = 'New Customer' THEN 15
-                    WHEN growth_trend_direction = 'Stable' THEN 10
-                    WHEN growth_trend_direction = 'Declining' THEN 5
-                    ELSE 0
+                    WHEN revenue_percentile >= 0.9 THEN 10  -- Top 10% customers
+                    WHEN revenue_percentile >= 0.75 THEN 8  -- Top 25% customers
+                    WHEN revenue_percentile >= 0.5 THEN 6   -- Top 50% customers
+                    WHEN revenue_percentile >= 0.25 THEN 4  -- Top 75% customers
+                    ELSE 2                                  -- Bottom 25% customers
                 END) +
                 
                 -- Engagement component (10% weight)
@@ -150,9 +236,11 @@ SELECT
     
     -- Core health metrics
     health_score,
+    customer_archetype,
     activity_status,
     engagement_level,
     growth_trend_direction,
+    combined_growth_trend,
     order_frequency_category,
     
     -- Key indicators
@@ -175,6 +263,7 @@ SELECT
     
     -- Engagement indicators
     product_diversity_score,
+    revenue_percentile,
     
     -- Health category
     CASE 
