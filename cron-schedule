@@ -1,0 +1,3 @@
+# Run QuickBooks pipeline daily at midnight UTC
+0 0 * * * root cd /app && /app/entrypoint.sh run-now >> /var/log/cron/pipeline.log 2>&1
+# Empty line required at end of cron files

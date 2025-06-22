@@ -37,6 +37,8 @@ This project combines a DLT (Data Loading Tool) pipeline with DBT (Data Build To
 
 ## Setup
 
+### Local Development
+
 1. **Install dependencies:**
    ```bash
    uv pip install -r requirements.txt
@@ -48,45 +50,89 @@ This project combines a DLT (Data Loading Tool) pipeline with DBT (Data Build To
    DATABASE_URL=postgresql://user:password@host:port/dbname
    ```
 
-3. **DBT Profile Configuration** (optional - uses environment variables if not set):
+3. **Run locally:**
    ```bash
-   DBT_HOST=localhost
-   DBT_USER=postgres
-   DBT_PASSWORD=postgres
-   DBT_PORT=5432
-   DBT_DATABASE=postgres
-   DBT_SCHEMA=public
+   # Complete pipeline (DLT + DBT)
+   python pipeline.py
+   
+   # Activate virtual environment for DBT commands
+   source .venv/bin/activate
+   
+   # Run DBT transformations
+   dbt run
+   dbt test
    ```
+
+### Docker/Production Deployment
+
+This pipeline is designed to run as a containerized cron service alongside a dashboard application.
+
+**Docker Compose Setup:**
+```yaml
+services:
+  cron:
+    build: 
+      context: /path/to/importer
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/dashboard
+    volumes:
+      - dropbox_data:/dropbox
+    depends_on:
+      - db
+    restart: unless-stopped
+```
+
+**Usage:**
+```bash
+# Normal operation: Runs daily at midnight via cron
+docker-compose up -d
+
+# Run pipeline immediately (debugging)
+docker-compose exec cron /app/entrypoint.sh run-now
+
+# Interactive shell
+docker-compose exec cron /app/entrypoint.sh shell
+
+# Direct pipeline execution
+docker-compose exec cron python pipeline.py
+```
+
+## Environment Configuration
+
+The application uses different configurations for development vs production:
+
+- **Local Development**: Uses `dev` DBT target with local database settings
+- **Docker/Production**: Uses `prod` DBT target with containerized database settings
+
+Environment variables:
+- `DROPBOX_PATH`: Path to CSV files (default: `/dropbox/Dropbox/quickbooks-csv` in Docker)
+- `DBT_TARGET`: DBT target to use (`dev` for local, `prod` for Docker)
+- `DATABASE_URL`: Database connection string
 
 ## Running the Pipeline
 
-### Complete Pipeline
+### Local Development
 ```bash
+# Complete pipeline
 python pipeline.py
-```
-This extracts CSV files from Dropbox and loads them into the `raw` schema.
 
-### DBT Transformations
-**Note**: All DBT commands must be run from within the virtual environment.
-
-```bash
-# Activate virtual environment
+# DBT commands (requires virtual environment)
 source .venv/bin/activate
-
-# Run all models
 dbt run
-
-# Run specific layers
-dbt run --select staging
-dbt run --select intermediate  
-dbt run --select mart
-
-# Run tests
 dbt test
+dbt docs generate && dbt docs serve
+```
 
-# Generate documentation
-dbt docs generate
-dbt docs serve
+### Docker/Production
+```bash
+# Monitor logs
+docker-compose logs -f cron
+
+# Run immediately
+docker-compose exec cron /app/entrypoint.sh run-now
+
+# Debug mode
+docker-compose exec cron /app/entrypoint.sh shell
 ```
 
 ### Company Consolidation
