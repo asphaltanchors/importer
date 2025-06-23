@@ -16,7 +16,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Set default environment variables for Docker deployment
-ENV DROPBOX_PATH=/dropbox/Dropbox/quickbooks-csv
+ENV DROPBOX_PATH=/dropbox/Dropbox/quickbooks-csv/inpub
 ENV DBT_TARGET=prod
 
 # Copy application code
