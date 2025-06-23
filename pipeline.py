@@ -11,7 +11,52 @@ from matcher import normalize_company_name
 
 # 0) Load environment
 load_dotenv()
-DROPBOX_PATH = os.environ["DROPBOX_PATH"]
+
+# Validate DROPBOX_PATH environment variable
+try:
+    DROPBOX_PATH = os.environ["DROPBOX_PATH"]
+except KeyError:
+    print("ERROR: DROPBOX_PATH environment variable is not set.")
+    print("Please set DROPBOX_PATH in your .env file or environment variables.")
+    print("Example: DROPBOX_PATH=/path/to/dropbox/quickbooks-csv/input")
+    exit(1)
+
+# Validate DROPBOX_PATH directory exists
+if not os.path.exists(DROPBOX_PATH):
+    print(f"ERROR: DROPBOX_PATH directory does not exist: {DROPBOX_PATH}")
+    print("Please check that:")
+    print("1. The path is correct in your .env file")
+    print("2. The directory exists and is accessible")
+    print("3. You have read permissions for the directory")
+    exit(1)
+
+if not os.path.isdir(DROPBOX_PATH):
+    print(f"ERROR: DROPBOX_PATH is not a directory: {DROPBOX_PATH}")
+    print("Please ensure DROPBOX_PATH points to a directory, not a file.")
+    exit(1)
+
+# Check for CSV files in the directory
+csv_patterns = [
+    "Customer_*.csv", "01_BACKUP_Customer_*.csv",
+    "Item_*.csv", "01_BACKUP_Item_*.csv", 
+    "Sales*.csv", "01_BACKUP_Sales_*.csv",
+    "Invoice_*.csv", "01_BACKUP_Invoice_*.csv"
+]
+
+found_files = []
+for pattern in csv_patterns:
+    found_files.extend(glob.glob(os.path.join(DROPBOX_PATH, pattern)))
+
+if not found_files:
+    print(f"WARNING: No CSV files found in DROPBOX_PATH: {DROPBOX_PATH}")
+    print("Expected file patterns:")
+    for pattern in csv_patterns:
+        print(f"  - {pattern}")
+    print("\nPlease ensure QuickBooks CSV exports are placed in this directory.")
+    print("The pipeline will continue but may not process any data.")
+
+print(f"Using DROPBOX_PATH: {DROPBOX_PATH}")
+print(f"Found {len(found_files)} CSV files to process")
 
 # 1) Define your source
 @dlt.source
