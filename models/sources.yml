@@ -6,9 +6,6 @@ sources:
     tables:
       - name: customers
         description: "Customer data extracted from QuickBooks"
-        columns:
-          - name: canonical_name
-            description: "Normalized company name"
       - name: items
         description: "Item data extracted from QuickBooks"
       - name: sales_receipts

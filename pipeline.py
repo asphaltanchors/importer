@@ -8,7 +8,6 @@ from datetime import datetime
 
 import dlt
 from dotenv import load_dotenv
-from matcher import normalize_company_name
 from domain_consolidation import analyze_domains, create_domain_mapping_table
 
 # 0) Load environment
@@ -80,7 +79,6 @@ def qb_source():
                     yield {
                         **row,
                         "load_date": datetime.utcnow().date().isoformat(),
-                        "canonical_name": normalize_company_name(row.get("Company Name", "")),
                         "is_backup": True
                     }
         
@@ -94,7 +92,6 @@ def qb_source():
                     yield {
                         **row,
                         "load_date": datetime.utcnow().date().isoformat(),
-                        "canonical_name": normalize_company_name(row.get("Company Name", "")),
                         "is_backup": False
                     }
 
