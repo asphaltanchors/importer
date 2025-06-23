@@ -22,6 +22,9 @@ ENV DBT_TARGET=prod
 # Copy application code
 COPY . .
 
+# Install DBT package dependencies
+RUN dbt deps
+
 # Create necessary directories
 RUN mkdir -p /var/log/cron
 
