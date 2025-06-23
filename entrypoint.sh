@@ -1,29 +1,21 @@
 #!/bin/bash
 
-# Function to run DLT extraction and DBT transformations (for initial seeding)
-run_data_pipeline() {
-    echo "$(date): Starting QuickBooks data pipeline..."
+# Function to run complete data pipeline (DLT + Domain Consolidation + DBT)
+run_pipeline() {
+    echo "$(date): Starting complete QuickBooks data pipeline..."
     
     # Change to app directory
     cd /app
     
-    # Run DLT pipeline first
-    echo "$(date): Running DLT extraction..."
+    # Run complete pipeline (DLT extraction + Domain consolidation + DBT transformations)
+    echo "$(date): Running complete pipeline (DLT + Domain consolidation + DBT)..."
     python pipeline.py
     if [ $? -ne 0 ]; then
-        echo "$(date): DLT pipeline failed!" >&2
+        echo "$(date): Complete pipeline failed!" >&2
         exit 1
     fi
     
-    # Then run DBT transformations
-    echo "$(date): Running DBT transformations..."
-    dbt run
-    if [ $? -ne 0 ]; then
-        echo "$(date): DBT run failed!" >&2
-        exit 1
-    fi
-    
-    echo "$(date): Data pipeline completed successfully!"
+    echo "$(date): Complete data pipeline finished successfully!"
 }
 
 # Function to run DBT tests separately
@@ -38,12 +30,6 @@ run_tests() {
     echo "$(date): Tests completed successfully!"
 }
 
-# Function to run the complete pipeline including tests
-run_pipeline() {
-    run_data_pipeline
-    run_tests
-}
-
 # Handle different execution modes
 case "$1" in
     "cron")
@@ -51,13 +37,9 @@ case "$1" in
         # Start cron in foreground mode
         exec cron -f
         ;;
-    "run-now")
-        echo "$(date): Running complete pipeline immediately..."
+    "run"|"seed")
+        echo "$(date): Running complete pipeline..."
         run_pipeline
-        ;;
-    "seed"|"run-data")
-        echo "$(date): Running data pipeline only (no tests)..."
-        run_data_pipeline
         ;;
     "test")
         echo "$(date): Running tests only..."

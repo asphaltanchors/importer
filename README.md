@@ -5,10 +5,11 @@ This project combines a DLT (Data Loading Tool) pipeline with DBT (Data Build To
 ## Architecture
 
 ### Data Flow
-1. **DLT Pipeline** (`pipeline.py`): Extracts CSV files from Dropbox folder and loads into PostgreSQL `raw` schema
-2. **DBT Models**: Transform raw data through staging → intermediate → mart layers
-3. **Company Consolidation**: Advanced email domain-based company consolidation system
-4. **Dashboard Integration**: Final `fct_*` tables feed into NextJS analytics dashboard
+1. **Complete Pipeline** (`pipeline.py`): Orchestrates the complete data workflow:
+   - DLT extraction: Loads CSV files from Dropbox into PostgreSQL `raw` schema
+   - Domain consolidation: Creates `raw.domain_mapping` for company consolidation
+   - DBT transformations: Processes data through staging → intermediate → mart layers
+2. **Dashboard Integration**: Final `fct_*` tables feed into NextJS analytics dashboard
 
 ### Schema Structure
 - **Raw Schema**: Raw data loaded by DLT (customers, items, sales_receipts, invoices, domain_mapping)
@@ -52,15 +53,13 @@ This project combines a DLT (Data Loading Tool) pipeline with DBT (Data Build To
 
 3. **Run locally:**
    ```bash
-   # Complete pipeline (DLT + DBT)
+   # Complete pipeline (DLT + Domain Consolidation + DBT)
    python pipeline.py
    
-   # Activate virtual environment for DBT commands
+   # Optional: Run DBT commands separately (requires virtual environment)
    source .venv/bin/activate
-   
-   # Run DBT transformations
-   dbt run
    dbt test
+   dbt docs generate && dbt docs serve
    ```
 
 ### Docker/Production Deployment
@@ -87,11 +86,10 @@ services:
 # Normal operation: Runs daily at midnight via cron
 docker-compose up -d
 
-# First-time setup: Load data without tests (for empty database)
+# Run complete pipeline (DLT + Domain Consolidation + DBT)
 docker-compose exec cron /app/entrypoint.sh seed
-
-# Run complete pipeline with tests (after data exists)
-docker-compose exec cron /app/entrypoint.sh run-now
+# or equivalently:
+docker-compose exec cron /app/entrypoint.sh run
 
 # Run only DBT tests (useful after manual fixes)
 docker-compose exec cron /app/entrypoint.sh test
@@ -119,12 +117,11 @@ Environment variables:
 
 ### Local Development
 ```bash
-# Complete pipeline
+# Complete pipeline (DLT + Domain Consolidation + DBT)
 python pipeline.py
 
-# DBT commands (requires virtual environment)
+# Optional DBT commands (requires virtual environment)
 source .venv/bin/activate
-dbt run
 dbt test
 dbt docs generate && dbt docs serve
 ```
@@ -134,13 +131,12 @@ dbt docs generate && dbt docs serve
 # Monitor logs
 docker-compose logs -f cron
 
-# First-time database seeding (no tests)
+# Run complete pipeline
 docker-compose exec cron /app/entrypoint.sh seed
+# or equivalently:
+docker-compose exec cron /app/entrypoint.sh run
 
-# Run complete pipeline with tests
-docker-compose exec cron /app/entrypoint.sh run-now
-
-# Run tests only (after data exists)
+# Run tests only
 docker-compose exec cron /app/entrypoint.sh test
 
 # Debug mode
@@ -149,13 +145,13 @@ docker-compose exec cron /app/entrypoint.sh shell
 
 ### Company Consolidation
 ```bash
-# Generate domain consolidation mapping (optional - included in pipeline)
+# Generate domain consolidation mapping (optional - automatically included in pipeline.py)
 python domain_consolidation.py
 ```
 
 ## Key Files
 
-- **`pipeline.py`**: Main DLT extraction logic with company name normalization
+- **`pipeline.py`**: Complete pipeline orchestrator (DLT extraction + Domain consolidation + DBT transformations)
 - **`matcher.py`**: Company name normalization utilities
 - **`domain_consolidation.py`**: Email domain-based company consolidation
 - **`models/sources.yml`**: DBT source definitions

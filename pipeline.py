@@ -3,11 +3,13 @@
 import os
 import glob
 import csv
+import subprocess
 from datetime import datetime
 
 import dlt
 from dotenv import load_dotenv
 from matcher import normalize_company_name
+from domain_consolidation import analyze_domains, create_domain_mapping_table
 
 # 0) Load environment
 load_dotenv()
@@ -266,3 +268,27 @@ if __name__ == "__main__":
     )
     load_info = load_pipeline.run(qb_source())
     print("DLT pipeline complete:", load_info)
+    
+    # 2. Run domain consolidation to create domain mapping table
+    print("\nRunning domain consolidation...")
+    try:
+        domain_stats, normalization_mapping = analyze_domains()
+        create_domain_mapping_table()
+        print("Domain consolidation complete: raw.domain_mapping table created")
+    except Exception as e:
+        print(f"❌ Error during domain consolidation: {e}")
+        raise
+    
+    # 3. Run DBT transformations
+    print("\nRunning DBT transformations...")
+    try:
+        result = subprocess.run(["dbt", "run"], check=True, capture_output=True, text=True)
+        print("DBT transformations complete:", result.stdout)
+    except subprocess.CalledProcessError as e:
+        print(f"❌ DBT run failed: {e}")
+        print("STDOUT:", e.stdout)
+        print("STDERR:", e.stderr)
+        raise
+    
+    print("\n✅ Complete pipeline finished successfully!")
+    print("Data flow: DLT extraction → Domain consolidation → DBT transformations")
