@@ -87,8 +87,14 @@ services:
 # Normal operation: Runs daily at midnight via cron
 docker-compose up -d
 
-# Run pipeline immediately (debugging)
+# First-time setup: Load data without tests (for empty database)
+docker-compose exec cron /app/entrypoint.sh seed
+
+# Run complete pipeline with tests (after data exists)
 docker-compose exec cron /app/entrypoint.sh run-now
+
+# Run only DBT tests (useful after manual fixes)
+docker-compose exec cron /app/entrypoint.sh test
 
 # Interactive shell
 docker-compose exec cron /app/entrypoint.sh shell
@@ -128,8 +134,14 @@ dbt docs generate && dbt docs serve
 # Monitor logs
 docker-compose logs -f cron
 
-# Run immediately
+# First-time database seeding (no tests)
+docker-compose exec cron /app/entrypoint.sh seed
+
+# Run complete pipeline with tests
 docker-compose exec cron /app/entrypoint.sh run-now
+
+# Run tests only (after data exists)
+docker-compose exec cron /app/entrypoint.sh test
 
 # Debug mode
 docker-compose exec cron /app/entrypoint.sh shell

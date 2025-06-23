@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Function to run the complete pipeline
-run_pipeline() {
-    echo "$(date): Starting QuickBooks pipeline..."
+# Function to run DLT extraction and DBT transformations (for initial seeding)
+run_data_pipeline() {
+    echo "$(date): Starting QuickBooks data pipeline..."
     
     # Change to app directory
     cd /app
@@ -23,15 +23,25 @@ run_pipeline() {
         exit 1
     fi
     
-    # Run DBT tests
+    echo "$(date): Data pipeline completed successfully!"
+}
+
+# Function to run DBT tests separately
+run_tests() {
     echo "$(date): Running DBT tests..."
+    cd /app
     dbt test
     if [ $? -ne 0 ]; then
         echo "$(date): DBT tests failed!" >&2
         exit 1
     fi
-    
-    echo "$(date): Pipeline completed successfully!"
+    echo "$(date): Tests completed successfully!"
+}
+
+# Function to run the complete pipeline including tests
+run_pipeline() {
+    run_data_pipeline
+    run_tests
 }
 
 # Handle different execution modes
@@ -42,8 +52,16 @@ case "$1" in
         exec cron -f
         ;;
     "run-now")
-        echo "$(date): Running pipeline immediately..."
+        echo "$(date): Running complete pipeline immediately..."
         run_pipeline
+        ;;
+    "seed"|"run-data")
+        echo "$(date): Running data pipeline only (no tests)..."
+        run_data_pipeline
+        ;;
+    "test")
+        echo "$(date): Running tests only..."
+        run_tests
         ;;
     "shell")
         echo "$(date): Starting interactive shell..."
