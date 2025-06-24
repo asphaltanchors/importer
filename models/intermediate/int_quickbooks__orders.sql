@@ -10,6 +10,25 @@ WITH order_items AS (
     SELECT * FROM {{ ref('int_quickbooks__order_items_typed') }}
 ),
 
+-- Define state/province mappings for country inference
+us_states AS (
+    SELECT unnest(ARRAY[
+        'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 
+        'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 
+        'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 
+        'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 
+        'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
+        'DC', 'PR', 'VI', 'GU', 'AS', 'MP'  -- territories
+    ]) AS state_code
+),
+
+canadian_provinces AS (
+    SELECT unnest(ARRAY[
+        'AB', 'BC', 'MB', 'NB', 'NL', 'NT', 'NS', 'NU', 
+        'ON', 'PE', 'QC', 'SK', 'YT'
+    ]) AS province_code
+),
+
 -- Group by order_number to get order-level data
 aggregated_orders AS (
     SELECT
@@ -39,7 +58,7 @@ aggregated_orders AS (
         MAX(billing_address_city) AS billing_address_city,
         MAX(billing_address_state) AS billing_address_state,
         MAX(billing_address_postal_code) AS billing_address_postal_code,
-        MAX(billing_address_country) AS billing_address_country,
+        MAX(billing_address_country) AS billing_address_country_raw,
         
         MAX(shipping_address_line_1) AS shipping_address_line_1,
         MAX(shipping_address_line_2) AS shipping_address_line_2,
@@ -47,7 +66,7 @@ aggregated_orders AS (
         MAX(shipping_address_city) AS shipping_address_city,
         MAX(shipping_address_state) AS shipping_address_state,
         MAX(shipping_address_postal_code) AS shipping_address_postal_code,
-        MAX(shipping_address_country) AS shipping_address_country,
+        MAX(shipping_address_country) AS shipping_address_country_raw,
         
         -- Shipping information
         MAX(shipping_method) AS shipping_method,
@@ -82,10 +101,192 @@ aggregated_orders AS (
     GROUP BY order_number
 ),
 
+-- Add country normalization to orders
+orders_with_countries AS (
+    SELECT 
+        *,
+        
+        -- Normalized billing country
+        CASE 
+            -- Use explicit country if provided and not empty
+            WHEN NULLIF(TRIM(billing_address_country_raw), '') IS NOT NULL 
+                THEN CASE
+                    WHEN UPPER(TRIM(billing_address_country_raw)) IN ('USA', 'US', 'UNITED STATES') THEN 'United States'
+                    WHEN UPPER(TRIM(billing_address_country_raw)) IN ('CANADA', 'CA') THEN 'Canada'
+                    WHEN UPPER(TRIM(billing_address_country_raw)) = 'UK' THEN 'United Kingdom'
+                    ELSE TRIM(billing_address_country_raw)
+                END
+            
+            -- Infer from state/province if country is empty
+            WHEN UPPER(TRIM(billing_address_state)) IN (SELECT state_code FROM us_states) 
+                THEN 'United States'
+            WHEN UPPER(TRIM(billing_address_state)) IN (SELECT province_code FROM canadian_provinces) 
+                THEN 'Canada'
+            
+            -- Default fallback for empty state and country (assume US for legacy data)
+            ELSE 'United States'
+        END AS billing_address_country,
+        
+        -- Normalized shipping country
+        CASE 
+            -- Use explicit country if provided and not empty
+            WHEN NULLIF(TRIM(shipping_address_country_raw), '') IS NOT NULL 
+                THEN CASE
+                    WHEN UPPER(TRIM(shipping_address_country_raw)) IN ('USA', 'US', 'UNITED STATES') THEN 'United States'
+                    WHEN UPPER(TRIM(shipping_address_country_raw)) IN ('CANADA', 'CA') THEN 'Canada'
+                    WHEN UPPER(TRIM(shipping_address_country_raw)) = 'UK' THEN 'United Kingdom'
+                    ELSE TRIM(shipping_address_country_raw)
+                END
+            
+            -- Infer from state/province if country is empty
+            WHEN UPPER(TRIM(shipping_address_state)) IN (SELECT state_code FROM us_states) 
+                THEN 'United States'
+            WHEN UPPER(TRIM(shipping_address_state)) IN (SELECT province_code FROM canadian_provinces) 
+                THEN 'Canada'
+            
+            -- Default fallback for empty state and country (assume US for legacy data)
+            ELSE 'United States'
+        END AS shipping_address_country,
+        
+        -- Primary country (billing takes precedence, shipping as fallback)
+        COALESCE(
+            CASE 
+                WHEN NULLIF(TRIM(billing_address_country_raw), '') IS NOT NULL 
+                    THEN CASE
+                        WHEN UPPER(TRIM(billing_address_country_raw)) IN ('USA', 'US', 'UNITED STATES') THEN 'United States'
+                        WHEN UPPER(TRIM(billing_address_country_raw)) IN ('CANADA', 'CA') THEN 'Canada'
+                        WHEN UPPER(TRIM(billing_address_country_raw)) = 'UK' THEN 'United Kingdom'
+                        ELSE TRIM(billing_address_country_raw)
+                    END
+                WHEN UPPER(TRIM(billing_address_state)) IN (SELECT state_code FROM us_states) 
+                    THEN 'United States'
+                WHEN UPPER(TRIM(billing_address_state)) IN (SELECT province_code FROM canadian_provinces) 
+                    THEN 'Canada'
+                ELSE NULL
+            END,
+            CASE 
+                WHEN NULLIF(TRIM(shipping_address_country_raw), '') IS NOT NULL 
+                    THEN CASE
+                        WHEN UPPER(TRIM(shipping_address_country_raw)) IN ('USA', 'US', 'UNITED STATES') THEN 'United States'
+                        WHEN UPPER(TRIM(shipping_address_country_raw)) IN ('CANADA', 'CA') THEN 'Canada'
+                        WHEN UPPER(TRIM(shipping_address_country_raw)) = 'UK' THEN 'United Kingdom'
+                        ELSE TRIM(shipping_address_country_raw)
+                    END
+                WHEN UPPER(TRIM(shipping_address_state)) IN (SELECT state_code FROM us_states) 
+                    THEN 'United States'
+                WHEN UPPER(TRIM(shipping_address_state)) IN (SELECT province_code FROM canadian_provinces) 
+                    THEN 'Canada'
+                ELSE 'United States'  -- Final fallback
+            END
+        ) AS primary_country,
+        
+        -- Country category for dashboard filtering
+        CASE 
+            WHEN COALESCE(
+                CASE 
+                    WHEN NULLIF(TRIM(billing_address_country_raw), '') IS NOT NULL 
+                        THEN CASE
+                            WHEN UPPER(TRIM(billing_address_country_raw)) IN ('USA', 'US', 'UNITED STATES') THEN 'United States'
+                            WHEN UPPER(TRIM(billing_address_country_raw)) IN ('CANADA', 'CA') THEN 'Canada'
+                            WHEN UPPER(TRIM(billing_address_country_raw)) = 'UK' THEN 'United Kingdom'
+                            ELSE TRIM(billing_address_country_raw)
+                        END
+                    WHEN UPPER(TRIM(billing_address_state)) IN (SELECT state_code FROM us_states) 
+                        THEN 'United States'
+                    WHEN UPPER(TRIM(billing_address_state)) IN (SELECT province_code FROM canadian_provinces) 
+                        THEN 'Canada'
+                    ELSE NULL
+                END,
+                CASE 
+                    WHEN NULLIF(TRIM(shipping_address_country_raw), '') IS NOT NULL 
+                        THEN CASE
+                            WHEN UPPER(TRIM(shipping_address_country_raw)) IN ('USA', 'US', 'UNITED STATES') THEN 'United States'
+                            WHEN UPPER(TRIM(shipping_address_country_raw)) IN ('CANADA', 'CA') THEN 'Canada'
+                            WHEN UPPER(TRIM(shipping_address_country_raw)) = 'UK' THEN 'United Kingdom'
+                            ELSE TRIM(shipping_address_country_raw)
+                        END
+                    WHEN UPPER(TRIM(shipping_address_state)) IN (SELECT state_code FROM us_states) 
+                        THEN 'United States'
+                    WHEN UPPER(TRIM(shipping_address_state)) IN (SELECT province_code FROM canadian_provinces) 
+                        THEN 'Canada'
+                    ELSE 'United States'
+                END
+            ) = 'United States' THEN 'United States'
+            WHEN COALESCE(
+                CASE 
+                    WHEN NULLIF(TRIM(billing_address_country_raw), '') IS NOT NULL 
+                        THEN CASE
+                            WHEN UPPER(TRIM(billing_address_country_raw)) IN ('USA', 'US', 'UNITED STATES') THEN 'United States'
+                            WHEN UPPER(TRIM(billing_address_country_raw)) IN ('CANADA', 'CA') THEN 'Canada'
+                            WHEN UPPER(TRIM(billing_address_country_raw)) = 'UK' THEN 'United Kingdom'
+                            ELSE TRIM(billing_address_country_raw)
+                        END
+                    WHEN UPPER(TRIM(billing_address_state)) IN (SELECT state_code FROM us_states) 
+                        THEN 'United States'
+                    WHEN UPPER(TRIM(billing_address_state)) IN (SELECT province_code FROM canadian_provinces) 
+                        THEN 'Canada'
+                    ELSE NULL
+                END,
+                CASE 
+                    WHEN NULLIF(TRIM(shipping_address_country_raw), '') IS NOT NULL 
+                        THEN CASE
+                            WHEN UPPER(TRIM(shipping_address_country_raw)) IN ('USA', 'US', 'UNITED STATES') THEN 'United States'
+                            WHEN UPPER(TRIM(shipping_address_country_raw)) IN ('CANADA', 'CA') THEN 'Canada'
+                            WHEN UPPER(TRIM(shipping_address_country_raw)) = 'UK' THEN 'United Kingdom'
+                            ELSE TRIM(shipping_address_country_raw)
+                        END
+                    WHEN UPPER(TRIM(shipping_address_state)) IN (SELECT state_code FROM us_states) 
+                        THEN 'United States'
+                    WHEN UPPER(TRIM(shipping_address_state)) IN (SELECT province_code FROM canadian_provinces) 
+                        THEN 'Canada'
+                    ELSE 'United States'
+                END
+            ) = 'Canada' THEN 'Canada'
+            ELSE 'International'
+        END AS country_category,
+        
+        -- Region grouping
+        CASE 
+            WHEN COALESCE(
+                CASE 
+                    WHEN NULLIF(TRIM(billing_address_country_raw), '') IS NOT NULL 
+                        THEN CASE
+                            WHEN UPPER(TRIM(billing_address_country_raw)) IN ('USA', 'US', 'UNITED STATES') THEN 'United States'
+                            WHEN UPPER(TRIM(billing_address_country_raw)) IN ('CANADA', 'CA') THEN 'Canada'
+                            WHEN UPPER(TRIM(billing_address_country_raw)) = 'UK' THEN 'United Kingdom'
+                            ELSE TRIM(billing_address_country_raw)
+                        END
+                    WHEN UPPER(TRIM(billing_address_state)) IN (SELECT state_code FROM us_states) 
+                        THEN 'United States'
+                    WHEN UPPER(TRIM(billing_address_state)) IN (SELECT province_code FROM canadian_provinces) 
+                        THEN 'Canada'
+                    ELSE NULL
+                END,
+                CASE 
+                    WHEN NULLIF(TRIM(shipping_address_country_raw), '') IS NOT NULL 
+                        THEN CASE
+                            WHEN UPPER(TRIM(shipping_address_country_raw)) IN ('USA', 'US', 'UNITED STATES') THEN 'United States'
+                            WHEN UPPER(TRIM(shipping_address_country_raw)) IN ('CANADA', 'CA') THEN 'Canada'
+                            WHEN UPPER(TRIM(shipping_address_country_raw)) = 'UK' THEN 'United Kingdom'
+                            ELSE TRIM(shipping_address_country_raw)
+                        END
+                    WHEN UPPER(TRIM(shipping_address_state)) IN (SELECT state_code FROM us_states) 
+                        THEN 'United States'
+                    WHEN UPPER(TRIM(shipping_address_state)) IN (SELECT province_code FROM canadian_provinces) 
+                        THEN 'Canada'
+                    ELSE 'United States'
+                END
+            ) IN ('United States', 'Canada') THEN 'North America'
+            ELSE 'International'
+        END AS region
+        
+    FROM aggregated_orders
+),
+
 -- Filter out orders with null critical fields
 filtered_orders AS (
     SELECT *
-    FROM aggregated_orders
+    FROM orders_with_countries
     WHERE order_date IS NOT NULL
     AND total_amount IS NOT NULL
     AND order_number IS NOT NULL

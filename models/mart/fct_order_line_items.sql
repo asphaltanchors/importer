@@ -9,59 +9,31 @@
     tags = ['orders', 'line_items', 'quickbooks']
 ) }}
 
-WITH order_items AS (
-    SELECT * FROM {{ ref('stg_quickbooks__order_items_tax_status') }}
+WITH typed_order_items AS (
+    SELECT * FROM {{ ref('int_quickbooks__order_items_typed') }}
 ),
 
--- Use staging data directly to avoid type casting issues in intermediate model
-typed_order_items AS (
+-- Add the line-item specific fields for invoice display
+enriched_order_items AS (
     SELECT
         -- Line item identifier
         _dlt_id as line_item_id,
         
-        -- Order identifiers and metadata
+        -- Order identifiers and metadata (already typed in intermediate)
         order_number,
         source_type,
-        CASE 
-            WHEN order_date IS NULL OR TRIM(order_date) = '' THEN NULL
-            ELSE CAST(order_date AS DATE)
-        END AS order_date,
+        order_date,
         customer,
         payment_method,
+        status,
+        due_date,
         
-        -- Standardized status
-        CASE 
-            WHEN UPPER(TRIM(status)) IN ('PAID', 'COMPLETE', 'COMPLETED') THEN 'PAID'
-            WHEN UPPER(TRIM(status)) IN ('OPEN', 'UNPAID', 'PENDING') THEN 'OPEN'
-            WHEN UPPER(TRIM(status)) IN ('PARTIALLY PAID', 'PARTIAL') THEN 'PARTIALLY_PAID'
-            WHEN UPPER(TRIM(status)) IN ('CANCELLED', 'CANCELED', 'VOID') THEN 'CANCELLED'
-            WHEN UPPER(TRIM(status)) IN ('OVERDUE') THEN 'OVERDUE'
-            ELSE UPPER(TRIM(status))
-        END AS status,
-        
-        CASE 
-            WHEN due_date IS NULL OR TRIM(due_date) = '' THEN NULL
-            ELSE CAST(due_date AS DATE)
-        END AS due_date,
-        
-        -- Product/service information
+        -- Product/service information (already typed in intermediate)
         product_service,
         product_service_description,
-        CAST(NULLIF(TRIM(product_service_quantity), '') AS NUMERIC) AS product_service_quantity,
-        -- Clean rate field to handle percentage values and other non-numeric data
-        CASE 
-            WHEN NULLIF(TRIM(product_service_rate), '') IS NULL THEN NULL
-            WHEN TRIM(product_service_rate) LIKE '%-%' AND TRIM(product_service_rate) LIKE '%' THEN NULL  -- Skip discount percentages
-            WHEN TRIM(product_service_rate) ~ '^-?[0-9]+(\.[0-9]+)?$' THEN CAST(TRIM(product_service_rate) AS NUMERIC)
-            ELSE NULL
-        END AS product_service_rate,
-        -- Clean amount field to handle percentage values and other non-numeric data
-        CASE 
-            WHEN NULLIF(TRIM(product_service_amount), '') IS NULL THEN NULL
-            WHEN TRIM(product_service_amount) LIKE '%-%' AND TRIM(product_service_amount) LIKE '%' THEN NULL  -- Skip discount percentages
-            WHEN TRIM(product_service_amount) ~ '^-?[0-9]+(\.[0-9]+)?$' THEN CAST(TRIM(product_service_amount) AS NUMERIC)
-            ELSE NULL
-        END AS product_service_amount,
+        product_service_quantity,
+        product_service_rate,
+        product_service_amount,
         product_service_class,
         unit_of_measure,
         
@@ -91,12 +63,14 @@ typed_order_items AS (
         shipping_address_postal_code,
         shipping_address_country,
         
+        -- Country fields for reporting (from intermediate model)
+        primary_country,
+        country_category,
+        region,
+        
         -- Shipping information
         shipping_method,
-        CASE 
-            WHEN ship_date IS NULL OR TRIM(ship_date) = '' THEN NULL
-            ELSE CAST(ship_date AS DATE)
-        END AS ship_date,
+        ship_date,
         
         -- Order details
         memo,
@@ -114,27 +88,21 @@ typed_order_items AS (
         
         -- Other fields that might be useful for invoice display
         external_id,
-        quick_books_internal_id,
+        quickbooks_internal_id,
         currency,
-        CAST(NULLIF(TRIM(exchange_rate), '') AS NUMERIC) AS exchange_rate,
+        exchange_rate,
         
         -- Metadata
-        CASE 
-            WHEN created_date IS NULL OR TRIM(created_date) = '' THEN NULL
-            ELSE CAST(created_date AS TIMESTAMP)
-        END AS created_date,
-        CASE 
-            WHEN modified_date IS NULL OR TRIM(modified_date) = '' THEN NULL
-            ELSE CAST(modified_date AS TIMESTAMP)
-        END AS modified_date
+        created_date,
+        modified_date
         
-    FROM order_items
+    FROM typed_order_items
 ),
 
 -- Filter to actual line items (exclude description-only rows and empty product rows)
 filtered_line_items AS (
     SELECT *
-    FROM typed_order_items
+    FROM enriched_order_items
     WHERE order_number IS NOT NULL
     AND TRIM(order_number) != ''
     AND product_service_amount IS NOT NULL
@@ -148,7 +116,7 @@ filtered_line_items AS (
 ),
 
 -- Join with products for enrichment
-enriched_line_items AS (
+final_line_items AS (
     SELECT
         li.*,
         
@@ -169,4 +137,4 @@ enriched_line_items AS (
         ON li.product_service = p.item_name
 )
 
-SELECT * FROM enriched_line_items
+SELECT * FROM final_line_items

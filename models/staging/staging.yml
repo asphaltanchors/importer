@@ -83,3 +83,51 @@ models:
       
       - name: status
         description: Current status of the item
+
+  - name: stg_quickbooks__customers
+    description: >
+      Staging model that normalizes customer data with country inference logic.
+      Applies country standardization based on state/province codes and cleans address data.
+    columns:
+      - name: customer_name
+        description: Original customer name from QuickBooks
+      
+      - name: normalized_customer_name
+        description: Normalized customer name with fallback logic
+        tests:
+          - not_null
+      
+      - name: quick_books_internal_id
+        description: Unique identifier for the customer in QuickBooks
+        tests:
+          - not_null
+          - unique
+      
+      - name: billing_address_country
+        description: Normalized billing country (inferred from state if not explicit)
+        tests:
+          - not_null
+      
+      - name: shipping_address_country
+        description: Normalized shipping country (inferred from state if not explicit)
+        tests:
+          - not_null
+      
+      - name: primary_country
+        description: Primary country for the customer (billing preferred, shipping fallback)
+        tests:
+          - not_null
+      
+      - name: country_category
+        description: Country category for reporting (United States, Canada, International)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['United States', 'Canada', 'International']
+      
+      - name: region
+        description: Regional grouping (North America, International)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['North America', 'International']

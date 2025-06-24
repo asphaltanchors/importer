@@ -39,6 +39,35 @@ models:
           - not_null
           - accepted_values:
               values: ['invoice', 'sales_receipt']
+      
+      - name: billing_address_country
+        description: Normalized billing country (inferred from state if not explicit)
+        tests:
+          - not_null
+      
+      - name: shipping_address_country
+        description: Normalized shipping country (inferred from state if not explicit)
+        tests:
+          - not_null
+      
+      - name: primary_country
+        description: Primary country for the order (billing preferred, shipping fallback)
+        tests:
+          - not_null
+      
+      - name: country_category
+        description: Country category for reporting (United States, Canada, International)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['United States', 'Canada', 'International']
+      
+      - name: region
+        description: Regional grouping (North America, International)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['North America', 'International']
 
   - name: dim_company_health
     description: >
@@ -237,6 +266,25 @@ models:
       
       - name: material_type
         description: Material type from enriched product data
+      
+      - name: primary_country
+        description: Primary country for the line item (billing preferred, shipping fallback)
+        tests:
+          - not_null
+      
+      - name: country_category
+        description: Country category for reporting (United States, Canada, International)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['United States', 'Canada', 'International']
+      
+      - name: region
+        description: Regional grouping (North America, International)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['North America', 'International']
 
   - name: fct_companies
     description: >

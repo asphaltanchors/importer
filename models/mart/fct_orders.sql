@@ -68,6 +68,11 @@ orders_enriched AS (
         shipping_address_postal_code,
         shipping_address_country,
         
+        -- Country fields for reporting
+        primary_country,
+        country_category,
+        region,
+        
         -- Shipping information
         shipping_method,
         ship_date,
