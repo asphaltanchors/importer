@@ -253,15 +253,15 @@ company_facts AS (
         geo.country_category,
         
         -- Customer metrics
-        ca.customer_count,
-        ca.unique_customer_names,
-        ca.unique_company_names,
-        ca.total_current_balance,
+        COALESCE(CAST(ca.customer_count AS INTEGER), 0) as customer_count,
+        COALESCE(CAST(ca.unique_customer_names AS INTEGER), 0) as unique_customer_names,
+        COALESCE(CAST(ca.unique_company_names AS INTEGER), 0) as unique_company_names,
+        COALESCE(CAST(ca.total_current_balance AS NUMERIC), 0) as total_current_balance,
         
         -- Revenue metrics (sum across all customers for this domain)
-        COALESCE(SUM(rev.total_revenue), 0) as total_revenue,
-        COALESCE(SUM(rev.total_invoices), 0) as total_orders,
-        COALESCE(SUM(rev.total_line_items), 0) as total_line_items,
+        COALESCE(CAST(SUM(rev.total_revenue) AS NUMERIC), 0) as total_revenue,
+        COALESCE(CAST(SUM(rev.total_invoices) AS INTEGER), 0) as total_orders,
+        COALESCE(CAST(SUM(rev.total_line_items) AS INTEGER), 0) as total_line_items,
         MIN(rev.first_order_date) as first_order_date,
         MAX(rev.latest_order_date) as latest_order_date,
         

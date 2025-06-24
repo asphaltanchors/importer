@@ -64,20 +64,20 @@ products_combined AS (
         i.purchase_description,
         
         -- Pricing
-        i.sales_price,
-        i.purchase_cost,
+        COALESCE(i.sales_price, 0) as sales_price,
+        COALESCE(i.purchase_cost, 0) as purchase_cost,
         
         -- Calculated margins
         CASE 
-            WHEN i.sales_price IS NOT NULL AND i.purchase_cost IS NOT NULL AND i.sales_price > 0 
-            THEN ((i.sales_price - i.purchase_cost) / i.sales_price) * 100
-            ELSE NULL
+            WHEN COALESCE(i.sales_price, 0) > 0 
+            THEN ROUND(((COALESCE(i.sales_price, 0) - COALESCE(i.purchase_cost, 0)) / i.sales_price) * 100, 2)
+            ELSE 0
         END AS margin_percentage,
         
         CASE 
-            WHEN i.sales_price IS NOT NULL AND i.purchase_cost IS NOT NULL 
-            THEN i.sales_price - i.purchase_cost
-            ELSE NULL
+            WHEN COALESCE(i.sales_price, 0) > 0 OR COALESCE(i.purchase_cost, 0) > 0
+            THEN COALESCE(i.sales_price, 0) - COALESCE(i.purchase_cost, 0)
+            ELSE 0
         END AS margin_amount,
         
         -- Product identifiers

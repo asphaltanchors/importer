@@ -85,31 +85,13 @@ time_series_with_growth_metrics AS (
     SELECT 
         *,
         
-        -- Quarter-over-quarter growth
-        CASE 
-            WHEN prev_quarter_orders > 0 
-            THEN ROUND((order_count - prev_quarter_orders) * 100.0 / prev_quarter_orders, 2)
-            ELSE NULL
-        END as qoq_order_growth_pct,
+        -- Quarter-over-quarter growth using standardized macro
+        {{ calculate_growth_percentage('order_count', 'prev_quarter_orders') }} as qoq_order_growth_pct,
+        {{ calculate_growth_percentage('total_revenue', 'prev_quarter_revenue') }} as qoq_revenue_growth_pct,
         
-        CASE 
-            WHEN prev_quarter_revenue > 0 
-            THEN ROUND((total_revenue - prev_quarter_revenue) * 100.0 / prev_quarter_revenue, 2)
-            ELSE NULL
-        END as qoq_revenue_growth_pct,
-        
-        -- Year-over-year growth
-        CASE 
-            WHEN yoy_prev_orders > 0 
-            THEN ROUND((order_count - yoy_prev_orders) * 100.0 / yoy_prev_orders, 2)
-            ELSE NULL
-        END as yoy_order_growth_pct,
-        
-        CASE 
-            WHEN yoy_prev_revenue > 0 
-            THEN ROUND((total_revenue - yoy_prev_revenue) * 100.0 / yoy_prev_revenue, 2)
-            ELSE NULL
-        END as yoy_revenue_growth_pct,
+        -- Year-over-year growth using standardized macro
+        {{ calculate_growth_percentage('order_count', 'yoy_prev_orders') }} as yoy_order_growth_pct,
+        {{ calculate_growth_percentage('total_revenue', 'yoy_prev_revenue') }} as yoy_revenue_growth_pct,
         
         -- Growth trend classification
         CASE 

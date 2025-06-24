@@ -1,6 +1,22 @@
 version: 2
 
 models:
+  - name: base_fct_orders_current
+    description: >
+      Base view that filters fct_orders to exclude future-dated orders.
+      Eliminates need for manual date filtering in dashboard queries.
+      Use this instead of fct_orders in dashboard applications.
+    columns:
+      - name: order_number
+        description: Unique identifier for the order
+        tests:
+          - not_null
+          - unique
+      
+      - name: order_date
+        description: Date when the order was placed (always <= current date)
+        tests:
+          - not_null
   - name: fct_orders
     description: >
       Order-level fact table aggregated from line items. 
