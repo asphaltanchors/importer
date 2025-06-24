@@ -8,7 +8,7 @@ from datetime import datetime
 
 import dlt
 from dotenv import load_dotenv
-from domain_consolidation import analyze_domains, create_domain_mapping_table
+from domain_consolidation import analyze_domains, create_domain_mapping_table, create_customer_name_mapping_table
 
 # 0) Load environment
 load_dotenv()
@@ -266,12 +266,13 @@ if __name__ == "__main__":
     load_info = load_pipeline.run(qb_source())
     print("DLT pipeline complete:", load_info)
     
-    # 2. Run domain consolidation to create domain mapping table
+    # 2. Run domain consolidation to create mapping tables
     print("\nRunning domain consolidation...")
     try:
         domain_stats, normalization_mapping = analyze_domains()
         create_domain_mapping_table()
-        print("Domain consolidation complete: raw.domain_mapping table created")
+        create_customer_name_mapping_table()
+        print("Domain consolidation complete: raw.domain_mapping and raw.customer_name_mapping tables created")
     except Exception as e:
         print(f"❌ Error during domain consolidation: {e}")
         raise
