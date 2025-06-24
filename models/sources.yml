@@ -30,3 +30,20 @@ sources:
             description: "Standardized customer name with suffixes removed"
           - name: normalization_type
             description: "Type: explicit, automatic, or no_change"
+      - name: company_enrichment
+        description: "Company enrichment data from external APIs (CoreSignal, etc.)"
+        columns:
+          - name: company_domain
+            description: "Company domain used for matching with fct_companies"
+          - name: company_name
+            description: "Company name from enrichment source"
+          - name: enrichment_source
+            description: "API provider (e.g., coresignal.com)"
+          - name: enrichment_date
+            description: "When the enrichment data was retrieved"
+          - name: enrichment_raw_data
+            description: "Full JSON response from API - stored as JSONB"
+          - name: load_date
+            description: "When the data was loaded into pipeline"
+          - name: is_manual_load
+            description: "True for manual CSV loads, false for automated API calls"

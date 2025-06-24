@@ -286,6 +286,15 @@ company_facts AS (
         -- Limited customer names sample (first 500 chars to avoid huge fields)
         LEFT(ca.all_customer_names, 500) as customer_names_sample,
         
+        -- Enrichment data from external APIs
+        ce.enriched_industry,
+        ce.enriched_employee_count,
+        ce.enriched_description,
+        ce.enriched_founded_year,
+        ce.enriched_annual_revenue,
+        ce.enrichment_source,
+        ce.enrichment_date,
+        
         -- Metadata
         CURRENT_TIMESTAMP as created_at
         
@@ -293,6 +302,7 @@ company_facts AS (
     INNER JOIN domain_representatives dr ON ca.normalized_domain = dr.normalized_domain
     LEFT JOIN aggregated_revenue rev ON ca.normalized_domain = rev.normalized_domain
     LEFT JOIN company_geographic_data geo ON ca.normalized_domain = geo.normalized_domain
+    LEFT JOIN {{ ref('stg_quickbooks__company_enrichment') }} ce ON ca.normalized_domain = ce.company_domain
     GROUP BY 
         ca.normalized_domain, ca.domain_type, dr.primary_company_name,
         dr.primary_email, dr.primary_phone, 
@@ -300,7 +310,9 @@ company_facts AS (
         dr.primary_billing_state, dr.primary_billing_postal_code,
         geo.primary_country, geo.region, geo.country_category,
         ca.customer_count, ca.unique_customer_names, ca.unique_company_names,
-        ca.total_current_balance, ca.all_customer_names
+        ca.total_current_balance, ca.all_customer_names,
+        ce.enriched_industry, ce.enriched_employee_count, ce.enriched_description,
+        ce.enriched_founded_year, ce.enriched_annual_revenue, ce.enrichment_source, ce.enrichment_date
 )
 
 SELECT * 

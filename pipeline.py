@@ -3,6 +3,7 @@
 import os
 import glob
 import csv
+import json
 import subprocess
 from datetime import datetime
 
@@ -247,12 +248,41 @@ def qb_source():
                         "is_backup": False
                     }
 
+    # company_enrichment resource
+    @dlt.resource(
+        write_disposition="merge",
+        name="company_enrichment",
+        primary_key=["company_domain"]
+    )
+    def extract_company_enrichment():
+        """One-time load of pre-enriched company data from JSONL file"""
+        enrichment_file = os.path.join(DROPBOX_PATH, "company_enrichment.jsonl")
+        if os.path.exists(enrichment_file):
+            print(f"Processing company enrichment file: {enrichment_file}")
+            with open(enrichment_file, 'r') as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line:  # Skip empty lines
+                        try:
+                            data = json.loads(line)
+                            yield {
+                                **data,
+                                "load_date": datetime.utcnow().date().isoformat(),
+                                "is_manual_load": True
+                            }
+                        except json.JSONDecodeError as e:
+                            print(f"Warning: Failed to parse JSON line: {e}")
+                            continue
+        else:
+            print(f"Company enrichment file not found: {enrichment_file}")
+
     # **Return** your resource functions in a list
     return [
         extract_customers,
         extract_items,
         extract_sales_receipts,
-        extract_invoices
+        extract_invoices,
+        extract_company_enrichment
     ]
 
 # 3) Run it
