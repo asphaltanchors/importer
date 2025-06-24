@@ -341,6 +341,25 @@ models:
           - not_null
           - accepted_values:
               values: ['No Revenue', 'Low Value (<$5K)', 'Growing Value ($5K-$25K)', 'Medium Value ($25K-$100K)', 'High Value ($100K+)']
+      
+      - name: primary_country
+        description: Primary country for the company (aggregated from order data using MODE())
+        tests:
+          - accepted_values:
+              values: ['United States', 'Canada', 'United Kingdom', 'Australia', 'Germany', 'France', 'Mexico', 'Netherlands', 'Sweden', 'Japan', 'Italy', 'Spain', 'Brazil', 'China', 'India', 'Singapore', 'South Korea', 'Norway', 'Denmark', 'Belgium', 'Switzerland', 'Austria', 'Finland', 'Greece', 'Portugal', 'Israel', 'Ireland', 'New Zealand', 'Poland', 'Czech Republic', 'Hungary', 'Romania', 'Bulgaria', 'Croatia', 'Slovenia', 'Estonia', 'Latvia', 'Lithuania', 'Cyprus', 'Malta', 'Luxembourg', 'Iceland', 'Turkey', 'South Africa', 'Egypt', 'Kenya', 'Nigeria', 'Ghana', 'Morocco', 'Tunisia', 'Argentina', 'Chile', 'Colombia', 'Peru', 'Venezuela', 'Uruguay', 'Paraguay', 'Bolivia', 'Ecuador', 'Guatemala', 'Costa Rica', 'Panama', 'Nicaragua', 'Honduras', 'El Salvador', 'Jamaica', 'Trinidad and Tobago', 'Trinidad', 'Barbados', 'Dominican Republic', 'Puerto Rico', 'Cuba', 'Haiti', 'Thailand', 'Malaysia', 'Indonesia', 'Philippines', 'Vietnam', 'Cambodia', 'Laos', 'Myanmar', 'Bangladesh', 'Pakistan', 'Sri Lanka', 'Nepal', 'Bhutan', 'Maldives', 'Afghanistan', 'Iran', 'Iraq', 'Jordan', 'Lebanon', 'Syria', 'Yemen', 'Oman', 'Kuwait', 'Qatar', 'Bahrain', 'United Arab Emirates', 'UAE', 'Saudi Arabia', 'Russia', 'Ukraine', 'Belarus', 'Moldova', 'Georgia', 'Armenia', 'Azerbaijan', 'Kazakhstan', 'Uzbekistan', 'Turkmenistan', 'Tajikistan', 'Kyrgyzstan', 'Mongolia', 'North Korea']
+              severity: warn  # Warn instead of error since new countries might be added
+      
+      - name: region
+        description: Regional grouping (North America, International)
+        tests:
+          - accepted_values:
+              values: ['North America', 'International']
+      
+      - name: country_category
+        description: Country category for reporting (United States, Canada, International)
+        tests:
+          - accepted_values:
+              values: ['United States', 'Canada', 'International']
 
   - name: bridge_customer_company
     description: >
@@ -363,6 +382,15 @@ models:
         description: Individual customer name from QuickBooks
         tests:
           - not_null
+      
+      - name: standardized_customer_name
+        description: Standardized customer name with common suffixes removed (from Python normalization)
+      
+      - name: customer_name_normalization_type
+        description: Type of normalization applied to customer name
+        tests:
+          - accepted_values:
+              values: ['explicit', 'automatic', 'no_change']
       
       - name: customer_total_revenue
         description: Total revenue attributed to this specific customer

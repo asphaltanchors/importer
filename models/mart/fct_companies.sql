@@ -211,7 +211,30 @@ company_aggregates AS (
     GROUP BY c.normalized_domain, c.domain_type
 ),
 
--- Join with revenue data
+-- Get geographic data by aggregating from orders
+company_geographic_data AS (
+    SELECT 
+        COALESCE(
+            dm_main.normalized_domain,
+            dm_cc.normalized_domain,
+            'NO_EMAIL_DOMAIN'
+        ) as normalized_domain,
+        -- Use MODE() to get the most common country/region per company
+        MODE() WITHIN GROUP (ORDER BY o.primary_country) as primary_country,
+        MODE() WITHIN GROUP (ORDER BY o.region) as region,
+        MODE() WITHIN GROUP (ORDER BY o.country_category) as country_category
+    FROM {{ ref('fct_orders') }} o
+    LEFT JOIN {{ source('raw_data', 'customers') }} c ON o.customer = c.customer_name
+    LEFT JOIN {{ source('raw_data', 'domain_mapping') }} dm_main 
+        ON LOWER(SPLIT_PART(TRIM(SPLIT_PART(COALESCE(c.main_email, ''), ';', 1)), '@', 2)) = dm_main.original_domain
+    LEFT JOIN {{ source('raw_data', 'domain_mapping') }} dm_cc 
+        ON LOWER(SPLIT_PART(TRIM(SPLIT_PART(COALESCE(c.cc_email, ''), ';', 1)), '@', 2)) = dm_cc.original_domain
+    WHERE o.primary_country IS NOT NULL
+      AND COALESCE(dm_main.normalized_domain, dm_cc.normalized_domain, 'NO_EMAIL_DOMAIN') != 'NO_EMAIL_DOMAIN'
+    GROUP BY COALESCE(dm_main.normalized_domain, dm_cc.normalized_domain, 'NO_EMAIL_DOMAIN')
+),
+
+-- Join with revenue data and geographic data
 company_facts AS (
     SELECT 
         ca.normalized_domain as company_domain_key,
@@ -223,6 +246,11 @@ company_facts AS (
         dr.primary_billing_city,
         dr.primary_billing_state,
         dr.primary_billing_postal_code,
+        
+        -- Geographic data from orders
+        geo.primary_country,
+        geo.region,
+        geo.country_category,
         
         -- Customer metrics
         ca.customer_count,
@@ -264,11 +292,13 @@ company_facts AS (
     FROM company_aggregates ca
     INNER JOIN domain_representatives dr ON ca.normalized_domain = dr.normalized_domain
     LEFT JOIN aggregated_revenue rev ON ca.normalized_domain = rev.normalized_domain
+    LEFT JOIN company_geographic_data geo ON ca.normalized_domain = geo.normalized_domain
     GROUP BY 
         ca.normalized_domain, ca.domain_type, dr.primary_company_name,
         dr.primary_email, dr.primary_phone, 
         dr.primary_billing_address_line_1, dr.primary_billing_city, 
         dr.primary_billing_state, dr.primary_billing_postal_code,
+        geo.primary_country, geo.region, geo.country_category,
         ca.customer_count, ca.unique_customer_names, ca.unique_company_names,
         ca.total_current_balance, ca.all_customer_names
 )

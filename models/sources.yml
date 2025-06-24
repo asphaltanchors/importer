@@ -21,3 +21,12 @@ sources:
             description: "Consolidated domain key for company grouping"
           - name: domain_type
             description: "Type: corporate, individual, or skip"
+      - name: customer_name_mapping
+        description: "Customer name standardization mapping created by domain_consolidation.py"
+        columns:
+          - name: original_name
+            description: "Original customer name from QuickBooks data"
+          - name: normalized_name
+            description: "Standardized customer name with suffixes removed"
+          - name: normalization_type
+            description: "Type: explicit, automatic, or no_change"

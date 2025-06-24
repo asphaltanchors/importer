@@ -105,6 +105,74 @@ def normalize_domain(domain: str) -> str:
     # Default: return as-is
     return domain
 
+def normalize_customer_name(customer_name: str) -> str:
+    """
+    Apply customer name normalization rules to standardize company names
+    """
+    if not customer_name or customer_name.strip() == '':
+        return customer_name
+    
+    # Start with the trimmed name
+    normalized = customer_name.strip()
+    
+    # Remove common suffixes that indicate customer types (case insensitive)
+    suffixes_to_remove = [
+        r'\s+End\s+User\s*$',
+        r'\s+Customer\s*$', 
+        r'\s+Client\s*$',
+        r'\s+End\s+User\s*,\s*$',
+        r'\s+Customer\s*,\s*$',
+        r'\s+Client\s*,\s*$'
+    ]
+    
+    for suffix_pattern in suffixes_to_remove:
+        normalized = re.sub(suffix_pattern, '', normalized, flags=re.IGNORECASE)
+    
+    # Additional cleaning rules
+    # Remove extra whitespace
+    normalized = re.sub(r'\s+', ' ', normalized).strip()
+    
+    # Remove trailing commas
+    normalized = re.sub(r',\s*$', '', normalized)
+    
+    return normalized
+
+def load_customer_name_normalization_rules() -> Dict[str, str]:
+    """
+    Load customer name normalization rules from config file
+    Returns a dictionary of explicit mappings for complex cases
+    """
+    config_file = os.path.join(os.path.dirname(__file__), 'customer_name_mappings.txt')
+    
+    if not os.path.exists(config_file):
+        # Create default file with examples
+        default_mappings = [
+            "# Customer Name Mappings",
+            "# Format: original_name -> normalized_name",
+            "# Lines starting with # are ignored",
+            "# Add specific mappings for complex normalization cases",
+            "",
+            "# Example:",
+            "# ZKxKZ LLC  End User -> ZKxKZ LLC",
+            "# Acme Corp Customer -> Acme Corp"
+        ]
+        
+        with open(config_file, 'w') as f:
+            f.write('\n'.join(default_mappings))
+        
+        print(f"Created default customer name mappings config: {config_file}")
+    
+    # Read mappings from file
+    mappings = {}
+    with open(config_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '->' in line:
+                original, normalized = line.split('->', 1)
+                mappings[original.strip()] = normalized.strip()
+    
+    return mappings
+
 def analyze_domains():
     """
     Analyze email domains from the customers table
@@ -305,20 +373,190 @@ def create_domain_mapping_table():
     
     conn.close()
 
+def analyze_customer_names():
+    """
+    Analyze customer names and show normalization results
+    """
+    print("\nCustomer Name Analysis")
+    print("=" * 50)
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Get all customer names
+    query = """
+    SELECT DISTINCT 
+        customer_name,
+        company_name,
+        COUNT(*) as frequency
+    FROM raw.customers 
+    WHERE customer_name IS NOT NULL 
+      AND customer_name != ''
+    GROUP BY customer_name, company_name
+    ORDER BY frequency DESC
+    """
+    
+    cursor.execute(query)
+    customers = cursor.fetchall()
+    
+    print(f"Found {len(customers)} unique customer name combinations")
+    
+    # Load explicit mappings
+    explicit_mappings = load_customer_name_normalization_rules()
+    
+    # Analyze normalization patterns
+    normalization_stats = defaultdict(int)
+    interesting_changes = []
+    
+    for customer in customers:
+        original = customer['customer_name']
+        
+        # Apply explicit mapping first, then automatic normalization
+        if original in explicit_mappings:
+            normalized = explicit_mappings[original]
+            normalization_stats['explicit_mapping'] += 1
+        else:
+            normalized = normalize_customer_name(original)
+            if normalized != original:
+                normalization_stats['automatic_normalization'] += 1
+            else:
+                normalization_stats['no_change'] += 1
+        
+        # Track interesting changes for display
+        if normalized != original:
+            interesting_changes.append({
+                'original': original,
+                'normalized': normalized,
+                'frequency': customer['frequency'],
+                'type': 'explicit' if original in explicit_mappings else 'automatic'
+            })
+    
+    # Show normalization results
+    print("\nNormalization Summary:")
+    print("-" * 30)
+    for norm_type, count in normalization_stats.items():
+        print(f"{norm_type}: {count}")
+    
+    # Show most interesting changes
+    print(f"\nTop Customer Name Normalizations:")
+    print("-" * 70)
+    interesting_changes.sort(key=lambda x: x['frequency'], reverse=True)
+    
+    for change in interesting_changes[:20]:
+        change_type = "E" if change['type'] == 'explicit' else "A"
+        print(f"[{change_type}] {change['original']:40} → {change['normalized']:30} ({change['frequency']}x)")
+    
+    conn.close()
+    return interesting_changes, normalization_stats
+
+def create_customer_name_mapping_table():
+    """
+    Create a customer name mapping table in the database for DBT to use
+    """
+    print("\nCreating customer name mapping table for DBT...")
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Get all unique customer names
+    query = """
+    SELECT DISTINCT customer_name
+    FROM raw.customers 
+    WHERE customer_name IS NOT NULL 
+      AND customer_name != ''
+    """
+    
+    cursor.execute(query)
+    customers = cursor.fetchall()
+    
+    # Load explicit mappings
+    explicit_mappings = load_customer_name_normalization_rules()
+    
+    # Create mapping table
+    cursor.execute("DROP TABLE IF EXISTS raw.customer_name_mapping")
+    cursor.execute("""
+        CREATE TABLE raw.customer_name_mapping (
+            original_name VARCHAR(500) PRIMARY KEY,
+            normalized_name VARCHAR(500) NOT NULL,
+            normalization_type VARCHAR(50) NOT NULL,
+            created_date TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    
+    # Insert mappings
+    explicit_count = 0
+    automatic_count = 0
+    no_change_count = 0
+    
+    for row in customers:
+        original = row['customer_name']
+        
+        # Apply explicit mapping first, then automatic normalization
+        if original in explicit_mappings:
+            normalized = explicit_mappings[original]
+            norm_type = 'explicit'
+            explicit_count += 1
+        else:
+            normalized = normalize_customer_name(original)
+            if normalized != original:
+                norm_type = 'automatic'
+                automatic_count += 1
+            else:
+                norm_type = 'no_change'
+                no_change_count += 1
+        
+        cursor.execute("""
+            INSERT INTO raw.customer_name_mapping (original_name, normalized_name, normalization_type)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (original_name) DO UPDATE SET
+                normalized_name = EXCLUDED.normalized_name,
+                normalization_type = EXCLUDED.normalization_type,
+                created_date = NOW()
+        """, (original, normalized, norm_type))
+    
+    conn.commit()
+    
+    # Show summary
+    print("Customer name mapping table created:")
+    print(f"  explicit mappings: {explicit_count}")
+    print(f"  automatic normalizations: {automatic_count}")
+    print(f"  no changes: {no_change_count}")
+    print(f"  total: {len(customers)}")
+    
+    conn.close()
+
 if __name__ == "__main__":
     try:
+        print("🔍 Starting Domain and Customer Name Analysis")
+        print("=" * 60)
+        
+        # Phase 1: Domain Analysis
         domain_stats, normalization_mapping = analyze_domains()
         
-        print("\n" + "="*50)
-        print("Creating domain mapping table for DBT...")
+        # Phase 2: Customer Name Analysis  
+        customer_changes, customer_stats = analyze_customer_names()
+        
+        print("\n" + "="*60)
+        print("Creating mapping tables for DBT...")
+        
+        # Create domain mapping table
         create_domain_mapping_table()
         
-        print("\n✅ Phase 1 Complete: Domain analysis and mapping table created")
+        # Create customer name mapping table
+        create_customer_name_mapping_table()
+        
+        print("\n✅ Complete: Domain and Customer Name Analysis")
+        print("\nSummary:")
+        print(f"- Domain consolidations: {len(normalization_mapping)} → {len(domain_stats)}")
+        print(f"- Customer name normalizations: {customer_stats.get('automatic_normalization', 0)} + {customer_stats.get('explicit_mapping', 0)}")
+        print("\nMapping tables created:")
+        print("- raw.domain_mapping (for company consolidation)")
+        print("- raw.customer_name_mapping (for customer name standardization)")
         print("\nNext steps:")
         print("1. Review the consolidation results above")
-        print("2. The domain mapping is now available in raw.domain_mapping for DBT")
-        print("3. Proceed to Phase 2: Company Master Table creation in DBT")
+        print("2. Update DBT models to use the new mapping tables")
+        print("3. Test the complete pipeline")
         
     except Exception as e:
-        print(f"❌ Error during domain analysis: {e}")
+        print(f"❌ Error during analysis: {e}")
         raise

@@ -125,6 +125,8 @@ customer_company_bridge AS (
         -- Customer details
         c.customer_name,
         c.company_name as customer_company_name,
+        cnm.normalized_name as standardized_customer_name,
+        cnm.normalization_type as customer_name_normalization_type,
         c.main_email,
         c.cc_email,
         c.main_phone,
@@ -185,6 +187,7 @@ customer_company_bridge AS (
         CURRENT_TIMESTAMP as created_at
         
     FROM customers_with_normalized_domains c
+    LEFT JOIN {{ source('raw_data', 'customer_name_mapping') }} cnm ON c.customer_name = cnm.original_name
     LEFT JOIN aggregated_customer_revenue rev ON c.customer_name = rev.customer
     -- Only include customers that belong to consolidated companies or have revenue
     WHERE (c.company_domain_key != 'NO_EMAIL_DOMAIN' AND c.domain_type IN ('corporate', 'individual'))
