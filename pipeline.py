@@ -257,24 +257,34 @@ def qb_source():
     def extract_company_enrichment():
         """One-time load of pre-enriched company data from JSONL file"""
         enrichment_file = os.path.join(DROPBOX_PATH, "company_enrichment.jsonl")
+        print(f"Checking for company enrichment file at: {enrichment_file}")
+        
         if os.path.exists(enrichment_file):
-            print(f"Processing company enrichment file: {enrichment_file}")
+            file_size = os.path.getsize(enrichment_file)
+            print(f"Found company enrichment file: {enrichment_file} ({file_size} bytes)")
+            
+            record_count = 0
             with open(enrichment_file, 'r') as fh:
-                for line in fh:
+                for line_num, line in enumerate(fh, 1):
                     line = line.strip()
                     if line:  # Skip empty lines
                         try:
                             data = json.loads(line)
+                            record_count += 1
                             yield {
                                 **data,
                                 "load_date": datetime.utcnow().date().isoformat(),
                                 "is_manual_load": True
                             }
                         except json.JSONDecodeError as e:
-                            print(f"Warning: Failed to parse JSON line: {e}")
+                            print(f"Warning: Failed to parse JSON line {line_num}: {e}")
+                            print(f"Problematic line: {line[:100]}...")
                             continue
+            
+            print(f"Company enrichment: processed {record_count} records from {enrichment_file}")
         else:
             print(f"Company enrichment file not found: {enrichment_file}")
+            print(f"Directory contents: {os.listdir(DROPBOX_PATH) if os.path.exists(DROPBOX_PATH) else 'DROPBOX_PATH does not exist'}")
 
     # **Return** your resource functions in a list
     return [
