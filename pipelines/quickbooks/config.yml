@@ -1,0 +1,26 @@
+# QuickBooks Pipeline Configuration
+source_name: "quickbooks"
+description: "QuickBooks CSV data extraction and processing"
+
+# Data source configuration  
+csv_patterns:
+  - "Customer_*.csv"
+  - "01_BACKUP_Customer_*.csv"
+  - "Item_*.csv" 
+  - "01_BACKUP_Item_*.csv"
+  - "Sales*.csv"
+  - "01_BACKUP_Sales_*.csv"
+  - "Invoice_*.csv"
+  - "01_BACKUP_Invoice_*.csv"
+
+# DLT configuration
+dlt_pipeline_name: "quickbooks_pipeline"
+dlt_dataset_name: "raw"
+
+# Processing configuration
+domain_consolidation_enabled: true
+customer_name_normalization_enabled: true
+
+# Scheduling
+schedule: "daily"
+priority: 1  # Run first in multi-source pipeline

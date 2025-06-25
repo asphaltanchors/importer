@@ -1,0 +1,91 @@
+# Multi-Source Pipeline Configuration
+# Defines all data sources and their execution parameters
+
+sources:
+  quickbooks:
+    enabled: true
+    schedule: "daily"
+    path: "pipelines/quickbooks"
+    priority: 1  # Run first
+    description: "QuickBooks CSV data extraction and processing"
+    tables:
+      - "customers"
+      - "items" 
+      - "sales_receipts"
+      - "invoices"
+      - "company_enrichment"
+    data_quality:
+      check_freshness: true
+      max_age_hours: 48
+      required_columns:
+        customers: ["customer_name", "main_email"]
+        items: ["item_name", "snapshot_date"]
+
+  # Future sources (disabled for now)
+  attio:
+    enabled: false
+    schedule: "hourly"
+    path: "pipelines/attio"
+    priority: 2
+    description: "Attio CRM data via OpenAPI"
+    tables:
+      - "contacts"
+      - "companies"
+      - "deals"
+      - "activities"
+    data_quality:
+      check_freshness: true
+      max_age_hours: 2
+      
+  google_analytics:
+    enabled: false
+    schedule: "daily"
+    path: "pipelines/google_analytics"
+    priority: 3
+    description: "Google Analytics 4 data via API"
+    tables:
+      - "sessions"
+      - "events"
+      - "conversions"
+      - "audience"
+    data_quality:
+      check_freshness: true
+      max_age_hours: 24
+      
+  shopify:
+    enabled: false
+    schedule: "hourly"
+    path: "pipelines/shopify"
+    priority: 4
+    description: "Shopify e-commerce data via REST API"
+    tables:
+      - "orders"
+      - "products"
+      - "customers"
+      - "inventory"
+    data_quality:
+      check_freshness: true
+      max_age_hours: 2
+
+# DBT Configuration
+dbt:
+  enabled: true
+  run_after_sources: true
+  models_to_run:
+    - "staging"
+    - "intermediate" 
+    - "mart"
+  test_after_run: true
+
+# Data Quality Configuration
+data_quality:
+  enabled: true
+  run_after_dbt: true
+  alert_on_issues: true
+  max_acceptable_issues: 5
+
+# Scheduling Configuration
+scheduling:
+  timezone: "UTC"
+  retry_attempts: 3
+  retry_delay_minutes: 5

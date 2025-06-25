@@ -1,0 +1,8 @@
+# Customer Name Mappings
+# Format: original_name -> normalized_name
+# Lines starting with # are ignored
+# Add specific mappings for complex normalization cases
+
+# Example:
+# ZKxKZ LLC  End User -> ZKxKZ LLC
+# Acme Corp Customer -> Acme Corp
