@@ -44,7 +44,13 @@ company_product_metrics AS (
     SELECT 
         cpd.company_domain_key,
         cpd.product_service,
-        cpd.product_service_description,
+        -- Get the most recent product description for this company-product combination
+        (SELECT cpd2.product_service_description 
+         FROM company_product_details cpd2 
+         WHERE cpd2.company_domain_key = cpd.company_domain_key 
+           AND cpd2.product_service = cpd.product_service 
+         ORDER BY cpd2.transaction_date DESC 
+         LIMIT 1) as product_service_description,
         
         -- Purchase metrics
         COUNT(*) as total_transactions,
@@ -75,7 +81,7 @@ company_product_metrics AS (
     FROM company_product_details cpd
     LEFT JOIN {{ ref('fct_products') }} p ON cpd.product_service = p.item_name
     WHERE cpd.company_domain_key != 'NO_EMAIL_DOMAIN'
-    GROUP BY cpd.company_domain_key, cpd.product_service, cpd.product_service_description
+    GROUP BY cpd.company_domain_key, cpd.product_service
 )
 
 SELECT 
