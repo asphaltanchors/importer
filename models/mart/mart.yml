@@ -540,3 +540,145 @@ models:
           - not_null
           - accepted_values:
               values: ['Rare Buyer (<5 orders)', 'Occasional Buyer (5-9 orders)', 'Regular Buyer (10-19 orders)', 'Frequent Buyer (20+ orders)']
+
+  - name: mart_product_company_period_spending
+    description: >
+      Product-company period-based spending analytics for dashboard queries.
+      Pre-calculates spending metrics across multiple time periods (30d, 90d, 1y, all_time)
+      to eliminate complex runtime joins. Enables "top companies for product X in period Y" queries.
+      Each row represents one product-company-period combination with spending > 0.
+    columns:
+      - name: product_service
+        description: Product/service code
+        tests:
+          - not_null
+      
+      - name: company_domain_key
+        description: Links to fct_companies.company_domain_key
+        tests:
+          - not_null
+      
+      - name: company_name
+        description: Company name
+        tests:
+          - not_null
+      
+      - name: period_type
+        description: Time period for the aggregation
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['trailing_30d', 'trailing_90d', 'trailing_1y', 'all_time']
+      
+      - name: total_amount_spent
+        description: Total amount spent by this company on this product in this period
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "> 0"
+      
+      - name: total_transactions
+        description: Number of transactions for this product-company-period
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "> 0"
+      
+      - name: total_quantity_purchased
+        description: Total quantity purchased in this period (defaults to 0 for NULL quantities)
+        tests:
+          - not_null
+      
+      - name: avg_unit_price
+        description: Average unit price paid in this period
+      
+      - name: first_purchase_date
+        description: First purchase date for this product-company combination (across all time)
+        tests:
+          - not_null
+      
+      - name: last_purchase_date
+        description: Most recent purchase date for this product-company combination (across all time)
+        tests:
+          - not_null
+      
+      - name: latest_customer
+        description: Customer name from most recent transaction
+      
+      - name: latest_source_type
+        description: Source type from most recent transaction (invoice or sales_receipt)
+        tests:
+          - accepted_values:
+              values: ['invoice', 'sales_receipt']
+      
+      - name: domain_type
+        description: Company domain type (corporate or individual)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['corporate', 'individual']
+      
+      - name: business_size_category
+        description: Company size classification
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Individual Customer', 'Single Location', 'Small Multi-Location', 'Medium Multi-Location', 'Large Multi-Location']
+      
+      - name: company_revenue_category
+        description: Company revenue classification
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['No Revenue', 'Low Value (<$5K)', 'Growing Value ($5K-$25K)', 'Medium Value ($25K-$100K)', 'High Value ($100K+)']
+      
+      - name: product_family
+        description: Product family from fct_products (may be NULL for products not in fct_products)
+      
+      - name: material_type
+        description: Material type from fct_products (may be NULL for products not in fct_products)
+      
+      - name: is_kit
+        description: Boolean flag if product is a kit (may be NULL for products not in fct_products)
+      
+      - name: lifetime_buyer_status
+        description: Buyer status from fct_company_products (lifetime perspective, may be NULL for new products)
+        tests:
+          - accepted_values:
+              values: ['Active Buyer', 'Recent Buyer', 'Dormant Buyer', 'Inactive Buyer']
+      
+      - name: lifetime_volume_category
+        description: Purchase volume category from fct_company_products (lifetime perspective, may be NULL for new products)
+        tests:
+          - accepted_values:
+              values: ['Occasional (<$500)', 'Low Volume ($500-$2.5K)', 'Medium Volume ($2.5K-$10K)', 'High Volume ($10K+)']
+      
+      - name: period_buyer_status
+        description: Buyer status classification based on period recency
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Recent Buyer (30d)', 'Active Buyer (90d)', 'Past Year Buyer', 'Historical Buyer']
+      
+      - name: period_spending_category
+        description: Spending classification for this specific period
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['No Period Spending', 'Minimal Spender (<$500)', 'Low Spender ($500-$2.5K)', 'Medium Spender ($2.5K-$10K)', 'High Spender ($10K+)']
+      
+      - name: price_variance_percentage
+        description: Percentage variance between period average price and standard sales price
+      
+      - name: period_share_of_lifetime_spending
+        description: What percentage of lifetime spending on this product occurred in this period
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0 AND period_share_of_lifetime_spending <= 100"
+      
+      - name: days_since_last_purchase
+        description: Days since last purchase of this product by this company
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
