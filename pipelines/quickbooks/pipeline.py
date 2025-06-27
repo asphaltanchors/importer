@@ -1,19 +1,22 @@
-# pipeline.py
+# ABOUTME: Main DLT pipeline for QuickBooks XLSX data extraction and transformation
+# ABOUTME: Supports seed (full historical) and incremental (daily) loading modes
 
 import os
+import sys
 import glob
-import csv
 import json
 import subprocess
+import re
+import argparse
 from datetime import datetime
+from pathlib import Path
 
 import dlt
-import sys
+import pandas as pd
 
-# Add pipelines directory to path for shared imports
+# Add pipelines directory to path for shared imports  
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from shared import get_database_url, get_dlt_destination, validate_environment_variables
-
 from domain_consolidation import analyze_domains, create_domain_mapping_table, create_customer_name_mapping_table
 
 # Validate required environment variables
@@ -31,320 +34,509 @@ except ValueError as e:
 # Validate DROPBOX_PATH directory exists
 if not os.path.exists(DROPBOX_PATH):
     print(f"ERROR: DROPBOX_PATH directory does not exist: {DROPBOX_PATH}")
-    print("Please check that:")
-    print("1. The path is correct in your .env file")
-    print("2. The directory exists and is accessible")
-    print("3. You have read permissions for the directory")
     exit(1)
 
 if not os.path.isdir(DROPBOX_PATH):
     print(f"ERROR: DROPBOX_PATH is not a directory: {DROPBOX_PATH}")
-    print("Please ensure DROPBOX_PATH points to a directory, not a file.")
     exit(1)
 
-# Check for CSV files in the directory
-csv_patterns = [
-    "Customer_*.csv", "01_BACKUP_Customer_*.csv",
-    "Item_*.csv", "01_BACKUP_Item_*.csv", 
-    "Sales*.csv", "01_BACKUP_Sales_*.csv",
-    "Invoice_*.csv", "01_BACKUP_Invoice_*.csv"
-]
-
-found_files = []
-for pattern in csv_patterns:
-    found_files.extend(glob.glob(os.path.join(DROPBOX_PATH, pattern)))
-
-if not found_files:
-    print(f"WARNING: No CSV files found in DROPBOX_PATH: {DROPBOX_PATH}")
-    print("Expected file patterns:")
-    for pattern in csv_patterns:
-        print(f"  - {pattern}")
-    print("\nPlease ensure QuickBooks CSV exports are placed in this directory.")
-    print("The pipeline will continue but may not process any data.")
+# Define paths
+SEED_PATH = os.path.join(DROPBOX_PATH, "seed")
+INPUT_PATH = os.path.join(DROPBOX_PATH, "input")
 
 print(f"Using DROPBOX_PATH: {DROPBOX_PATH}")
-print(f"Found {len(found_files)} CSV files to process")
+print(f"Seed directory: {SEED_PATH}")
+print(f"Input directory: {INPUT_PATH}")
 
-# 1) Define your source
+# Define worksheet mappings
+LIST_WORKSHEETS = [
+    'Account', 'Vendor', 'Employee', 'Item Discount', 'Item', 'Customer'
+]
+
+TRANSACTION_WORKSHEETS = [
+    'Invoice', 'Sales Order', 'Estimate', 'Sales Receipt', 'Credit Memo', 
+    'Payment', 'Purchase Order', 'Bill', 'Bill Payment', 'Check', 
+    'Credit Card Charge', 'Trial Balance', 'Deposit', 'Inventory Adjustment', 
+    'Journal Entry', 'Build Assembly', 'Custom Txn Detail'
+]
+
+def extract_date_from_filename(filename):
+    """Extract date from daily XLSX filename"""
+    # Pattern: {DATE}_transactions.xlsx or {DATE}_lists.xlsx
+    match = re.match(r'(\d{4}-\d{2}-\d{2})_(?:transactions|lists)\.xlsx', filename)
+    if match:
+        return match.group(1)
+    
+    # Fallback for test files
+    if 'test' in filename.lower():
+        return datetime.now().strftime('%Y-%m-%d')
+        
+    raise ValueError(f"Could not extract date from filename: {filename}")
+
+def get_daily_files(input_path, file_type=None, latest_only=False):
+    """Get daily files from input directory
+    
+    Args:
+        input_path: Path to input directory
+        file_type: 'transactions' or 'lists' to filter, None for both
+        latest_only: If True, return only the most recent file for each type
+    """
+    if file_type:
+        pattern = f"*_{file_type}.xlsx"
+    else:
+        pattern = "*_*.xlsx"
+    
+    files = glob.glob(os.path.join(input_path, pattern))
+    
+    if not files:
+        return []
+    
+    # Parse and sort files by date
+    file_info = []
+    for filepath in files:
+        filename = os.path.basename(filepath)
+        try:
+            date_str = extract_date_from_filename(filename)
+            file_info.append({
+                'path': filepath,
+                'filename': filename,
+                'date': date_str,
+                'datetime': datetime.strptime(date_str, '%Y-%m-%d'),
+                'type': 'transactions' if 'transactions' in filename else 'lists'
+            })
+        except ValueError as e:
+            print(f"Warning: {e}")
+            continue
+    
+    # Sort by date (newest first)
+    file_info.sort(key=lambda x: x['datetime'], reverse=True)
+    
+    if latest_only:
+        # Return only the latest file for each type
+        latest_files = {}
+        for info in file_info:
+            if info['type'] not in latest_files:
+                latest_files[info['type']] = info
+        return list(latest_files.values())
+    
+    return file_info
+
+def standardize_column_names(df):
+    """Standardize column names for consistency"""
+    df.columns = [col.strip().replace('/', '_').replace(' ', '_').replace('.', '') for col in df.columns]
+    return df
+
+def process_worksheet_data(df, worksheet_name, file_info, is_seed=False):
+    """Process and enrich worksheet data"""
+    df = standardize_column_names(df)
+    
+    # Add metadata columns
+    for _, row in df.iterrows():
+        yield {
+            **row.to_dict(),
+            "load_date": datetime.utcnow().date().isoformat(),
+            "snapshot_date": file_info.get('date', datetime.now().strftime('%Y-%m-%d')),
+            "is_seed": is_seed,
+            "worksheet_name": worksheet_name,
+            "source_file": os.path.basename(file_info['path'])
+        }
+
 @dlt.source
-def qb_source():
-    # customers resource
-    @dlt.resource(
-        write_disposition="merge",
-        name="customers",
-        primary_key=["QuickBooks Internal Id"]
-    )
-    def extract_customers():
-        # First process backup files
-        backup_pattern = os.path.join(DROPBOX_PATH, "01_BACKUP_Customer_*.csv")
-        for f in sorted(glob.glob(backup_pattern)):
-            print(f"Processing backup file: {f}")
-            with open(f, newline="") as fh:
-                rdr = csv.DictReader(fh)
-                for row in rdr:
-                    yield {
-                        **row,
-                        "load_date": datetime.utcnow().date().isoformat(),
-                        "is_backup": True
-                    }
+def xlsx_quickbooks_source(mode="full"):
+    """Extract QuickBooks XLSX worksheets
+    
+    Args:
+        mode: 'seed', 'incremental', or 'full'
+              - 'seed': Load only seed data (historical)
+              - 'incremental': Load only latest daily data
+              - 'full': Load seed + all incremental data
+    """
+    resources = []
+    
+    # Determine which files to process
+    files_to_process = []
+    
+    if mode in ['seed', 'full']:
+        # Add seed files
+        seed_lists = os.path.join(SEED_PATH, "all_lists.xlsx")
+        seed_transactions = os.path.join(SEED_PATH, "all_transactions.xlsx")
         
-        # Then process daily files
-        pattern = os.path.join(DROPBOX_PATH, "Customer_*.csv")
-        for f in sorted(glob.glob(pattern)):
-            print(f"Processing daily file: {f}")
-            with open(f, newline="") as fh:
-                rdr = csv.DictReader(fh)
-                for row in rdr:
-                    yield {
-                        **row,
-                        "load_date": datetime.utcnow().date().isoformat(),
-                        "is_backup": False
-                    }
-
-    # items resource
-    @dlt.resource(
-        write_disposition="merge",
-        name="items",
-        primary_key=["Item Name", "snapshot_date"]  # Composite key with item name and date
-    )
-    def extract_items():
-        import re
+        if os.path.exists(seed_lists):
+            files_to_process.append({
+                'path': seed_lists,
+                'filename': 'all_lists.xlsx',
+                'date': 'seed',
+                'type': 'lists',
+                'is_seed': True
+            })
+            print(f"Found seed lists file: {seed_lists}")
         
-        # Group files by date to ensure we process the latest file for each day
-        files_by_date = {}
-        
-        # First process backup files - they take precedence for their dates
-        backup_pattern = os.path.join(DROPBOX_PATH, "01_BACKUP_Item_*.csv")
-        for f in glob.glob(backup_pattern):
-            # Extract date from backup filename (format: 01_BACKUP_Item_MM_DD_YYYY.csv)
-            filename = os.path.basename(f)
-            date_match = re.match(r'01_BACKUP_Item_(\d{2})_(\d{2})_(\d{4})\.csv', filename)
-            
-            if date_match:
-                month, day, year = date_match.groups()
-                
-                # Format as ISO date (YYYY-MM-DD)
-                date_str = f"{year}-{month}-{day}"
-                
-                # Create a datetime object for sorting - use a high time to ensure precedence
-                file_datetime = datetime(
-                    int(year), int(month), int(day), 23, 59, 59
-                )
-                
-                # Always use backup files if available
-                files_by_date[date_str] = {
-                    'path': f,
-                    'datetime': file_datetime,
-                    'is_backup': True
-                }
-                print(f"Processing backup item file for date {date_str}: {f}")
-        
-        # Then process daily files
-        daily_pattern = os.path.join(DROPBOX_PATH, "Item_*.csv")
-        for f in glob.glob(daily_pattern):
-            # Extract date from filename (format: Item_MM_DD_YYYY_H_MM_SS.csv)
-            filename = os.path.basename(f)
-            date_match = re.match(r'Item_(\d{2})_(\d{2})_(\d{4})_(\d+)_(\d{2})_(\d{2})\.csv', filename)
-            
-            if date_match:
-                month, day, year, hour, minute, second = date_match.groups()
-                
-                # Format as ISO date (YYYY-MM-DD)
-                date_str = f"{year}-{month}-{day}"
-                
-                # Create a datetime object for sorting
-                file_datetime = datetime(
-                    int(year), int(month), int(day), 
-                    int(hour), int(minute), int(second)
-                )
-                
-                # Group by date, keeping track of the full path and datetime
-                # Only use daily file if we don't have a backup for this date
-                # or if this daily file is newer than the previous daily file
-                if date_str not in files_by_date:
-                    files_by_date[date_str] = {
-                        'path': f,
-                        'datetime': file_datetime,
-                        'is_backup': False
-                    }
-                elif not files_by_date[date_str].get('is_backup', False) and file_datetime > files_by_date[date_str]['datetime']:
-                    files_by_date[date_str] = {
-                        'path': f,
-                        'datetime': file_datetime,
-                        'is_backup': False
-                    }
-        
-        # Process the files in date order
-        for date_str, file_info in sorted(files_by_date.items()):
-            print(f"Processing item file for date {date_str}: {file_info['path']}")
-            with open(file_info['path'], newline="") as fh:
-                rdr = csv.DictReader(fh)
-                for row in rdr:
-                    yield {
-                        **row,
-                        "load_date": datetime.utcnow().date().isoformat(),
-                        "snapshot_date": date_str,  # Add the extracted date
-                        "is_backup": file_info.get('is_backup', False)
-                    }
-
-    # sales_receipts
-    @dlt.resource(
-        write_disposition="merge",
-        name="sales_receipts",
-        primary_key=["QuickBooks Internal Id", "Product/Service"]
-    )
-    def extract_sales_receipts():
-        # First process backup files
-        backup_pattern = os.path.join(DROPBOX_PATH, "01_BACKUP_Sales_*.csv")
-        for f in sorted(glob.glob(backup_pattern)):
-            print(f"Processing backup sales file: {f}")
-            with open(f, newline="") as fh:
-                rdr = csv.DictReader(fh)
-                for row in rdr:
-                    yield { 
-                        **row, 
-                        "load_date": datetime.utcnow().date().isoformat(),
-                        "is_backup": True
-                    }
-                    
-        # Then process daily files
-        pattern = os.path.join(DROPBOX_PATH, "Sales*.csv")
-        for f in sorted(glob.glob(pattern)):
-            print(f"Processing daily sales file: {f}")
-            with open(f, newline="") as fh:
-                rdr = csv.DictReader(fh)
-                for row in rdr:
-                    yield { 
-                        **row, 
-                        "load_date": datetime.utcnow().date().isoformat(),
-                        "is_backup": False
-                    }
-
-    # invoices
-    @dlt.resource(
-        write_disposition="merge",
-        name="invoices",
-        primary_key=["QuickBooks Internal Id", "Product/Service"]
-    )
-    def extract_invoices():
-        # First process backup files
-        backup_pattern = os.path.join(DROPBOX_PATH, "01_BACKUP_Invoice_*.csv")
-        for f in sorted(glob.glob(backup_pattern)):
-            print(f"Processing backup invoice file: {f}")
-            with open(f, newline="") as fh:
-                rdr = csv.DictReader(fh)
-                for row in rdr:
-                    yield { 
-                        **row, 
-                        "load_date": datetime.utcnow().date().isoformat(),
-                        "is_backup": True
-                    }
-                    
-        # Then process daily files
-        pattern = os.path.join(DROPBOX_PATH, "Invoice_*.csv")
-        for f in sorted(glob.glob(pattern)):
-            print(f"Processing daily invoice file: {f}")
-            with open(f, newline="") as fh:
-                rdr = csv.DictReader(fh)
-                for row in rdr:
-                    yield { 
-                        **row, 
-                        "load_date": datetime.utcnow().date().isoformat(),
-                        "is_backup": False
-                    }
-
-    # company_enrichment resource
-    @dlt.resource(
-        write_disposition="merge",
-        name="company_enrichment",
-        primary_key=["company_domain"]
-    )
-    def extract_company_enrichment():
-        """One-time load of pre-enriched company data from JSONL file"""
-        enrichment_file = os.path.join(DROPBOX_PATH, "company_enrichment.jsonl")
-        print(f"Checking for company enrichment file at: {enrichment_file}")
-        
-        if os.path.exists(enrichment_file):
-            file_size = os.path.getsize(enrichment_file)
-            print(f"Found company enrichment file: {enrichment_file} ({file_size} bytes)")
-            
-            record_count = 0
-            with open(enrichment_file, 'r') as fh:
-                for line_num, line in enumerate(fh, 1):
-                    line = line.strip()
-                    if line:  # Skip empty lines
-                        try:
-                            data = json.loads(line)
-                            record_count += 1
-                            yield {
-                                **data,
-                                "load_date": datetime.utcnow().date().isoformat(),
-                                "is_manual_load": True
-                            }
-                        except json.JSONDecodeError as e:
-                            print(f"Warning: Failed to parse JSON line {line_num}: {e}")
-                            print(f"Problematic line: {line[:100]}...")
-                            continue
-            
-            print(f"Company enrichment: processed {record_count} records from {enrichment_file}")
+        if os.path.exists(seed_transactions):
+            files_to_process.append({
+                'path': seed_transactions,
+                'filename': 'all_transactions.xlsx',
+                'date': 'seed',
+                'type': 'transactions',
+                'is_seed': True
+            })
+            print(f"Found seed transactions file: {seed_transactions}")
+    
+    if mode in ['incremental', 'full']:
+        # Add incremental files
+        if mode == 'incremental':
+            # Only latest files for cron jobs
+            daily_files = get_daily_files(INPUT_PATH, latest_only=True)
         else:
-            print(f"Company enrichment file not found: {enrichment_file}")
-            print(f"Directory contents: {os.listdir(DROPBOX_PATH) if os.path.exists(DROPBOX_PATH) else 'DROPBOX_PATH does not exist'}")
+            # All historical daily files for full bootstrap
+            daily_files = get_daily_files(INPUT_PATH, latest_only=False)
+        
+        for file_info in daily_files:
+            file_info['is_seed'] = False
+            files_to_process.append(file_info)
+        
+        print(f"Found {len(daily_files)} daily files in {INPUT_PATH}")
+    
+    print(f"Processing {len(files_to_process)} files in {mode} mode")
+    
+    # Group files by type for processing
+    list_files = [f for f in files_to_process if f['type'] == 'lists']
+    transaction_files = [f for f in files_to_process if f['type'] == 'transactions']
+    
+    # Create resources for list worksheets
+    def create_list_resource(worksheet_name):
+        table_name = f"xlsx_{worksheet_name.lower().replace(' ', '_')}"
+        
+        @dlt.resource(
+            write_disposition="merge",
+            name=table_name,
+            primary_key=["QuickBooks_Internal_Id", "snapshot_date"]
+        )
+        def extract_list_worksheet():
+            for file_info in list_files:
+                try:
+                    print(f"Processing {worksheet_name} from {file_info['filename']}")
+                    df = pd.read_excel(file_info['path'], sheet_name=worksheet_name)
+                    if len(df) > 0:
+                        yield from process_worksheet_data(df, worksheet_name, file_info, file_info['is_seed'])
+                    else:
+                        print(f"No data in {worksheet_name} worksheet")
+                except Exception as e:
+                    print(f"Error processing {worksheet_name} from {file_info['filename']}: {e}")
+        
+        return extract_list_worksheet
+    
+    for worksheet_name in LIST_WORKSHEETS:
+        resources.append(create_list_resource(worksheet_name))
+    
+    # Create resources for transaction worksheets
+    def create_transaction_resource(worksheet_name):
+        table_name = f"xlsx_{worksheet_name.lower().replace(' ', '_')}"
+        
+        # Set primary key based on worksheet structure
+        if worksheet_name == 'Trial Balance':
+            primary_key = ["S_No", "Trial_Balance_No", "Account_Name", "snapshot_date"]
+        elif worksheet_name in ['Custom Txn Detail']:
+            primary_key = ["S_No", "snapshot_date"]
+        else:
+            primary_key = ["QuickBooks_Internal_Id", "S_No"] 
+        
+        @dlt.resource(
+            write_disposition="merge", 
+            name=table_name,
+            primary_key=primary_key
+        )
+        def extract_transaction_worksheet():
+            for file_info in transaction_files:
+                try:
+                    print(f"Processing {worksheet_name} from {file_info['filename']}")
+                    df = pd.read_excel(file_info['path'], sheet_name=worksheet_name)
+                    if len(df) > 0:
+                        yield from process_worksheet_data(df, worksheet_name, file_info, file_info['is_seed'])
+                    else:
+                        print(f"No data in {worksheet_name} worksheet")
+                except Exception as e:
+                    print(f"Error processing {worksheet_name} from {file_info['filename']}: {e}")
+        
+        return extract_transaction_worksheet
+    
+    for worksheet_name in TRANSACTION_WORKSHEETS:
+        resources.append(create_transaction_resource(worksheet_name))
+    
+    # Company enrichment resource (only load in seed or full mode)
+    if mode in ['seed', 'full']:
+        @dlt.resource(
+            write_disposition="merge",
+            name="company_enrichment", 
+            primary_key=["company_domain"]
+        )
+        def extract_company_enrichment():
+            """Load pre-enriched company data from JSONL file"""
+            enrichment_file = os.path.join(SEED_PATH, "company_enrichment.jsonl")
+            print(f"Checking for company enrichment file at: {enrichment_file}")
+            
+            if os.path.exists(enrichment_file):
+                file_size = os.path.getsize(enrichment_file)
+                print(f"Found company enrichment file: {enrichment_file} ({file_size} bytes)")
+                
+                record_count = 0
+                with open(enrichment_file, 'r') as fh:
+                    for line_num, line in enumerate(fh, 1):
+                        line = line.strip()
+                        if line:
+                            try:
+                                data = json.loads(line)
+                                record_count += 1
+                                yield {
+                                    **data,
+                                    "load_date": datetime.utcnow().date().isoformat(),
+                                    "is_seed": True
+                                }
+                            except json.JSONDecodeError as e:
+                                print(f"Warning: Failed to parse JSON line {line_num}: {e}")
+                                continue
+                
+                print(f"Company enrichment: processed {record_count} records")
+            else:
+                print(f"Company enrichment file not found: {enrichment_file}")
+        
+        resources.append(extract_company_enrichment)
+        
+        # Historical items import resource (seed mode only)
+        @dlt.resource(
+            write_disposition="merge",
+            name="xlsx_item_historical", 
+            primary_key=["QuickBooks_Internal_Id", "snapshot_date"]
+        )
+        def import_historical_items():
+            """Load historical items data from JSONL file during seed"""
+            historical_items_file = os.path.join(SEED_PATH, "historical_items.jsonl")
+            print(f"Checking for historical items file at: {historical_items_file}")
+            
+            if os.path.exists(historical_items_file):
+                file_size = os.path.getsize(historical_items_file)
+                print(f"Found historical items file: {historical_items_file} ({file_size} bytes)")
+                
+                record_count = 0
+                with open(historical_items_file, 'r') as fh:
+                    for line_num, line in enumerate(fh, 1):
+                        line = line.strip()
+                        if line:
+                            try:
+                                data = json.loads(line)
+                                record_count += 1
+                                
+                                # Remove export metadata fields before loading
+                                data.pop('historical_export_timestamp', None)
+                                data.pop('historical_export_mode', None)
+                                
+                                # Ensure load_date and is_seed are set appropriately
+                                data["load_date"] = datetime.utcnow().date().isoformat()
+                                data["is_seed"] = True
+                                data["worksheet_name"] = "Item"
+                                data["source_file"] = "historical_items.jsonl"
+                                
+                                yield data
+                            except json.JSONDecodeError as e:
+                                print(f"Warning: Failed to parse JSON line {line_num}: {e}")
+                                continue
+                
+                print(f"Historical items import: processed {record_count} records")
+            else:
+                print(f"Historical items file not found: {historical_items_file}")
+        
+        resources.append(import_historical_items)
+    
+    # Historical items tracking resource (for incremental and full modes)
+    if mode in ['incremental', 'full']:
+        @dlt.resource(
+            write_disposition="append",
+            name="historical_items_export"
+        )
+        def export_historical_items():
+            """Export new xlsx_item records to JSONL for historical preservation"""
+            from shared import get_database_url
+            import psycopg2
+            
+            # Path for historical items JSONL file
+            historical_items_file = os.path.join(SEED_PATH, "historical_items.jsonl")
+            
+            # Get last exported snapshot date
+            last_exported_date = None
+            if os.path.exists(historical_items_file):
+                try:
+                    with open(historical_items_file, 'r') as f:
+                        # Read last line to get most recent export
+                        lines = f.readlines()
+                        if lines:
+                            last_record = json.loads(lines[-1].strip())
+                            last_exported_date = last_record.get('snapshot_date')
+                            print(f"Last exported snapshot date: {last_exported_date}")
+                except Exception as e:
+                    print(f"Warning: Could not read last export date: {e}")
+            
+            # Connect to database and get new records
+            try:
+                database_url = get_database_url()
+                conn = psycopg2.connect(database_url)
+                cursor = conn.cursor()
+                
+                # Query for new records
+                if last_exported_date:
+                    query = """
+                    SELECT * FROM raw.xlsx_item 
+                    WHERE snapshot_date > %s
+                    ORDER BY item_name, snapshot_date
+                    """
+                    cursor.execute(query, (last_exported_date,))
+                else:
+                    # First time - export all
+                    query = """
+                    SELECT * FROM raw.xlsx_item 
+                    ORDER BY item_name, snapshot_date
+                    """
+                    cursor.execute(query)
+                
+                columns = [desc[0] for desc in cursor.description]
+                records = cursor.fetchall()
+                
+                if records:
+                    # Append new records to JSONL file
+                    with open(historical_items_file, 'a') as f:
+                        for record in records:
+                            record_dict = dict(zip(columns, record))
+                            
+                            # Convert non-serializable types
+                            for key, value in record_dict.items():
+                                if value is None:
+                                    record_dict[key] = None
+                                elif isinstance(value, (str, int, float, bool)):
+                                    record_dict[key] = value
+                                else:
+                                    record_dict[key] = str(value)
+                            
+                            # Add export metadata
+                            record_dict['historical_export_timestamp'] = datetime.utcnow().isoformat()
+                            record_dict['historical_export_mode'] = mode
+                            
+                            f.write(json.dumps(record_dict) + '\n')
+                    
+                    print(f"✅ Exported {len(records)} new xlsx_item records to {historical_items_file}")
+                else:
+                    print("No new xlsx_item records to export")
+                
+                cursor.close()
+                conn.close()
+                
+                # Yield a status record for DLT tracking
+                yield {
+                    "export_timestamp": datetime.utcnow().isoformat(),
+                    "records_exported": len(records),
+                    "last_exported_date": last_exported_date,
+                    "export_file": historical_items_file,
+                    "mode": mode
+                }
+                
+            except Exception as e:
+                print(f"Warning: Historical items export failed: {e}")
+                # Don't fail the pipeline - this is supplementary
+                yield {
+                    "export_timestamp": datetime.utcnow().isoformat(),
+                    "records_exported": 0,
+                    "error": str(e),
+                    "mode": mode
+                }
+        
+        resources.append(export_historical_items)
+    
+    return resources
 
-    # **Return** your resource functions in a list
-    return [
-        extract_customers,
-        extract_items,
-        extract_sales_receipts,
-        extract_invoices,
-        extract_company_enrichment
-    ]
-
-# 3) Run it
-if __name__ == "__main__":
-    # 1. Run DLT pipeline to load data
-    # Use centralized DLT destination configuration
-    postgres_config = get_dlt_destination()
-    
-    load_pipeline = dlt.pipeline(
-        pipeline_name="dqi",
-        destination=postgres_config,
-        dataset_name="raw",
-    )
-    load_info = load_pipeline.run(qb_source())
-    print("DLT pipeline complete:", load_info)
-    
-    # 2. Run domain consolidation to create mapping tables
-    print("\nRunning domain consolidation...")
-    try:
-        domain_stats, normalization_mapping = analyze_domains()
-        create_domain_mapping_table()
-        create_customer_name_mapping_table()
-        print("Domain consolidation complete: raw.domain_mapping and raw.customer_name_mapping tables created")
-    except Exception as e:
-        print(f"❌ Error during domain consolidation: {e}")
-        raise
-    
-    # 3. Run DBT transformations
+def run_dbt_transformations():
+    """Run DBT transformations"""
     print("\nRunning DBT transformations...")
     try:
-        # Change to root directory where dbt_project.yml and profiles.yml are located
+        # Change to project root directory for DBT commands
         original_cwd = os.getcwd()
-        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-        os.chdir(root_dir)
+        project_root = os.path.join(os.path.dirname(__file__), "../..")
+        os.chdir(project_root)
         
         result = subprocess.run(["dbt", "run"], check=True, capture_output=True, text=True)
-        print("DBT transformations complete:", result.stdout)
+        print("DBT transformations complete")
         
-        # Change back to original directory
+        # Return to original directory
         os.chdir(original_cwd)
+        return True
     except subprocess.CalledProcessError as e:
-        # Change back to original directory on error
+        # Return to original directory on error
         os.chdir(original_cwd)
         print(f"❌ DBT run failed: {e}")
         print("STDOUT:", e.stdout)
         print("STDERR:", e.stderr)
-        raise
+        return False
+
+def run_domain_consolidation():
+    """Run domain consolidation to create mapping tables"""
+    print("\nRunning domain consolidation...")
+    try:
+        # Change to project root directory where domain_consolidation.py exists
+        original_cwd = os.getcwd()
+        project_root = os.path.join(os.path.dirname(__file__), "../..")
+        os.chdir(project_root)
+        
+        domain_stats, normalization_mapping = analyze_domains()
+        create_domain_mapping_table()
+        create_customer_name_mapping_table()
+        print("Domain consolidation complete")
+        
+        # Return to original directory
+        os.chdir(original_cwd)
+        return True
+    except Exception as e:
+        # Return to original directory on error
+        os.chdir(original_cwd)
+        print(f"❌ Error during domain consolidation: {e}")
+        return False
+
+def main():
+    parser = argparse.ArgumentParser(description='QuickBooks XLSX Pipeline')
+    parser.add_argument('--mode', 
+                       choices=['seed', 'incremental', 'full'], 
+                       default='full',
+                       help='Loading mode: seed (historical only), incremental (latest daily), full (seed + all incremental)')
+    parser.add_argument('--skip-dbt', action='store_true', help='Skip DBT transformations')
+    parser.add_argument('--skip-domain', action='store_true', help='Skip domain consolidation')
+    parser.add_argument('--export-historical-items', action='store_true', help='Export current historical items to JSONL')
     
-    print("\n✅ Complete pipeline finished successfully!")
-    print("Data flow: DLT extraction → Domain consolidation → DBT transformations")
+    args = parser.parse_args()
+    
+    print(f"Running QuickBooks XLSX pipeline in {args.mode} mode")
+    
+    # 1. Run DLT pipeline to load XLSX data
+    load_pipeline = dlt.pipeline(
+        pipeline_name="xlsx_quickbooks_pipeline",
+        destination=get_dlt_destination(), 
+        dataset_name="raw",
+    )
+    
+    try:
+        load_info = load_pipeline.run(xlsx_quickbooks_source(mode=args.mode))
+        print("DLT XLSX pipeline complete:", load_info)
+    except Exception as e:
+        print(f"❌ DLT pipeline failed: {e}")
+        return False
+    
+    # 2. Run domain consolidation (only needed for full/seed loads)
+    if not args.skip_domain and args.mode in ['seed', 'full']:
+        if not run_domain_consolidation():
+            return False
+    
+    # 3. Run DBT transformations
+    if not args.skip_dbt:
+        if not run_dbt_transformations():
+            return False
+    
+    print(f"\n✅ {args.mode.title()} pipeline finished successfully!")
+    return True
+
+if __name__ == "__main__":
+    success = main()
+    exit(0 if success else 1)

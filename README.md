@@ -1,15 +1,30 @@
 # QuickBooks Data Pipeline with DBT
 
-This project combines a DLT (Data Loading Tool) pipeline with DBT (Data Build Tool) transformations to process QuickBooks CSV exports and create analytics-ready datasets. The pipeline processes data from customers, items, sales receipts, and invoices, applying company name normalization and creating comprehensive fact tables for business intelligence.
+This project combines a DLT (Data Loading Tool) pipeline with DBT (Data Build Tool) transformations to process QuickBooks XLSX exports and create analytics-ready datasets. The pipeline processes data from customers, items, sales receipts, and invoices, applying company name normalization and creating comprehensive fact tables for business intelligence.
+
+**New Architecture**: The pipeline supports both seed (historical) and incremental (daily) loading modes for efficient data processing.
 
 ## Architecture
 
 ### Data Flow
 1. **Complete Pipeline** (`pipeline.py`): Orchestrates the complete data workflow:
-   - DLT extraction: Loads CSV files from Dropbox into PostgreSQL `raw` schema
+   - DLT extraction: Loads XLSX files from Dropbox into PostgreSQL `raw` schema
+   - Supports seed (historical) and incremental (daily) loading modes
    - Domain consolidation: Creates `raw.domain_mapping` for company consolidation
    - DBT transformations: Processes data through staging → intermediate → mart layers
 2. **Dashboard Integration**: Final `fct_*` tables feed into NextJS analytics dashboard
+
+### Directory Structure
+```
+/dropbox/quickbooks-csv/
+├── seed/
+│   ├── all_lists.xlsx           # Master customer/item data (one-time)
+│   ├── all_transactions.xlsx    # Historical transactions (one-time)
+│   └── company_enrichment.jsonl # External enrichment data
+└── input/
+    ├── {DATE}_transactions.xlsx  # Daily transaction increments
+    └── {DATE}_lists.xlsx        # Daily list updates
+```
 
 ### Schema Structure
 - **Raw Schema**: Raw data loaded by DLT (customers, items, sales_receipts, invoices, domain_mapping)
@@ -47,14 +62,20 @@ This project combines a DLT (Data Loading Tool) pipeline with DBT (Data Build To
 
 2. **Environment variables** in `.env` file:
    ```bash
-   DROPBOX_PATH=/path/to/your/dropbox/folder
+   DROPBOX_PATH=/path/to/your/dropbox/folder  # Parent directory containing seed/ and input/
    DATABASE_URL=postgresql://user:password@host:port/dbname
    ```
 
 3. **Run locally:**
    ```bash
-   # Complete pipeline (DLT + Domain Consolidation + DBT)
-   python pipeline.py
+   # Initial setup (load historical seed data)
+   python pipeline.py --mode seed
+   
+   # Daily incremental loading (latest files only)
+   python pipeline.py --mode incremental
+   
+   # Complete pipeline (seed + all incremental data)
+   python pipeline.py --mode full
    
    # Optional: Run DBT commands separately (requires virtual environment)
    source .venv/bin/activate
@@ -83,22 +104,23 @@ services:
 
 **Usage:**
 ```bash
-# Normal operation: Runs daily at midnight via cron
+# Normal operation: Runs incremental daily at midnight via cron
 docker-compose up -d
 
-# Run complete pipeline (DLT + Domain Consolidation + DBT)
+# Initial setup (load historical seed data once)
 docker-compose exec cron /app/entrypoint.sh seed
-# or equivalently:
-docker-compose exec cron /app/entrypoint.sh run
+
+# Force incremental run (latest daily files only)
+docker-compose exec cron /app/entrypoint.sh incremental
+
+# Run complete pipeline (seed + all incremental)
+docker-compose exec cron /app/entrypoint.sh full
 
 # Run only DBT tests (useful after manual fixes)
 docker-compose exec cron /app/entrypoint.sh test
 
 # Interactive shell
 docker-compose exec cron /app/entrypoint.sh shell
-
-# Direct pipeline execution
-docker-compose exec cron python pipeline.py
 ```
 
 ## Environment Configuration

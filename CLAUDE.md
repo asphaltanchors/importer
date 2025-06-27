@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a QuickBooks data pipeline combining DLT (Data Loading Tool) for extraction and DBT (Data Build Tool) for transformation. The pipeline processes QuickBooks CSV exports (customers, items, sales receipts, invoices) from a Dropbox sync folder and loads them into PostgreSQL with transformations.
+This is a QuickBooks data pipeline combining DLT (Data Loading Tool) for extraction and DBT (Data Build Tool) for transformation. The pipeline processes QuickBooks XLSX exports (customers, items, sales receipts, invoices) from a Dropbox sync folder and loads them into PostgreSQL with transformations.
+
+**Architecture**: Supports seed (historical) and incremental (daily) loading modes with proper directory structure separation.
 
 **Dashboard Integration**: This pipeline feeds data to a NextJS dashboard application. The `fct_*` tables in the mart schema are the final output tables directly consumed by the dashboard for analytics and reporting.
 
@@ -20,11 +22,17 @@ This file should be consulted when making pipeline improvements but should not b
 
 ### Running the Pipeline
 ```bash
-# Run the complete DLT pipeline
-python pipeline.py
-
 # Install dependencies
 uv pip install -r requirements.txt
+
+# Initial setup (load historical seed data)
+python pipeline.py --mode seed
+
+# Daily incremental loading (latest files only)
+python pipeline.py --mode incremental
+
+# Complete pipeline (seed + all incremental data)
+python pipeline.py --mode full
 ```
 
 ### DBT Commands
@@ -53,15 +61,28 @@ dbt docs serve
 ### Environment Setup
 Create a `.env` file with:
 ```
-DROPBOX_PATH=/path/to/dropbox/folder
+DROPBOX_PATH=/path/to/dropbox/folder  # Parent directory containing seed/ and input/
 DATABASE_URL=postgresql://user:password@host:port/dbname
+```
+
+### Directory Structure
+```
+/dropbox/quickbooks-csv/
+├── seed/
+│   ├── all_lists.xlsx           # Master customer/item data (one-time)
+│   ├── all_transactions.xlsx    # Historical transactions (one-time)
+│   └── company_enrichment.jsonl # External enrichment data
+└── input/
+    ├── {DATE}_transactions.xlsx  # Daily transaction increments
+    └── {DATE}_lists.xlsx        # Daily list updates
 ```
 
 ## Architecture
 
 ### Data Flow
-1. **DLT Pipeline** (`pipeline.py`): Extracts CSV files from Dropbox folder and loads into PostgreSQL `raw` schema
-2. **DBT Models**: Transform raw data through staging → intermediate → mart layers
+1. **DLT Pipeline** (`pipeline.py`): Extracts XLSX files from Dropbox folder and loads into PostgreSQL `raw` schema
+   - Supports seed (historical) and incremental (daily) loading modes
+2. **DBT Models**: Transform raw data through staging → intermediate → mart layers  
 3. **Name Matching**: `matcher.py` normalizes company names during extraction
 
 ### Schema Structure

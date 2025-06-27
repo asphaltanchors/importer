@@ -61,12 +61,13 @@ class PipelineOrchestrator:
             self.logger.info(f"Created default configuration: {self.config_path}")
             return default_config
     
-    def run_source_pipeline(self, source_name: str) -> Dict[str, Any]:
+    def run_source_pipeline(self, source_name: str, mode: str = "incremental") -> Dict[str, Any]:
         """
         Run individual source pipeline
         
         Args:
             source_name: Name of the data source
+            mode: Loading mode ('seed', 'incremental', 'full')
             
         Returns:
             Execution result dictionary
@@ -97,7 +98,7 @@ class PipelineOrchestrator:
             
             start_time = datetime.now()
             result = subprocess.run(
-                [sys.executable, "pipeline.py"],
+                [sys.executable, "pipeline.py", "--mode", mode],
                 capture_output=True,
                 text=True,
                 timeout=3600  # 1 hour timeout
@@ -224,7 +225,7 @@ class PipelineOrchestrator:
             self.logger.error(f"Error running data quality checks: {str(e)}")
             return {"status": "error", "message": str(e)}
     
-    def run_full_pipeline(self) -> Dict[str, Any]:
+    def run_full_pipeline(self, mode: str = "incremental") -> Dict[str, Any]:
         """Run complete pipeline in correct order"""
         self.logger.info("Starting full pipeline execution")
         start_time = datetime.now()
@@ -244,7 +245,7 @@ class PipelineOrchestrator:
             
             for source_name, source_config in sources:
                 if source_config.get("enabled", False):
-                    result = self.run_source_pipeline(source_name)
+                    result = self.run_source_pipeline(source_name, mode)
                     pipeline_results["sources"][source_name] = result
                     
                     if result["status"] not in ["success", "skipped"]:
@@ -289,6 +290,12 @@ def main():
         help="Execution mode"
     )
     parser.add_argument(
+        "--load-mode",
+        choices=["seed", "incremental", "full"],
+        default="incremental", 
+        help="Data loading mode: seed (historical only), incremental (latest daily), full (seed + all incremental)"
+    )
+    parser.add_argument(
         "--source",
         help="Source name (required for --mode source)"
     )
@@ -305,12 +312,12 @@ def main():
     
     try:
         if args.mode == "full":
-            result = orchestrator.run_full_pipeline()
+            result = orchestrator.run_full_pipeline(args.load_mode)
         elif args.mode == "source":
             if not args.source:
                 print("Error: --source required for source mode")
                 sys.exit(1)
-            result = orchestrator.run_source_pipeline(args.source)
+            result = orchestrator.run_source_pipeline(args.source, args.load_mode)
         elif args.mode == "dbt":
             result = orchestrator.run_dbt_transformations()
         elif args.mode == "data-quality":

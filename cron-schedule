@@ -1,3 +1,7 @@
-# Run multi-source pipeline daily at midnight UTC
-0 0 * * * root cd /app && /app/entrypoint.sh full >> /var/log/cron/pipeline.log 2>&1
+# Run incremental pipeline daily at midnight UTC (latest daily files only)
+0 0 * * * root cd /app && /app/entrypoint.sh incremental >> /var/log/cron/pipeline.log 2>&1
+
+# Note: Seed pipeline is run manually once during initial setup with:
+# /app/entrypoint.sh seed
+
 # Empty line required at end of cron files

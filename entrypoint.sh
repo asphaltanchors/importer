@@ -9,13 +9,49 @@ run_pipeline() {
     
     # Run complete pipeline using orchestrator
     echo "$(date): Running complete pipeline (all sources + DBT + data quality)..."
-    python orchestrator.py --mode full
+    python orchestrator.py --mode full --load-mode full
     if [ $? -ne 0 ]; then
         echo "$(date): Complete pipeline failed!" >&2
         exit 1
     fi
     
     echo "$(date): Multi-source data pipeline finished successfully!"
+}
+
+# Function to run seed data pipeline (historical data only)
+run_seed_pipeline() {
+    echo "$(date): Starting seed data pipeline..."
+    
+    # Change to app directory
+    cd /app
+    
+    # Run seed pipeline using orchestrator
+    echo "$(date): Running seed pipeline (historical data + DBT + data quality)..."
+    python orchestrator.py --mode full --load-mode seed
+    if [ $? -ne 0 ]; then
+        echo "$(date): Seed pipeline failed!" >&2
+        exit 1
+    fi
+    
+    echo "$(date): Seed data pipeline finished successfully!"
+}
+
+# Function to run incremental data pipeline (latest daily data only)
+run_incremental_pipeline() {
+    echo "$(date): Starting incremental data pipeline..."
+    
+    # Change to app directory
+    cd /app
+    
+    # Run incremental pipeline using orchestrator
+    echo "$(date): Running incremental pipeline (latest daily data + DBT)..."
+    python orchestrator.py --mode full --load-mode incremental
+    if [ $? -ne 0 ]; then
+        echo "$(date): Incremental pipeline failed!" >&2
+        exit 1
+    fi
+    
+    echo "$(date): Incremental data pipeline finished successfully!"
 }
 
 # Function to run individual data source
@@ -80,9 +116,17 @@ case "$1" in
         # Start cron in foreground mode
         exec cron -f
         ;;
-    "run"|"seed"|"full")
+    "run"|"full")
         echo "$(date): Running complete pipeline..."
         run_pipeline
+        ;;
+    "seed")
+        echo "$(date): Running seed pipeline (historical data)..."
+        run_seed_pipeline
+        ;;
+    "incremental")
+        echo "$(date): Running incremental pipeline (latest daily data)..."
+        run_incremental_pipeline
         ;;
     "source")
         echo "$(date): Running individual source pipeline..."
