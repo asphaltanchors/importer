@@ -126,20 +126,45 @@ def standardize_column_names(df):
     df.columns = [col.strip().replace('/', '_').replace(' ', '_').replace('.', '') for col in df.columns]
     return df
 
-def process_worksheet_data(df, worksheet_name, file_info, is_seed=False):
-    """Process and enrich worksheet data"""
+# Global cache for XLSX files to avoid re-reading
+_xlsx_file_cache = {}
+
+def get_xlsx_worksheets(file_path):
+    """Read XLSX file once and cache all worksheets"""
+    if file_path not in _xlsx_file_cache:
+        print(f"Loading XLSX file into cache: {os.path.basename(file_path)}")
+        try:
+            # Read all sheets at once
+            all_sheets = pd.read_excel(file_path, sheet_name=None)
+            _xlsx_file_cache[file_path] = all_sheets
+            print(f"Cached {len(all_sheets)} worksheets from {os.path.basename(file_path)}")
+        except Exception as e:
+            print(f"Error caching XLSX file {file_path}: {e}")
+            _xlsx_file_cache[file_path] = {}
+    
+    return _xlsx_file_cache[file_path]
+
+def process_worksheet_data(df, worksheet_name, file_info, is_seed=False, chunk_size=1000):
+    """Process and enrich worksheet data efficiently using vectorized operations"""
+    if df.empty:
+        return
+    
     df = standardize_column_names(df)
     
-    # Add metadata columns
-    for _, row in df.iterrows():
-        yield {
-            **row.to_dict(),
-            "load_date": datetime.utcnow().date().isoformat(),
-            "snapshot_date": file_info.get('date', datetime.now().strftime('%Y-%m-%d')),
-            "is_seed": is_seed,
-            "worksheet_name": worksheet_name,
-            "source_file": os.path.basename(file_info['path'])
-        }
+    # Add metadata columns using vectorized operations
+    df = df.copy()
+    df["load_date"] = datetime.utcnow().date().isoformat()
+    df["snapshot_date"] = file_info.get('date', datetime.now().strftime('%Y-%m-%d'))
+    df["is_seed"] = is_seed
+    df["worksheet_name"] = worksheet_name
+    df["source_file"] = os.path.basename(file_info['path'])
+    
+    # Convert to records in chunks for memory efficiency
+    total_rows = len(df)
+    for i in range(0, total_rows, chunk_size):
+        chunk = df.iloc[i:i+chunk_size]
+        records = chunk.to_dict('records')
+        yield from records
 
 @dlt.source
 def xlsx_quickbooks_source(mode="full"):
@@ -215,11 +240,18 @@ def xlsx_quickbooks_source(mode="full"):
             for file_info in list_files:
                 try:
                     print(f"Processing {worksheet_name} from {file_info['filename']}")
-                    df = pd.read_excel(file_info['path'], sheet_name=worksheet_name)
-                    if len(df) > 0:
-                        yield from process_worksheet_data(df, worksheet_name, file_info, file_info['is_seed'])
+                    
+                    # Use cached worksheets instead of re-reading file
+                    all_sheets = get_xlsx_worksheets(file_info['path'])
+                    
+                    if worksheet_name in all_sheets:
+                        df = all_sheets[worksheet_name]
+                        if len(df) > 0:
+                            yield from process_worksheet_data(df, worksheet_name, file_info, file_info['is_seed'])
+                        else:
+                            print(f"No data in {worksheet_name} worksheet")
                     else:
-                        print(f"No data in {worksheet_name} worksheet")
+                        print(f"Worksheet {worksheet_name} not found in {file_info['filename']}")
                 except Exception as e:
                     print(f"Error processing {worksheet_name} from {file_info['filename']}: {e}")
         
@@ -249,11 +281,18 @@ def xlsx_quickbooks_source(mode="full"):
             for file_info in transaction_files:
                 try:
                     print(f"Processing {worksheet_name} from {file_info['filename']}")
-                    df = pd.read_excel(file_info['path'], sheet_name=worksheet_name)
-                    if len(df) > 0:
-                        yield from process_worksheet_data(df, worksheet_name, file_info, file_info['is_seed'])
+                    
+                    # Use cached worksheets instead of re-reading file
+                    all_sheets = get_xlsx_worksheets(file_info['path'])
+                    
+                    if worksheet_name in all_sheets:
+                        df = all_sheets[worksheet_name]
+                        if len(df) > 0:
+                            yield from process_worksheet_data(df, worksheet_name, file_info, file_info['is_seed'])
+                        else:
+                            print(f"No data in {worksheet_name} worksheet")
                     else:
-                        print(f"No data in {worksheet_name} worksheet")
+                        print(f"Worksheet {worksheet_name} not found in {file_info['filename']}")
                 except Exception as e:
                     print(f"Error processing {worksheet_name} from {file_info['filename']}: {e}")
         
@@ -477,22 +516,12 @@ def run_domain_consolidation():
     """Run domain consolidation to create mapping tables"""
     print("\nRunning domain consolidation...")
     try:
-        # Change to project root directory where domain_consolidation.py exists
-        original_cwd = os.getcwd()
-        project_root = os.path.join(os.path.dirname(__file__), "../..")
-        os.chdir(project_root)
-        
         domain_stats, normalization_mapping = analyze_domains()
         create_domain_mapping_table()
         create_customer_name_mapping_table()
         print("Domain consolidation complete")
-        
-        # Return to original directory
-        os.chdir(original_cwd)
         return True
     except Exception as e:
-        # Return to original directory on error
-        os.chdir(original_cwd)
         print(f"❌ Error during domain consolidation: {e}")
         return False
 
