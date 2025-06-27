@@ -8,7 +8,7 @@ import json
 import subprocess
 import re
 import argparse
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 
 import dlt
@@ -144,6 +144,17 @@ def get_xlsx_worksheets(file_path):
     
     return _xlsx_file_cache[file_path]
 
+def replace_nulls_recursive(obj):
+    """Recursively replace None/null values with empty strings in nested objects"""
+    if isinstance(obj, dict):
+        return {k: replace_nulls_recursive(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [replace_nulls_recursive(item) for item in obj]
+    elif obj is None:
+        return ''
+    else:
+        return obj
+
 def process_worksheet_data(df, worksheet_name, file_info, is_seed=False, chunk_size=1000):
     """Process and enrich worksheet data efficiently using vectorized operations"""
     if df.empty:
@@ -153,7 +164,7 @@ def process_worksheet_data(df, worksheet_name, file_info, is_seed=False, chunk_s
     
     # Add metadata columns using vectorized operations
     df = df.copy()
-    df["load_date"] = datetime.utcnow().date().isoformat()
+    df["load_date"] = datetime.now(UTC).date().isoformat()
     df["snapshot_date"] = file_info.get('date', datetime.now().strftime('%Y-%m-%d'))
     df["is_seed"] = is_seed
     df["worksheet_name"] = worksheet_name
@@ -161,8 +172,19 @@ def process_worksheet_data(df, worksheet_name, file_info, is_seed=False, chunk_s
     
     # Convert to records in chunks for memory efficiency
     total_rows = len(df)
+    
+    # Debug: Log column info for first chunk
+    if total_rows > 0:
+        print(f"  Worksheet {worksheet_name}: {total_rows} rows, {len(df.columns)} columns")
+        # Check for columns that are all NaN/None
+        null_cols = df.columns[df.isnull().all()].tolist()
+        if null_cols:
+            print(f"  WARNING: {len(null_cols)} completely null columns: {null_cols[:5]}...")
+    
     for i in range(0, total_rows, chunk_size):
         chunk = df.iloc[i:i+chunk_size]
+        # Replace NaN with empty string to preserve columns for DLT
+        chunk = chunk.fillna('')
         records = chunk.to_dict('records')
         yield from records
 
@@ -324,10 +346,12 @@ def xlsx_quickbooks_source(mode="full"):
                         if line:
                             try:
                                 data = json.loads(line)
+                                # Replace null values with empty strings to help DLT type inference
+                                data = replace_nulls_recursive(data)
                                 record_count += 1
                                 yield {
                                     **data,
-                                    "load_date": datetime.utcnow().date().isoformat(),
+                                    "load_date": datetime.now(UTC).date().isoformat(),
                                     "is_seed": True
                                 }
                             except json.JSONDecodeError as e:
@@ -369,7 +393,7 @@ def xlsx_quickbooks_source(mode="full"):
                                 data.pop('historical_export_mode', None)
                                 
                                 # Ensure load_date and is_seed are set appropriately
-                                data["load_date"] = datetime.utcnow().date().isoformat()
+                                data["load_date"] = datetime.now(UTC).date().isoformat()
                                 data["is_seed"] = True
                                 data["worksheet_name"] = "Item"
                                 data["source_file"] = "historical_items.jsonl"
@@ -454,7 +478,7 @@ def xlsx_quickbooks_source(mode="full"):
                                     record_dict[key] = str(value)
                             
                             # Add export metadata
-                            record_dict['historical_export_timestamp'] = datetime.utcnow().isoformat()
+                            record_dict['historical_export_timestamp'] = datetime.now(UTC).isoformat()
                             record_dict['historical_export_mode'] = mode
                             
                             f.write(json.dumps(record_dict) + '\n')
@@ -468,7 +492,7 @@ def xlsx_quickbooks_source(mode="full"):
                 
                 # Yield a status record for DLT tracking
                 yield {
-                    "export_timestamp": datetime.utcnow().isoformat(),
+                    "export_timestamp": datetime.now(UTC).isoformat(),
                     "records_exported": len(records),
                     "last_exported_date": last_exported_date,
                     "export_file": historical_items_file,
@@ -479,7 +503,7 @@ def xlsx_quickbooks_source(mode="full"):
                 print(f"Warning: Historical items export failed: {e}")
                 # Don't fail the pipeline - this is supplementary
                 yield {
-                    "export_timestamp": datetime.utcnow().isoformat(),
+                    "export_timestamp": datetime.now(UTC).isoformat(),
                     "records_exported": 0,
                     "error": str(e),
                     "mode": mode
