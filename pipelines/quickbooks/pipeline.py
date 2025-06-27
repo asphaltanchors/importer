@@ -8,18 +8,22 @@ import subprocess
 from datetime import datetime
 
 import dlt
-from dotenv import load_dotenv
+import sys
+
+# Add pipelines directory to path for shared imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from shared import get_database_url, get_dlt_destination, validate_environment_variables
+
 from domain_consolidation import analyze_domains, create_domain_mapping_table, create_customer_name_mapping_table
 
-# 0) Load environment
-load_dotenv()
-
 # Validate required environment variables
+REQUIRED_ENV_VARS = ["DROPBOX_PATH", "DATABASE_URL"]
+
 try:
-    DROPBOX_PATH = os.environ["DROPBOX_PATH"]
-    DATABASE_URL = os.environ["DATABASE_URL"]
-except KeyError as e:
-    print(f"ERROR: {e.args[0]} environment variable is not set.")
+    env_vars = validate_environment_variables(REQUIRED_ENV_VARS)
+    DROPBOX_PATH = env_vars["DROPBOX_PATH"]
+except ValueError as e:
+    print(f"ERROR: {e}")
     print("Please set required variables in your .env file or environment variables.")
     print("Required: DROPBOX_PATH, DATABASE_URL")
     exit(1)
@@ -299,9 +303,8 @@ def qb_source():
 # 3) Run it
 if __name__ == "__main__":
     # 1. Run DLT pipeline to load data
-    # Configure postgres destination with DATABASE_URL
-    import dlt.destinations
-    postgres_config = dlt.destinations.postgres(DATABASE_URL)
+    # Use centralized DLT destination configuration
+    postgres_config = get_dlt_destination()
     
     load_pipeline = dlt.pipeline(
         pipeline_name="dqi",

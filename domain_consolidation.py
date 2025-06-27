@@ -10,19 +10,13 @@ Phase 1: Extract and analyze domains, create normalization rules
 
 import os
 import re
+import sys
 from collections import defaultdict
 from typing import Dict, List, Tuple, Optional
-from dotenv import load_dotenv
-import psycopg2
-from psycopg2.extras import RealDictCursor
 
-# Load environment
-load_dotenv()
-DATABASE_URL = os.environ["DATABASE_URL"]
-
-def get_db_connection():
-    """Get database connection"""
-    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+# Add pipelines directory to path for shared imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "pipelines"))
+from shared import get_db_connection
 
 def load_individual_domains() -> set:
     """

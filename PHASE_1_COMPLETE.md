@@ -152,3 +152,5 @@ sources:
 ```
 
 This Phase 1 implementation provides a solid foundation for scaling the data pipeline to handle multiple sources while maintaining the simplicity and reliability of the existing QuickBooks workflow.
+
+https://github.com/dlt-hub/openapi-specs/blob/main/open_api_specs/Deployed/attio_api.yaml

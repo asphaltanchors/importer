@@ -7,15 +7,23 @@ from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 from typing import Optional
 
-# Load environment once at module level
+# Load environment once at module level for entire application
 load_dotenv()
 
+# Cache the database URL to avoid repeated environment access
+_DATABASE_URL = None
+
 def get_database_url() -> str:
-    """Get database URL from environment variables"""
-    try:
-        return os.environ["DATABASE_URL"]
-    except KeyError:
-        raise ValueError("DATABASE_URL environment variable is not set")
+    """Get database URL from environment variables (cached)"""
+    global _DATABASE_URL
+    
+    if _DATABASE_URL is None:
+        try:
+            _DATABASE_URL = os.environ["DATABASE_URL"]
+        except KeyError:
+            raise ValueError("DATABASE_URL environment variable is not set")
+    
+    return _DATABASE_URL
 
 def get_db_connection(cursor_factory=RealDictCursor):
     """
@@ -77,3 +85,19 @@ def table_exists(schema: str, table: str) -> bool:
     """
     result = execute_query(query, (schema, table))
     return result[0]['exists'] if result else False
+
+def get_dlt_destination():
+    """
+    Get configured DLT postgres destination using centralized database URL
+    
+    This ensures all DLT pipelines use the same database configuration
+    and avoids duplication of destination setup across sources.
+    """
+    try:
+        import dlt.destinations
+        database_url = get_database_url()
+        return dlt.destinations.postgres(database_url)
+    except ImportError:
+        raise ImportError("DLT not available. Install with: pip install dlt[postgres]")
+    except Exception as e:
+        raise ValueError(f"Failed to create DLT postgres destination: {str(e)}")

@@ -7,14 +7,15 @@ from datetime import datetime
 from typing import Dict, Any, List
 
 import dlt
-from dotenv import load_dotenv
 
-# Add shared utilities to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "shared"))
-from shared import setup_logging, validate_environment_variables, get_current_timestamp
-
-# Load environment variables
-load_dotenv()
+# Add pipelines directory to path for shared imports
+sys.path.insert(0, os.path.dirname(__file__))
+from shared import (
+    setup_logging, 
+    validate_environment_variables, 
+    get_current_timestamp,
+    get_dlt_destination
+)
 
 # Configure logging for this source
 logger = setup_logging("CHANGE_ME_SOURCE_NAME", "INFO")
@@ -98,10 +99,8 @@ def run_pipeline():
         # Validate environment
         env_vars = validate_environment()
         
-        # Configure DLT pipeline
-        # Use the DATABASE_URL directly to avoid credential issues
-        import dlt.destinations
-        postgres_config = dlt.destinations.postgres(env_vars["DATABASE_URL"])
+        # Configure DLT pipeline using centralized destination
+        postgres_config = get_dlt_destination()
         
         load_pipeline = dlt.pipeline(
             pipeline_name="dqi",  # Keep consistent with main pipeline
