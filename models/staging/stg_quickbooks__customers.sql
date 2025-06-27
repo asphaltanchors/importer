@@ -9,7 +9,7 @@ ABOUTME: Applies country inference logic based on state/province codes and clean
 ) }}
 
 WITH raw_customers AS (
-    SELECT * FROM {{ source('raw_data', 'customers') }}
+    SELECT * FROM {{ source('raw_data', 'xlsx_customer') }}
 ),
 
 -- Normalize customer data with country inference
@@ -19,16 +19,13 @@ customers_normalized AS (
         customer_name,
         company_name,
         COALESCE(
-            NULLIF(TRIM(canonical_name), ''),
             NULLIF(TRIM(company_name), ''),
             NULLIF(TRIM(customer_name), ''),
             'Unknown Customer'
         ) AS normalized_customer_name,
         
         -- Personal details
-        title,
         first_name,
-        middle_name,
         last_name,
         account_number,
         
@@ -73,23 +70,12 @@ customers_normalized AS (
         -- Business information
         customer_type,
         job_title,
-        class,
-        currency,
         terms,
         credit_limit,
         price_level,
         sales_rep,
         tax_code,
         tax_item,
-        resale_no,
-        
-        -- Job information
-        job_description,
-        job_type,
-        job_status,
-        job_start_date,
-        job_projected_end_date,
-        job_end_date,
         
         -- Financial
         current_balance,
@@ -99,17 +85,12 @@ customers_normalized AS (
         created_date,
         modified_date,
         quick_books_internal_id,
-        industry,
-        source_channel,
         load_date,
         is_backup,
         
         -- Additional fields
         notes,
-        additional_notes,
-        other1,
-        other2,
-        transx
+        other1
         
     FROM raw_customers
 ),

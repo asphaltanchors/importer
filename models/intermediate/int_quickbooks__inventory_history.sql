@@ -21,21 +21,10 @@ inventory_records AS (
         item_name,
         snapshot_date,
         
-        -- Inventory quantities (cast to numeric for calculations)
-        CASE 
-            WHEN NULLIF(TRIM(quantity_on_hand), '') IS NULL THEN 0
-            ELSE CAST(NULLIF(TRIM(quantity_on_hand), '') AS NUMERIC)
-        END AS quantity_on_hand,
-        
-        CASE 
-            WHEN NULLIF(TRIM(quantity_on_order), '') IS NULL THEN 0
-            ELSE CAST(NULLIF(TRIM(quantity_on_order), '') AS NUMERIC)
-        END AS quantity_on_order,
-        
-        CASE 
-            WHEN NULLIF(TRIM(quantity_on_sales_order), '') IS NULL THEN 0
-            ELSE CAST(NULLIF(TRIM(quantity_on_sales_order), '') AS NUMERIC)
-        END AS quantity_on_sales_order,
+        -- Inventory quantities (XLSX data is already numeric)
+        COALESCE(quantity_on_hand, 0) AS quantity_on_hand,
+        COALESCE(quantity_on_order, 0) AS quantity_on_order,
+        COALESCE(quantity_on_sales_order, 0) AS quantity_on_sales_order,
         
         -- Item details for context
         item_type,
@@ -45,9 +34,11 @@ inventory_records AS (
         status,
         
         -- Metadata
-        inventory_date,
         is_backup,
-        load_date
+        load_date,
+        
+        -- Use snapshot_date as the inventory date
+        snapshot_date as inventory_date
         
     FROM source
     WHERE 
@@ -56,9 +47,9 @@ inventory_records AS (
         AND snapshot_date IS NOT NULL
         -- Filter out records with no meaningful inventory data
         AND (
-            NULLIF(TRIM(quantity_on_hand), '') IS NOT NULL
-            OR NULLIF(TRIM(quantity_on_order), '') IS NOT NULL  
-            OR NULLIF(TRIM(quantity_on_sales_order), '') IS NOT NULL
+            quantity_on_hand IS NOT NULL
+            OR quantity_on_order IS NOT NULL  
+            OR quantity_on_sales_order IS NOT NULL
         )
 ),
 

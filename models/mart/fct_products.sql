@@ -70,7 +70,7 @@ products_combined AS (
         -- Calculated margins
         CASE 
             WHEN COALESCE(i.sales_price, 0) > 0 
-            THEN ROUND(((COALESCE(i.sales_price, 0) - COALESCE(i.purchase_cost, 0)) / i.sales_price) * 100, 2)
+            THEN ROUND(CAST(((COALESCE(i.sales_price, 0) - COALESCE(i.purchase_cost, 0)) / i.sales_price) * 100 AS NUMERIC), 2)
             ELSE 0
         END AS margin_percentage,
         

@@ -186,7 +186,7 @@ def analyze_domains():
         main_email,
         cc_email,
         CAST(NULLIF(TRIM(current_balance), '') AS NUMERIC) as current_balance
-    FROM raw.customers 
+    FROM raw.xlsx_customer 
     WHERE (main_email IS NOT NULL AND main_email != '')
        OR (cc_email IS NOT NULL AND cc_email != '')
     """
@@ -300,7 +300,7 @@ def create_domain_mapping_table():
             WHEN main_email LIKE '%;%' THEN SPLIT_PART(TRIM(SPLIT_PART(main_email, ';', 1)), '@', 2)
             ELSE SPLIT_PART(TRIM(main_email), '@', 2)
         END as original_domain
-    FROM raw.customers 
+    FROM raw.xlsx_customer 
     WHERE main_email IS NOT NULL 
       AND main_email != ''
       AND main_email LIKE '%@%'
@@ -312,7 +312,7 @@ def create_domain_mapping_table():
             WHEN cc_email LIKE '%;%' THEN SPLIT_PART(TRIM(SPLIT_PART(cc_email, ';', 1)), '@', 2)
             ELSE SPLIT_PART(TRIM(cc_email), '@', 2)
         END as original_domain
-    FROM raw.customers 
+    FROM raw.xlsx_customer 
     WHERE cc_email IS NOT NULL 
       AND cc_email != ''
       AND cc_email LIKE '%@%'
@@ -383,7 +383,7 @@ def analyze_customer_names():
         customer_name,
         company_name,
         COUNT(*) as frequency
-    FROM raw.customers 
+    FROM raw.xlsx_customer 
     WHERE customer_name IS NOT NULL 
       AND customer_name != ''
     GROUP BY customer_name, company_name
@@ -455,7 +455,7 @@ def create_customer_name_mapping_table():
     # Get all unique customer names
     query = """
     SELECT DISTINCT customer_name
-    FROM raw.customers 
+    FROM raw.xlsx_customer 
     WHERE customer_name IS NOT NULL 
       AND customer_name != ''
     """

@@ -40,8 +40,8 @@ typed_order_items AS (
         -- Tax information
         customer_sales_tax_code,
         is_tax_exempt,
-        CAST(NULLIF(TRIM(total_tax), '') AS NUMERIC) AS total_tax,
-        CAST(NULLIF(REPLACE(TRIM(tax_persentage), '%', ''), '') AS NUMERIC) AS tax_percentage,
+        total_tax,
+        tax_persentage AS tax_percentage,
         
         -- Address information (raw)
         billing_address_line_1,
@@ -85,7 +85,7 @@ typed_order_items AS (
         message_to_customer,
         class,
         currency,
-        CAST(NULLIF(TRIM(exchange_rate), '') AS NUMERIC) AS exchange_rate,
+        exchange_rate,
         terms,
         sales_rep,
         fob,
@@ -106,23 +106,11 @@ typed_order_items AS (
             ELSE CAST(modified_date AS TIMESTAMP)
         END AS modified_date,
         
-        -- Financial amounts (with robust numeric parsing)
-        CAST(NULLIF(TRIM(product_service_quantity), '') AS NUMERIC) AS product_service_quantity,
-        -- Clean rate field to handle percentage values and other non-numeric data
-        CASE 
-            WHEN NULLIF(TRIM(product_service_rate), '') IS NULL THEN NULL
-            WHEN TRIM(product_service_rate) LIKE '%-%' AND TRIM(product_service_rate) LIKE '%' THEN NULL  -- Skip discount percentages
-            WHEN TRIM(product_service_rate) ~ '^-?[0-9]+(\.[0-9]+)?$' THEN CAST(TRIM(product_service_rate) AS NUMERIC)
-            ELSE NULL
-        END AS product_service_rate,
-        -- Clean amount field to handle percentage values and other non-numeric data
-        CASE 
-            WHEN NULLIF(TRIM(product_service_amount), '') IS NULL THEN NULL
-            WHEN TRIM(product_service_amount) LIKE '%-%' AND TRIM(product_service_amount) LIKE '%' THEN NULL  -- Skip discount percentages
-            WHEN TRIM(product_service_amount) ~ '^-?[0-9]+(\.[0-9]+)?$' THEN CAST(TRIM(product_service_amount) AS NUMERIC)
-            ELSE NULL
-        END AS product_service_amount,
-        CAST(NULLIF(TRIM(total_amount), '') AS NUMERIC) AS total_amount,
+        -- Financial amounts (XLSX data is already numeric)
+        product_service_quantity,
+        product_service_rate,
+        product_service_amount,
+        total_amount,
         
         -- Other fields we want to preserve
         product_service,

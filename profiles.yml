@@ -7,7 +7,7 @@ dqi:
       port: 5432
       user: dqi
       password: dqi
-      dbname: dqi
+      dbname: dqi_xlsx_test
       schema: analytics
       threads: 4
       connect_timeout: 15

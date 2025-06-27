@@ -1,202 +1,141 @@
 {# Define sources to union #}
 {% set sources = [
-    {'source': 'raw_data', 'table': 'invoices', 'type': 'invoice'},
-    {'source': 'raw_data', 'table': 'sales_receipts', 'type': 'sales_receipt'}
+    {'source': 'raw_data', 'table': 'xlsx_invoice', 'type': 'invoice'},
+    {'source': 'raw_data', 'table': 'xlsx_sales_receipt', 'type': 'sales_receipt'}
 ] %}
 
 WITH unioned AS (
     {% for src in sources %}
     SELECT
-        -- Common identifier
+        -- Order identifiers
         {% if src.type == 'invoice' %}
             invoice_no as order_number,
+            invoice_date as order_date,
+            'invoice' as payment_method,
+            status,
+            product_service__amount as product_service_amount,
+            transxx as transx,
         {% else %}
             sales_receipt_no as order_number,
-        {% endif %}
-        
-        -- Customer information
-        customer,
-        
-        -- Order date
-        {% if src.type == 'invoice' %}
-            invoice_date as order_date,
-        {% else %}
             sales_receipt_date as order_date,
-        {% endif %}
-        
-        -- Payment method
-        {% if src.type == 'invoice' %}
-            'invoice' as payment_method,
-        {% else %}
             payment_method,
-        {% endif %}
-        
-        -- Status
-        {% if src.type == 'invoice' %}
-            status,
-        {% else %}
             'PAID' as status,
+            product_service_amount,
+            NULL::bigint as transx,
         {% endif %}
         
-        -- Product information
+        -- Common core fields
+        customer,
         product_service,
         product_service_description,
         product_service_quantity,
         product_service_rate,
-        product_service_amount,
+        customer_sales_tax_code,
         
-        -- Service date
-        product_service_service_date,
-        
-        -- Class
-        product_service_class,
-        
-        -- Sales tax code
+        -- Date fields
         {% if src.type == 'invoice' %}
-            product_service_sales_tax as product_service_sales_tax_code,
+            due_date,
+            ship_date,
         {% else %}
-            product_service_sales_tax_code,
+            due_date,
+            ship_date,
         {% endif %}
         
-        -- Inventory information
-        inventory_site,
-        inventory_bin,
-        unit_of_measure,
-        
-        -- Serial and lot numbers
+        -- Tax fields (use correct numeric tax fields)
         {% if src.type == 'invoice' %}
-            serial_no,
-            lot_no,
+            total_tax,  -- Use the numeric total_tax field, not the text sales_tax field
+            tax_persentage,
+            total_amount,
+            sales_tax as sales_tax_code,  -- Preserve the text tax code for reference
         {% else %}
-            NULL as serial_no,
-            NULL as lot_no,
+            total_tax,
+            NULL::double precision as tax_persentage,
+            total_amount,
+            NULL::text as sales_tax_code,
         {% endif %}
         
-        -- Billing address
+        -- Address fields
         {% if src.type == 'invoice' %}
             billing_address_line1 as billing_address_line_1,
             billing_address_line2 as billing_address_line_2,
             billing_address_line3 as billing_address_line_3,
+            billing_address_city,
+            billing_address_state,
+            billing_address_postal_code,
+            billing_address_country,
+            shipping_address_line1 as shipping_address_line_1,
+            shipping_address_line2 as shipping_address_line_2,
+            shipping_address_line3 as shipping_address_line_3,
+            shipping_address_city,
+            shipping_address_state,
+            shipping_address_postal_code,
+            shipping_address_country,
         {% else %}
             billing_address_line_1,
             billing_address_line_2,
             billing_address_line_3,
-        {% endif %}
-        billing_address_city,
-        billing_address_state,
-        billing_address_postal_code,
-        billing_address_country,
-        
-        -- Shipping address
-        {% if src.type == 'invoice' %}
-            shipping_address_line1 as shipping_address_line_1,
-            shipping_address_line2 as shipping_address_line_2,
-            shipping_address_line3 as shipping_address_line_3,
-        {% else %}
+            billing_address_city,
+            billing_address_state,
+            billing_address_postal_code,
+            NULL as billing_address_country,
             shipping_address_line_1,
             shipping_address_line_2,
             shipping_address_line_3,
+            shipping_address_city,
+            shipping_address_state,
+            shipping_address_postal_code,
+            NULL as shipping_address_country,
         {% endif %}
-        shipping_address_city,
-        shipping_address_state,
-        shipping_address_postal_code,
-        shipping_address_country,
         
-        -- Shipping information
+        -- Other fields (minimal set that works)
         shipping_method,
-        ship_date,
         
-        -- Tax information
-        customer_sales_tax_code,
-        {% if src.type == 'invoice' %}
-            sales_tax as sales_tax_item,
-        {% else %}
-            sales_tax_item,
-        {% endif %}
-        total_tax,
-        {% if src.type == 'invoice' %}
-            tax_persentage,
-        {% else %}
-            NULL as tax_persentage,
-        {% endif %}
+        -- Date fields
+        created_date,
+        modified_date,
         
-        -- Dates
-        due_date,
-        
-        -- Notes and messages
-        memo,
-        {% if src.type == 'invoice' %}
-            customer_message as message_to_customer,
-        {% else %}
-            message_to_customer,
-        {% endif %}
-        
-        -- Classification
-        class,
-        
-        -- Currency
-        currency,
-        exchange_rate,
-        
-        -- Terms
-        {% if src.type == 'invoice' %}
-            terms,
-        {% else %}
-            NULL as terms,
-        {% endif %}
-        
-        -- Sales rep
-        sales_rep,
-        
-        -- FOB
-        fob,
-        
-        -- Print and email flags
+        -- Flags
         print_later,
         email_later,
-        
-        -- Other fields
-        other,
-        other_1,
-        other_2,
-        template,
-        
-        -- External ID
         {% if src.type == 'invoice' %}
-            external_id,
-        {% else %}
-            NULL as external_id,
-        {% endif %}
-        
-        -- Is pending (sales receipts only)
-        {% if src.type == 'invoice' %}
-            NULL as is_pending,
+            NULL::boolean as is_pending,
         {% else %}
             is_pending,
         {% endif %}
         
-        -- Total amount
-        total_amount,
+        -- Additional fields from XLSX
+        class,
         
-        -- Dates
-        created_date,
-        modified_date,
+        -- Missing fields that downstream models expect (as NULL for now)
+        NULL as memo,
+        NULL as message_to_customer, 
+        NULL as currency,
+        NULL as exchange_rate,
+        NULL as terms,
+        NULL as sales_rep,
+        NULL as fob,
+        NULL as other,
+        NULL as other_1,
+        NULL as other_2,
+        NULL as template,
+        NULL as external_id,
+        NULL as industry,
+        NULL as price_level,
+        NULL as source_channel,
+        NULL as unit_weight_kg,
+        NULL as upc,
+        NULL as product_service_service_date,
+        NULL as product_service_class,
+        NULL as product_service_sales_tax_code,
+        NULL as inventory_site,
+        NULL as inventory_bin,
+        NULL as unit_of_measure,
+        NULL as serial_no,
+        NULL as lot_no,
         
-        -- Transaction ID
-        transx,
-        
-        -- QuickBooks internal ID
+        -- Metadata
         quick_books_internal_id,
-        
-        -- Additional fields
-        industry,
-        price_level,
-        source_channel,
-        unit_weight_kg,
-        upc,
         load_date,
-        
-        -- DLT fields
         _dlt_load_id,
         _dlt_id,
         
@@ -204,6 +143,7 @@ WITH unioned AS (
         '{{ src.type }}' as source_type
         
     FROM {{ source(src.source, src.table) }}
+    WHERE total_amount IS NOT NULL  -- Filter out rows with invalid total_amount
     {% if not loop.last %}UNION ALL{% endif %}
     {% endfor %}
 )

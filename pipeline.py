@@ -1,17 +1,20 @@
-# pipeline.py
+# ABOUTME: Main DLT pipeline for QuickBooks XLSX data extraction and transformation
+# ABOUTME: Processes QuickBooks XLSX exports and loads all worksheets into PostgreSQL raw schema
 
 import os
 import glob
-import csv
 import json
 import subprocess
+import re
 from datetime import datetime
+from pathlib import Path
 
 import dlt
+import pandas as pd
 from dotenv import load_dotenv
 from domain_consolidation import analyze_domains, create_domain_mapping_table, create_customer_name_mapping_table
 
-# 0) Load environment
+# Load environment
 load_dotenv()
 
 # Validate DROPBOX_PATH environment variable
@@ -20,7 +23,7 @@ try:
 except KeyError:
     print("ERROR: DROPBOX_PATH environment variable is not set.")
     print("Please set DROPBOX_PATH in your .env file or environment variables.")
-    print("Example: DROPBOX_PATH=/path/to/dropbox/quickbooks-csv/input")
+    print("Example: DROPBOX_PATH=/path/to/dropbox/quickbooks-xlsx/input")
     exit(1)
 
 # Validate DROPBOX_PATH directory exists
@@ -37,221 +40,190 @@ if not os.path.isdir(DROPBOX_PATH):
     print("Please ensure DROPBOX_PATH points to a directory, not a file.")
     exit(1)
 
-# Check for CSV files in the directory
-csv_patterns = [
-    "Customer_*.csv", "01_BACKUP_Customer_*.csv",
-    "Item_*.csv", "01_BACKUP_Item_*.csv", 
-    "Sales*.csv", "01_BACKUP_Sales_*.csv",
-    "Invoice_*.csv", "01_BACKUP_Invoice_*.csv"
+# Check for XLSX files in the directory
+xlsx_patterns = [
+    "all-list*.xlsx", "01_BACKUP_all-list*.xlsx",
+    "all-transaction*.xlsx", "01_BACKUP_all-transaction*.xlsx"
 ]
 
 found_files = []
-for pattern in csv_patterns:
+for pattern in xlsx_patterns:
     found_files.extend(glob.glob(os.path.join(DROPBOX_PATH, pattern)))
 
 if not found_files:
-    print(f"WARNING: No CSV files found in DROPBOX_PATH: {DROPBOX_PATH}")
+    print(f"WARNING: No XLSX files found in DROPBOX_PATH: {DROPBOX_PATH}")
     print("Expected file patterns:")
-    for pattern in csv_patterns:
+    for pattern in xlsx_patterns:
         print(f"  - {pattern}")
-    print("\nPlease ensure QuickBooks CSV exports are placed in this directory.")
+    print("\nPlease ensure QuickBooks XLSX exports are placed in this directory.")
     print("The pipeline will continue but may not process any data.")
 
 print(f"Using DROPBOX_PATH: {DROPBOX_PATH}")
-print(f"Found {len(found_files)} CSV files to process")
+print(f"Found {len(found_files)} XLSX files to process")
 
-# 1) Define your source
-@dlt.source
-def qb_source():
-    # customers resource
-    @dlt.resource(
-        write_disposition="merge",
-        name="customers",
-        primary_key=["QuickBooks Internal Id"]
-    )
-    def extract_customers():
-        # First process backup files
-        backup_pattern = os.path.join(DROPBOX_PATH, "01_BACKUP_Customer_*.csv")
-        for f in sorted(glob.glob(backup_pattern)):
-            print(f"Processing backup file: {f}")
-            with open(f, newline="") as fh:
-                rdr = csv.DictReader(fh)
-                for row in rdr:
-                    yield {
-                        **row,
-                        "load_date": datetime.utcnow().date().isoformat(),
-                        "is_backup": True
-                    }
-        
-        # Then process daily files
-        pattern = os.path.join(DROPBOX_PATH, "Customer_*.csv")
-        for f in sorted(glob.glob(pattern)):
-            print(f"Processing daily file: {f}")
-            with open(f, newline="") as fh:
-                rdr = csv.DictReader(fh)
-                for row in rdr:
-                    yield {
-                        **row,
-                        "load_date": datetime.utcnow().date().isoformat(),
-                        "is_backup": False
-                    }
+# Define worksheet mappings
+LIST_WORKSHEETS = [
+    'Account', 'Vendor', 'Employee', 'Item Discount', 'Item', 'Customer'
+]
 
-    # items resource
-    @dlt.resource(
-        write_disposition="merge",
-        name="items",
-        primary_key=["Item Name", "snapshot_date"]  # Composite key with item name and date
-    )
-    def extract_items():
-        import re
+TRANSACTION_WORKSHEETS = [
+    'Invoice', 'Sales Order', 'Estimate', 'Sales Receipt', 'Credit Memo', 
+    'Payment', 'Purchase Order', 'Bill', 'Bill Payment', 'Check', 
+    'Credit Card Charge', 'Trial Balance', 'Deposit', 'Inventory Adjustment', 
+    'Journal Entry', 'Build Assembly', 'Custom Txn Detail'
+]
+
+def extract_date_from_filename(filename):
+    """Extract date from XLSX filename"""
+    # Handle backup files: 01_BACKUP_all-list_MM_DD_YYYY.xlsx
+    backup_match = re.match(r'01_BACKUP_all-(?:list|transaction)_(\d{2})_(\d{2})_(\d{4})\.xlsx', filename)
+    if backup_match:
+        month, day, year = backup_match.groups()
+        return f"{year}-{month}-{day}", True
+    
+    # Handle daily files: all-list_MM_DD_YYYY_H_MM_SS.xlsx
+    daily_match = re.match(r'all-(?:list|transaction)_(\d{2})_(\d{2})_(\d{4})_(\d+)_(\d{2})_(\d{2})\.xlsx', filename)
+    if daily_match:
+        month, day, year, hour, minute, second = daily_match.groups()
+        return f"{year}-{month}-{day}", False
+    
+    # Fallback for test files
+    if 'test' in filename.lower():
+        return datetime.now().strftime('%Y-%m-%d'), False
         
-        # Group files by date to ensure we process the latest file for each day
-        files_by_date = {}
-        
-        # First process backup files - they take precedence for their dates
-        backup_pattern = os.path.join(DROPBOX_PATH, "01_BACKUP_Item_*.csv")
-        for f in glob.glob(backup_pattern):
-            # Extract date from backup filename (format: 01_BACKUP_Item_MM_DD_YYYY.csv)
-            filename = os.path.basename(f)
-            date_match = re.match(r'01_BACKUP_Item_(\d{2})_(\d{2})_(\d{4})\.csv', filename)
+    raise ValueError(f"Could not extract date from filename: {filename}")
+
+def get_file_priority(files):
+    """Sort files by date and type, prioritizing backup files"""
+    files_by_date = {}
+    
+    for filepath in files:
+        filename = os.path.basename(filepath)
+        try:
+            date_str, is_backup = extract_date_from_filename(filename)
+            file_datetime = datetime.strptime(date_str, '%Y-%m-%d')
             
-            if date_match:
-                month, day, year = date_match.groups()
-                
-                # Format as ISO date (YYYY-MM-DD)
-                date_str = f"{year}-{month}-{day}"
-                
-                # Create a datetime object for sorting - use a high time to ensure precedence
-                file_datetime = datetime(
-                    int(year), int(month), int(day), 23, 59, 59
-                )
-                
-                # Always use backup files if available
-                files_by_date[date_str] = {
-                    'path': f,
-                    'datetime': file_datetime,
-                    'is_backup': True
+            key = (date_str, 'backup' if is_backup else 'daily')
+            if key not in files_by_date or is_backup:  # Backup files take precedence
+                files_by_date[key] = {
+                    'path': filepath,
+                    'date': date_str,
+                    'is_backup': is_backup,
+                    'datetime': file_datetime
                 }
-                print(f"Processing backup item file for date {date_str}: {f}")
+        except ValueError as e:
+            print(f"Warning: {e}")
+            continue
+    
+    # Return sorted by date, backup files first for each date
+    return sorted(files_by_date.values(), key=lambda x: (x['datetime'], not x['is_backup']))
+
+def standardize_column_names(df):
+    """Standardize column names for consistency"""
+    # Remove extra spaces, convert to snake_case equivalent
+    df.columns = [col.strip().replace('/', '_').replace(' ', '_').replace('.', '') for col in df.columns]
+    return df
+
+def process_worksheet_data(df, worksheet_name, file_info):
+    """Process and enrich worksheet data"""
+    df = standardize_column_names(df)
+    
+    # Add metadata columns
+    for _, row in df.iterrows():
+        yield {
+            **row.to_dict(),
+            "load_date": datetime.utcnow().date().isoformat(),
+            "snapshot_date": file_info['date'],
+            "is_backup": file_info['is_backup'],
+            "worksheet_name": worksheet_name,
+            "source_file": os.path.basename(file_info['path'])
+        }
+
+@dlt.source
+def xlsx_quickbooks_source():
+    """Extract all QuickBooks XLSX worksheets"""
+    
+    # Process list files
+    list_files = []
+    for pattern in ["all-list*.xlsx", "01_BACKUP_all-list*.xlsx"]:
+        list_files.extend(glob.glob(os.path.join(DROPBOX_PATH, pattern)))
+    
+    list_files_sorted = get_file_priority(list_files)
+    
+    # Process transaction files  
+    transaction_files = []
+    for pattern in ["all-transaction*.xlsx", "01_BACKUP_all-transaction*.xlsx"]:
+        transaction_files.extend(glob.glob(os.path.join(DROPBOX_PATH, pattern)))
+    
+    transaction_files_sorted = get_file_priority(transaction_files)
+    
+    # Create resources for each worksheet type
+    resources = []
+    
+    # List worksheets - create each resource individually to fix closure issues
+    def create_list_resource(worksheet_name):
+        table_name = f"xlsx_{worksheet_name.lower().replace(' ', '_')}"
         
-        # Then process daily files
-        daily_pattern = os.path.join(DROPBOX_PATH, "Item_*.csv")
-        for f in glob.glob(daily_pattern):
-            # Extract date from filename (format: Item_MM_DD_YYYY_H_MM_SS.csv)
-            filename = os.path.basename(f)
-            date_match = re.match(r'Item_(\d{2})_(\d{2})_(\d{4})_(\d+)_(\d{2})_(\d{2})\.csv', filename)
-            
-            if date_match:
-                month, day, year, hour, minute, second = date_match.groups()
-                
-                # Format as ISO date (YYYY-MM-DD)
-                date_str = f"{year}-{month}-{day}"
-                
-                # Create a datetime object for sorting
-                file_datetime = datetime(
-                    int(year), int(month), int(day), 
-                    int(hour), int(minute), int(second)
-                )
-                
-                # Group by date, keeping track of the full path and datetime
-                # Only use daily file if we don't have a backup for this date
-                # or if this daily file is newer than the previous daily file
-                if date_str not in files_by_date:
-                    files_by_date[date_str] = {
-                        'path': f,
-                        'datetime': file_datetime,
-                        'is_backup': False
-                    }
-                elif not files_by_date[date_str].get('is_backup', False) and file_datetime > files_by_date[date_str]['datetime']:
-                    files_by_date[date_str] = {
-                        'path': f,
-                        'datetime': file_datetime,
-                        'is_backup': False
-                    }
+        @dlt.resource(
+            write_disposition="merge",
+            name=table_name,
+            primary_key=["QuickBooks_Internal_Id", "snapshot_date"]
+        )
+        def extract_list_worksheet():
+            for file_info in list_files_sorted:
+                try:
+                    print(f"Processing {worksheet_name} from {file_info['path']}")
+                    df = pd.read_excel(file_info['path'], sheet_name=worksheet_name)
+                    if len(df) > 0:
+                        yield from process_worksheet_data(df, worksheet_name, file_info)
+                    else:
+                        print(f"No data in {worksheet_name} worksheet")
+                except Exception as e:
+                    print(f"Error processing {worksheet_name} from {file_info['path']}: {e}")
         
-        # Process the files in date order
-        for date_str, file_info in sorted(files_by_date.items()):
-            print(f"Processing item file for date {date_str}: {file_info['path']}")
-            with open(file_info['path'], newline="") as fh:
-                rdr = csv.DictReader(fh)
-                for row in rdr:
-                    yield {
-                        **row,
-                        "load_date": datetime.utcnow().date().isoformat(),
-                        "snapshot_date": date_str,  # Add the extracted date
-                        "is_backup": file_info.get('is_backup', False)
-                    }
-
-    # sales_receipts
+        return extract_list_worksheet
+    
+    for worksheet_name in LIST_WORKSHEETS:
+        resources.append(create_list_resource(worksheet_name))
+    
+    # Transaction worksheets - create each resource individually to fix closure issues
+    def create_transaction_resource(worksheet_name):
+        table_name = f"xlsx_{worksheet_name.lower().replace(' ', '_')}"
+        
+        # Set primary key based on worksheet structure
+        if worksheet_name == 'Trial Balance':
+            primary_key = ["S_No", "Trial_Balance_No", "Account_Name", "snapshot_date"]
+        elif worksheet_name in ['Custom Txn Detail']:
+            primary_key = ["S_No", "snapshot_date"]  # These may not have QuickBooks_Internal_Id
+        else:
+            primary_key = ["QuickBooks_Internal_Id", "S_No"] 
+        
+        @dlt.resource(
+            write_disposition="merge", 
+            name=table_name,
+            primary_key=primary_key
+        )
+        def extract_transaction_worksheet():
+            for file_info in transaction_files_sorted:
+                try:
+                    print(f"Processing {worksheet_name} from {file_info['path']}")
+                    df = pd.read_excel(file_info['path'], sheet_name=worksheet_name)
+                    if len(df) > 0:
+                        yield from process_worksheet_data(df, worksheet_name, file_info)
+                    else:
+                        print(f"No data in {worksheet_name} worksheet")
+                except Exception as e:
+                    print(f"Error processing {worksheet_name} from {file_info['path']}: {e}")
+        
+        return extract_transaction_worksheet
+    
+    for worksheet_name in TRANSACTION_WORKSHEETS:
+        resources.append(create_transaction_resource(worksheet_name))
+    
+    # Company enrichment resource (keep existing)
     @dlt.resource(
         write_disposition="merge",
-        name="sales_receipts",
-        primary_key=["QuickBooks Internal Id", "Product/Service"]
-    )
-    def extract_sales_receipts():
-        # First process backup files
-        backup_pattern = os.path.join(DROPBOX_PATH, "01_BACKUP_Sales_*.csv")
-        for f in sorted(glob.glob(backup_pattern)):
-            print(f"Processing backup sales file: {f}")
-            with open(f, newline="") as fh:
-                rdr = csv.DictReader(fh)
-                for row in rdr:
-                    yield { 
-                        **row, 
-                        "load_date": datetime.utcnow().date().isoformat(),
-                        "is_backup": True
-                    }
-                    
-        # Then process daily files
-        pattern = os.path.join(DROPBOX_PATH, "Sales*.csv")
-        for f in sorted(glob.glob(pattern)):
-            print(f"Processing daily sales file: {f}")
-            with open(f, newline="") as fh:
-                rdr = csv.DictReader(fh)
-                for row in rdr:
-                    yield { 
-                        **row, 
-                        "load_date": datetime.utcnow().date().isoformat(),
-                        "is_backup": False
-                    }
-
-    # invoices
-    @dlt.resource(
-        write_disposition="merge",
-        name="invoices",
-        primary_key=["QuickBooks Internal Id", "Product/Service"]
-    )
-    def extract_invoices():
-        # First process backup files
-        backup_pattern = os.path.join(DROPBOX_PATH, "01_BACKUP_Invoice_*.csv")
-        for f in sorted(glob.glob(backup_pattern)):
-            print(f"Processing backup invoice file: {f}")
-            with open(f, newline="") as fh:
-                rdr = csv.DictReader(fh)
-                for row in rdr:
-                    yield { 
-                        **row, 
-                        "load_date": datetime.utcnow().date().isoformat(),
-                        "is_backup": True
-                    }
-                    
-        # Then process daily files
-        pattern = os.path.join(DROPBOX_PATH, "Invoice_*.csv")
-        for f in sorted(glob.glob(pattern)):
-            print(f"Processing daily invoice file: {f}")
-            with open(f, newline="") as fh:
-                rdr = csv.DictReader(fh)
-                for row in rdr:
-                    yield { 
-                        **row, 
-                        "load_date": datetime.utcnow().date().isoformat(),
-                        "is_backup": False
-                    }
-
-    # company_enrichment resource
-    @dlt.resource(
-        write_disposition="merge",
-        name="company_enrichment",
+        name="company_enrichment", 
         primary_key=["company_domain"]
     )
     def extract_company_enrichment():
@@ -284,27 +256,21 @@ def qb_source():
             print(f"Company enrichment: processed {record_count} records from {enrichment_file}")
         else:
             print(f"Company enrichment file not found: {enrichment_file}")
-            print(f"Directory contents: {os.listdir(DROPBOX_PATH) if os.path.exists(DROPBOX_PATH) else 'DROPBOX_PATH does not exist'}")
+    
+    resources.append(extract_company_enrichment)
+    
+    return resources
 
-    # **Return** your resource functions in a list
-    return [
-        extract_customers,
-        extract_items,
-        extract_sales_receipts,
-        extract_invoices,
-        extract_company_enrichment
-    ]
-
-# 3) Run it
+# Run the pipeline
 if __name__ == "__main__":
-    # 1. Run DLT pipeline to load data
+    # 1. Run DLT pipeline to load XLSX data
     load_pipeline = dlt.pipeline(
-        pipeline_name="dqi_pipeline",
-        destination="postgres",
+        pipeline_name="xlsx_quickbooks_pipeline",
+        destination="postgres", 
         dataset_name="raw",
     )
-    load_info = load_pipeline.run(qb_source())
-    print("DLT pipeline complete:", load_info)
+    load_info = load_pipeline.run(xlsx_quickbooks_source())
+    print("DLT XLSX pipeline complete:", load_info)
     
     # 2. Run domain consolidation to create mapping tables
     print("\nRunning domain consolidation...")
@@ -328,5 +294,5 @@ if __name__ == "__main__":
         print("STDERR:", e.stderr)
         raise
     
-    print("\n✅ Complete pipeline finished successfully!")
-    print("Data flow: DLT extraction → Domain consolidation → DBT transformations")
+    print("\n✅ Complete XLSX pipeline finished successfully!")
+    print("Data flow: XLSX extraction → Domain consolidation → DBT transformations")

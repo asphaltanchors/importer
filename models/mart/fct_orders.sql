@@ -96,15 +96,15 @@ orders_enriched AS (
         modified_date,
         
         -- Metrics
-        COALESCE(total_line_items_amount, 0) as total_line_items_amount,
-        COALESCE(total_tax, 0) as total_tax,
-        COALESCE(total_amount, 0) as total_amount,
+        COALESCE(total_line_items_amount, 0.0) as total_line_items_amount,
+        COALESCE(total_tax, 0.0) as total_tax,
+        COALESCE(total_amount, 0.0) as total_amount,
         COALESCE(item_count, 0) as item_count,
         
         -- Derived metrics
         CASE 
             WHEN COALESCE(total_tax, 0) = 0 OR COALESCE(total_amount, 0) = 0 THEN 0
-            ELSE ROUND((total_tax / total_amount) * 100, 2)
+            ELSE ROUND(CAST((total_tax / total_amount) * 100 AS NUMERIC), 2)
         END AS effective_tax_rate
     FROM orders
 )

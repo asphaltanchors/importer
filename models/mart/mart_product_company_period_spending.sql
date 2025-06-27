@@ -193,14 +193,14 @@ final_with_context AS (
         -- Price variance analysis (period vs standard)
         CASE 
             WHEN fp.sales_price > 0 AND pa.avg_unit_price > 0 THEN
-                ROUND((pa.avg_unit_price - fp.sales_price) * 100.0 / fp.sales_price, 2)
+                ROUND(CAST((pa.avg_unit_price - fp.sales_price) * 100.0 / fp.sales_price AS NUMERIC), 2)
             ELSE NULL
         END as price_variance_percentage,
         
         -- Period efficiency vs lifetime
         CASE 
             WHEN fcp.total_amount_spent > 0 AND pa.total_amount_spent IS NOT NULL THEN
-                LEAST(100.0, ROUND(pa.total_amount_spent * 100.0 / fcp.total_amount_spent, 2))
+                LEAST(100.0, ROUND(CAST(pa.total_amount_spent * 100.0 / fcp.total_amount_spent AS NUMERIC), 2))
             WHEN pa.total_amount_spent > 0 THEN 100.0  -- If this is their only period, it's 100%
             ELSE 0.0  -- No spending in this period
         END as period_share_of_lifetime_spending,

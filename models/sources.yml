@@ -4,14 +4,59 @@ sources:
   - name: raw_data
     schema: raw
     tables:
-      - name: customers
-        description: "Customer data extracted from QuickBooks"
-      - name: items
-        description: "Item data extracted from QuickBooks"
-      - name: sales_receipts
-        description: "Sales receipt data extracted from QuickBooks"
-      - name: invoices
-        description: "Invoice data extracted from QuickBooks"
+      # Core business entities (XLSX worksheets)
+      - name: xlsx_customer
+        description: "Customer data from QuickBooks XLSX Customer worksheet"
+      - name: xlsx_item
+        description: "Item/Product data from QuickBooks XLSX Item worksheet"
+      - name: xlsx_sales_receipt
+        description: "Sales receipt transaction data from QuickBooks XLSX Sales Receipt worksheet"
+      - name: xlsx_invoice
+        description: "Invoice transaction data from QuickBooks XLSX Invoice worksheet"
+      
+      # Additional list entities
+      - name: xlsx_account
+        description: "Chart of accounts from QuickBooks XLSX Account worksheet"
+      - name: xlsx_vendor
+        description: "Vendor data from QuickBooks XLSX Vendor worksheet"
+      - name: xlsx_employee
+        description: "Employee data from QuickBooks XLSX Employee worksheet"
+      - name: xlsx_item_discount
+        description: "Item discount data from QuickBooks XLSX Item Discount worksheet"
+        
+      # Additional transaction entities
+      - name: xlsx_sales_order
+        description: "Sales order data from QuickBooks XLSX Sales Order worksheet"
+      - name: xlsx_estimate
+        description: "Estimate/Quote data from QuickBooks XLSX Estimate worksheet"
+      - name: xlsx_credit_memo
+        description: "Credit memo data from QuickBooks XLSX Credit Memo worksheet"
+      - name: xlsx_payment
+        description: "Payment data from QuickBooks XLSX Payment worksheet"
+      - name: xlsx_purchase_order
+        description: "Purchase order data from QuickBooks XLSX Purchase Order worksheet"
+      - name: xlsx_bill
+        description: "Bill data from QuickBooks XLSX Bill worksheet"
+      - name: xlsx_bill_payment
+        description: "Bill payment data from QuickBooks XLSX Bill Payment worksheet"
+      - name: xlsx_check
+        description: "Check data from QuickBooks XLSX Check worksheet"
+      - name: xlsx_credit_card_charge
+        description: "Credit card charge data from QuickBooks XLSX Credit Card Charge worksheet"
+      - name: xlsx_trial_balance
+        description: "Trial balance data from QuickBooks XLSX Trial Balance worksheet"
+      - name: xlsx_deposit
+        description: "Deposit data from QuickBooks XLSX Deposit worksheet"
+      - name: xlsx_inventory_adjustment
+        description: "Inventory adjustment data from QuickBooks XLSX Inventory Adjustment worksheet"
+      - name: xlsx_journal_entry
+        description: "Journal entry data from QuickBooks XLSX Journal Entry worksheet"
+      - name: xlsx_build_assembly
+        description: "Build assembly data from QuickBooks XLSX Build Assembly worksheet"
+      - name: xlsx_custom_txn_detail
+        description: "Custom transaction detail data from QuickBooks XLSX Custom Txn Detail worksheet"
+      
+      # Domain consolidation and enrichment tables
       - name: domain_mapping
         description: "Email domain to company consolidation mapping created by domain_consolidation.py"
         columns:

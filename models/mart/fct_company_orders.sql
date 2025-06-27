@@ -61,7 +61,7 @@ enriched_orders AS (
         -- Calculate margins when we have cost data
         CASE 
             WHEN p.purchase_cost > 0 AND cod.unit_price > 0 
-            THEN ROUND((cod.unit_price - p.purchase_cost) * 100.0 / cod.unit_price, 2)
+            THEN ROUND(CAST((cod.unit_price - p.purchase_cost) * 100.0 / cod.unit_price AS NUMERIC), 2)
             ELSE NULL
         END as margin_percentage,
         

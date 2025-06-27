@@ -113,14 +113,14 @@ SELECT
     -- Price variance analysis
     CASE 
         WHEN cpm.standard_sales_price > 0 AND cpm.avg_unit_price > 0 THEN
-            ROUND((cpm.avg_unit_price - cpm.standard_sales_price) * 100.0 / cpm.standard_sales_price, 2)
+            ROUND(CAST((cpm.avg_unit_price - cpm.standard_sales_price) * 100.0 / cpm.standard_sales_price AS NUMERIC), 2)
         ELSE NULL
     END as price_variance_percentage,
     
     -- Margin analysis
     CASE 
         WHEN cpm.standard_purchase_cost > 0 AND cpm.avg_unit_price > 0 THEN
-            ROUND((cpm.avg_unit_price - cpm.standard_purchase_cost) * 100.0 / cpm.avg_unit_price, 2)
+            ROUND(CAST((cpm.avg_unit_price - cpm.standard_purchase_cost) * 100.0 / cpm.avg_unit_price AS NUMERIC), 2)
         ELSE NULL
     END as avg_margin_percentage,
     
@@ -164,7 +164,7 @@ SELECT
     
     -- Company context
     fc.total_revenue as company_total_revenue,
-    ROUND(cpm.total_amount_spent * 100.0 / NULLIF(fc.total_revenue, 0), 2) as product_revenue_percentage,
+    ROUND(CAST(cpm.total_amount_spent * 100.0 / NULLIF(fc.total_revenue, 0) AS NUMERIC), 2) as product_revenue_percentage,
     
     -- Sales context
     cpm.primary_sales_rep,
