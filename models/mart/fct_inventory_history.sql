@@ -101,7 +101,7 @@ final AS (
         
         -- Status and metadata
         iwc.status AS item_status,
-        iwc.is_backup,
+        iwc.is_seed,
         iwc.snapshot_date AS original_snapshot_date
         
     FROM inventory_with_changes iwc

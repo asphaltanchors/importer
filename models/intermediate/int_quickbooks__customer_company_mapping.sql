@@ -40,26 +40,61 @@ WITH customers_with_domains AS (
     FROM {{ ref('stg_quickbooks__customers') }} c
 ),
 
--- Apply domain normalization (simplified for XLSX migration - no mapping tables yet)
+-- Apply domain normalization using Python-generated mapping tables
 customers_with_normalized_domains AS (
     SELECT 
         c.*,
-        -- Use raw domain as normalized domain for now
-        COALESCE(c.main_email_domain, c.cc_email_domain, 'NO_EMAIL_DOMAIN') as company_domain_key,
-        CASE 
-            WHEN c.main_email_domain IS NOT NULL OR c.cc_email_domain IS NOT NULL THEN 'corporate'
-            ELSE 'no_email'
-        END as domain_type
+        -- Normalize main email domain using mapping table
+        COALESCE(
+            dm_main.normalized_domain,
+            c.main_email_domain
+        ) as normalized_main_domain,
+        -- Normalize cc email domain using mapping table  
+        COALESCE(
+            dm_cc.normalized_domain,
+            c.cc_email_domain
+        ) as normalized_cc_domain,
+        -- Select primary domain for company grouping
+        COALESCE(
+            dm_main.normalized_domain,
+            dm_cc.normalized_domain,
+            c.main_email_domain,
+            c.cc_email_domain,
+            'NO_EMAIL_DOMAIN'
+        ) as company_domain_key,
+        -- Use domain type from mapping table
+        COALESCE(
+            dm_main.domain_type,
+            dm_cc.domain_type,
+            CASE 
+                WHEN c.main_email_domain IS NOT NULL OR c.cc_email_domain IS NOT NULL THEN 'corporate'
+                ELSE 'no_email'
+            END
+        ) as domain_type
     FROM customers_with_domains c
+    LEFT JOIN {{ source('raw_data', 'domain_mapping') }} dm_main 
+        ON c.main_email_domain = dm_main.original_domain
+    LEFT JOIN {{ source('raw_data', 'domain_mapping') }} dm_cc 
+        ON c.cc_email_domain = dm_cc.original_domain
 ),
 
--- Apply customer name normalization (simplified - no mapping table yet)
+-- Apply customer name normalization using Python-generated mapping tables
 customers_with_standardized_names AS (
     SELECT 
         c.*,
-        c.customer_name as standardized_customer_name,
-        'none' as customer_name_normalization_type
+        -- Use normalized name from mapping table, fallback to original
+        COALESCE(
+            cnm.normalized_name,
+            c.customer_name
+        ) as standardized_customer_name,
+        -- Track normalization type
+        COALESCE(
+            cnm.normalization_type,
+            'no_change'
+        ) as customer_name_normalization_type
     FROM customers_with_normalized_domains c
+    LEFT JOIN {{ source('raw_data', 'customer_name_mapping') }} cnm 
+        ON c.customer_name = cnm.original_name
 )
 
 SELECT 
@@ -75,6 +110,8 @@ SELECT
     domain_type,
     main_email_domain,
     cc_email_domain,
+    normalized_main_domain,
+    normalized_cc_domain,
     
     -- Customer details
     main_email,

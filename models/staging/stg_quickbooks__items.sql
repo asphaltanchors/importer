@@ -47,7 +47,7 @@ cleaned AS (
         snapshot_date,
         
         -- Metadata
-        is_backup
+        is_seed
     FROM source
 )
 

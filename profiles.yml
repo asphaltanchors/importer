@@ -5,9 +5,9 @@ dqi:
       type: postgres
       host: localhost
       port: 5432
-      user: dqi
-      password: dqi
-      dbname: dqi_xlsx_test
+      user: atlas
+      password: atlas
+      dbname: atlas
       schema: analytics
       threads: 4
       connect_timeout: 15

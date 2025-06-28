@@ -34,7 +34,7 @@ inventory_records AS (
         status,
         
         -- Metadata
-        is_backup,
+        is_seed,
         load_date,
         
         -- Use snapshot_date as the inventory date
@@ -45,6 +45,8 @@ inventory_records AS (
         item_name IS NOT NULL 
         AND item_name != ''
         AND snapshot_date IS NOT NULL
+        AND snapshot_date != 'seed'
+        AND snapshot_date != ''
         -- Filter out records with no meaningful inventory data
         AND (
             quantity_on_hand IS NOT NULL

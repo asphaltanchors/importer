@@ -86,7 +86,7 @@ customers_normalized AS (
         modified_date,
         quick_books_internal_id,
         load_date,
-        is_backup,
+        is_seed,
         
         -- Additional fields
         notes,

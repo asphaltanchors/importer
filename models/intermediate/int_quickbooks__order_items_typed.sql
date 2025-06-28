@@ -106,11 +106,29 @@ typed_order_items AS (
             ELSE CAST(modified_date AS TIMESTAMP)
         END AS modified_date,
         
-        -- Financial amounts (XLSX data is already numeric)
-        product_service_quantity,
-        product_service_rate,
-        product_service_amount,
-        total_amount,
+        -- Financial amounts (type cast from text to numeric, handle percentages)
+        CASE 
+            WHEN product_service_quantity IS NULL OR TRIM(product_service_quantity::TEXT) = '' THEN NULL
+            ELSE CAST(product_service_quantity AS NUMERIC)
+        END AS product_service_quantity,
+        CASE 
+            WHEN product_service_rate IS NULL OR TRIM(product_service_rate::TEXT) = '' THEN NULL
+            WHEN TRIM(product_service_rate::TEXT) LIKE '%\%' THEN 
+                CAST(REPLACE(TRIM(product_service_rate::TEXT), '%', '') AS NUMERIC) / 100.0
+            ELSE CAST(product_service_rate AS NUMERIC)
+        END AS product_service_rate,
+        CASE 
+            WHEN product_service_amount IS NULL OR TRIM(product_service_amount::TEXT) = '' THEN NULL
+            WHEN TRIM(product_service_amount::TEXT) LIKE '%\%' THEN 
+                CAST(REPLACE(TRIM(product_service_amount::TEXT), '%', '') AS NUMERIC) / 100.0
+            ELSE CAST(product_service_amount AS NUMERIC)
+        END AS product_service_amount,
+        CASE 
+            WHEN total_amount IS NULL OR TRIM(total_amount::TEXT) = '' THEN NULL
+            WHEN TRIM(total_amount::TEXT) LIKE '%\%' THEN 
+                CAST(REPLACE(TRIM(total_amount::TEXT), '%', '') AS NUMERIC) / 100.0
+            ELSE CAST(total_amount AS NUMERIC)
+        END AS total_amount,
         
         -- Other fields we want to preserve
         product_service,
