@@ -28,15 +28,15 @@ WITH customers_with_domains AS (
         CAST(c.modified_date AS TIMESTAMP) as customer_modified_date,
         
         -- Extract primary email domain
-        CASE 
+        NULLIF(CASE 
             WHEN c.main_email LIKE '%;%' THEN LOWER(SPLIT_PART(TRIM(SPLIT_PART(c.main_email, ';', 1)), '@', 2))
             ELSE LOWER(SPLIT_PART(TRIM(c.main_email), '@', 2))
-        END as main_email_domain,
+        END, '') as main_email_domain,
         -- Extract cc email domain  
-        CASE 
+        NULLIF(CASE 
             WHEN c.cc_email LIKE '%;%' THEN LOWER(SPLIT_PART(TRIM(SPLIT_PART(c.cc_email, ';', 1)), '@', 2))
             ELSE LOWER(SPLIT_PART(TRIM(c.cc_email), '@', 2))
-        END as cc_email_domain
+        END, '') as cc_email_domain
     FROM {{ ref('stg_quickbooks__customers') }} c
 ),
 
