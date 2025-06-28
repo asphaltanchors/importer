@@ -117,17 +117,24 @@ company_aggregates AS (
     GROUP BY ccm.company_domain_key, ccm.domain_type
 ),
 
--- Get geographic data from customer addresses (simplified for XLSX migration)
+-- Get geographic data from customer addresses using proper country normalization
 company_geographic_data AS (
     SELECT 
         company_domain_key as normalized_domain,
-        -- Use most common state/country from customer addresses
-        MODE() WITHIN GROUP (ORDER BY billing_address_state) as primary_country,
-        MODE() WITHIN GROUP (ORDER BY billing_address_state) as region,
-        'Unknown' as country_category
-    FROM {{ ref('int_quickbooks__customer_company_mapping') }}
-    WHERE billing_address_state IS NOT NULL
-      AND company_domain_key != 'NO_EMAIL_DOMAIN'
+        -- Use most common normalized country from customer addresses
+        MODE() WITHIN GROUP (ORDER BY 
+            {{ normalize_country('s.billing_address_country', 's.billing_address_state', 's.shipping_address_country', 's.shipping_address_state') }}
+        ) as primary_country,
+        MODE() WITHIN GROUP (ORDER BY 
+            {{ region('s.billing_address_country', 's.billing_address_state', 's.shipping_address_country', 's.shipping_address_state') }}
+        ) as region,
+        MODE() WITHIN GROUP (ORDER BY 
+            {{ country_category('s.billing_address_country', 's.billing_address_state', 's.shipping_address_country', 's.shipping_address_state') }}
+        ) as country_category
+    FROM {{ ref('int_quickbooks__customer_company_mapping') }} c
+    LEFT JOIN {{ ref('stg_quickbooks__customers') }} s ON c.customer_id = s.quick_books_internal_id
+    WHERE company_domain_key != 'NO_EMAIL_DOMAIN'
+      AND company_domain_key != ''
     GROUP BY company_domain_key
 )
 

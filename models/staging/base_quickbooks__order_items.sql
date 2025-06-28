@@ -106,32 +106,53 @@ WITH unioned AS (
         -- Additional fields from XLSX
         class,
         
-        -- Missing fields that downstream models expect (as NULL for now)
-        NULL as memo,
-        NULL as message_to_customer, 
-        NULL as currency,
-        NULL as exchange_rate,
-        NULL as terms,
-        NULL as sales_rep,
-        NULL as fob,
-        NULL as other,
-        NULL as other_1,
-        NULL as other_2,
-        NULL as template,
-        NULL as external_id,
-        NULL as industry,
-        NULL as price_level,
-        NULL as source_channel,
-        NULL as unit_weight_kg,
-        NULL as upc,
-        NULL as product_service_service_date,
-        NULL as product_service_class,
-        NULL as product_service_sales_tax_code,
-        NULL as inventory_site,
-        NULL as inventory_bin,
-        NULL as unit_of_measure,
-        NULL as serial_no,
-        NULL as lot_no,
+        -- Additional fields available in XLSX data
+        memo,
+        {% if src.type == 'invoice' %}
+            customer_message as message_to_customer,
+        {% else %}
+            message_to_customer,
+        {% endif %}
+        currency,
+        exchange_rate,
+        {% if src.type == 'invoice' %}
+            terms,
+        {% else %}
+            NULL as terms,
+        {% endif %}
+        sales_rep,
+        fob,
+        other,
+        other_1,
+        other_2,
+        template,
+        {% if src.type == 'invoice' %}
+            external_id,
+        {% else %}
+            NULL as external_id,
+        {% endif %}
+        CAST(industry AS VARCHAR) as industry,
+        CAST(price_level AS VARCHAR) as price_level,
+        source_channel,
+        CAST(unit_weight_kg AS VARCHAR) as unit_weight_kg,
+        CAST(upc AS VARCHAR) as upc,
+        product_service_service_date,
+        product_service_class,
+        {% if src.type == 'invoice' %}
+            product_service_sales_tax as product_service_sales_tax_code,
+        {% else %}
+            product_service_sales_tax_code,
+        {% endif %}
+        inventory_site,
+        inventory_bin,
+        unit_of_measure,
+        {% if src.type == 'invoice' %}
+            serial_no,
+            lot_no,
+        {% else %}
+            NULL as serial_no,
+            NULL as lot_no,
+        {% endif %}
         
         -- Metadata
         quick_books_internal_id,
