@@ -177,7 +177,7 @@ class LogViewer(Log):
         }
         
         style = style_map.get(level.upper(), "white")
-        formatted_message = Text.from_markup(f"[dim]{timestamp}[/] [{style}]{level}[/] {message}")
+        formatted_message = f"[dim]{timestamp}[/] [{style}]{level}[/] {message}"
         
         self.write(formatted_message)
         
@@ -205,7 +205,7 @@ class PipelineDashboard(App):
     Screen {
         layout: grid;
         grid-size: 3 4;
-        grid-rows: 1fr 2fr 1fr 50px;
+        grid-rows: 1fr 2fr 1fr auto;
         grid-columns: 1fr 1fr 1fr;
     }
     

@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "dqi": {
+    "atlas": {
       "command": "docker",
       "args": [
         "run",
@@ -12,7 +12,7 @@
         "--access-mode=unrestricted"
       ],
       "env": {
-        "DATABASE_URI": "postgresql://dqi:dqi@localhost:5432/dqi"
+        "DATABASE_URI": "postgresql://atlas:atlas@localhost:5432/atlas"
       }
     }
   }
