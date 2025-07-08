@@ -67,6 +67,12 @@ def extract_date_from_filename(filename):
     if match:
         return match.group(1)
     
+    # Pattern: All Lists_MM_DD_YYYY_HH_MM_SS.xlsx or All Transactions_MM_DD_YYYY_HH_MM_SS.xlsx
+    match = re.match(r'All (?:Lists|Transactions)_(\d{2})_(\d{2})_(\d{4})_\d{2}_\d{2}_\d{2}\.xlsx?', filename)
+    if match:
+        mm, dd, yyyy = match.groups()
+        return f"{yyyy}-{mm}-{dd}"
+    
     # Fallback for test files
     if 'test' in filename.lower():
         return datetime.now().strftime('%Y-%m-%d')
@@ -82,11 +88,24 @@ def get_daily_files(input_path, file_type=None, latest_only=False):
         latest_only: If True, return only the most recent file for each type
     """
     if file_type:
-        pattern = f"*_{file_type}.xlsx"
+        # Support both old and new naming patterns
+        patterns = [
+            f"*_{file_type}.xlsx",  # Old pattern: YYYY-MM-DD_transactions.xlsx
+            f"All {file_type.title()}*.xlsx",  # New pattern: All Lists_MM_DD_YYYY_HH_MM_SS.xlsx
+            f"All {file_type.title()}*.xls"   # New pattern with .xls extension
+        ]
     else:
-        pattern = "*_*.xlsx"
+        patterns = [
+            "*_*.xlsx",  # Old pattern
+            "All Lists*.xlsx",  # New pattern for lists
+            "All Lists*.xls",
+            "All Transactions*.xlsx",  # New pattern for transactions
+            "All Transactions*.xls"
+        ]
     
-    files = glob.glob(os.path.join(input_path, pattern))
+    files = []
+    for pattern in patterns:
+        files.extend(glob.glob(os.path.join(input_path, pattern)))
     
     if not files:
         return []
@@ -97,12 +116,20 @@ def get_daily_files(input_path, file_type=None, latest_only=False):
         filename = os.path.basename(filepath)
         try:
             date_str = extract_date_from_filename(filename)
+            # Determine file type from filename
+            if 'transactions' in filename.lower():
+                file_type_detected = 'transactions'
+            elif 'lists' in filename.lower():
+                file_type_detected = 'lists'
+            else:
+                file_type_detected = 'unknown'
+            
             file_info.append({
                 'path': filepath,
                 'filename': filename,
                 'date': date_str,
                 'datetime': datetime.strptime(date_str, '%Y-%m-%d'),
-                'type': 'transactions' if 'transactions' in filename else 'lists'
+                'type': file_type_detected
             })
         except ValueError as e:
             print(f"Warning: {e}")
@@ -253,10 +280,29 @@ def xlsx_quickbooks_source(mode="full"):
     def create_list_resource(worksheet_name):
         table_name = f"xlsx_{worksheet_name.lower().replace(' ', '_')}"
         
+        # Define column type hints for numeric fields
+        columns = {}
+        if worksheet_name == 'Item':
+            columns = {
+                "sales_price": {"data_type": "decimal"},
+                "purchase_cost": {"data_type": "decimal"}, 
+                "quantity_on_hand": {"data_type": "decimal"},
+                "quantity_on_order": {"data_type": "decimal"},
+                "quantity_on_sales_order": {"data_type": "decimal"},
+                "min_re_order_point": {"data_type": "decimal"},
+                "max_re_order_point": {"data_type": "decimal"}
+            }
+        elif worksheet_name == 'Customer':
+            columns = {
+                "current_balance": {"data_type": "decimal"},
+                "credit_limit": {"data_type": "decimal"}
+            }
+        
         @dlt.resource(
             write_disposition="merge",
             name=table_name,
-            primary_key=["QuickBooks_Internal_Id", "snapshot_date"]
+            primary_key=["QuickBooks_Internal_Id"],
+            columns=columns
         )
         def extract_list_worksheet():
             for file_info in list_files:
