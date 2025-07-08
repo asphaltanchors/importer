@@ -68,7 +68,7 @@ def extract_date_from_filename(filename):
         return match.group(1)
     
     # Pattern: All Lists_MM_DD_YYYY_HH_MM_SS.xlsx or All Transactions_MM_DD_YYYY_HH_MM_SS.xlsx
-    match = re.match(r'All (?:Lists|Transactions)_(\d{2})_(\d{2})_(\d{4})_\d{2}_\d{2}_\d{2}\.xlsx?', filename)
+    match = re.match(r'All (?:Lists|Transactions)_(\d{2})_(\d{2})_(\d{4})_\d{1,2}_\d{1,2}_\d{1,2}\.xlsx?', filename)
     if match:
         mm, dd, yyyy = match.groups()
         return f"{yyyy}-{mm}-{dd}"
