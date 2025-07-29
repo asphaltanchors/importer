@@ -85,6 +85,50 @@ contacts_with_companies AS (
     LEFT JOIN customer_company_mapping ccm ON cc.customer_id = ccm.customer_id
 ),
 
+-- Deduplicate contacts by email address across customer records (case-insensitive)
+-- Keep the best representative record for each unique email
+contacts_deduplicated AS (
+    SELECT 
+        *,
+        ROW_NUMBER() OVER (
+            PARTITION BY LOWER(main_email)  -- Case-insensitive email deduplication
+            ORDER BY 
+                -- Prefer complete contact data
+                CASE WHEN contact_data_quality = 'complete' THEN 1
+                     WHEN contact_data_quality = 'partial' THEN 2
+                     ELSE 3 END,
+                -- Prefer records with higher balances (more important customers)
+                current_balance DESC NULLS LAST,
+                -- Prefer business domains over consumer domains
+                CASE WHEN domain_type = 'business' THEN 1
+                     WHEN domain_type = 'consumer' THEN 2
+                     ELSE 3 END,
+                -- Prefer records with more complete contact info
+                CASE WHEN full_name IS NOT NULL THEN 1 ELSE 2 END,
+                -- Prefer lowercase emails over mixed case for consistency
+                CASE WHEN main_email = LOWER(main_email) THEN 1 ELSE 2 END,
+                -- Use customer_id as final tiebreaker for consistency
+                customer_id
+        ) as email_rank
+    FROM contacts_with_companies
+    WHERE main_email IS NOT NULL  -- Only deduplicate records with emails
+),
+
+-- Combine deduplicated email contacts with non-email contacts
+contacts_consolidated AS (
+    -- Include the best representative for each email
+    SELECT * FROM contacts_deduplicated WHERE email_rank = 1
+    
+    UNION ALL
+    
+    -- Include contacts without emails (they can't be duplicated by email)
+    SELECT 
+        *,
+        1 as email_rank  -- Add placeholder rank for consistency
+    FROM contacts_with_companies 
+    WHERE main_email IS NULL
+),
+
 -- Determine contact relationship types within each company
 contact_relationships AS (
     SELECT 
@@ -122,7 +166,7 @@ contact_relationships AS (
         CASE WHEN main_phone IS NOT NULL OR alt_phone IS NOT NULL OR 
                   work_phone IS NOT NULL OR mobile_phone IS NOT NULL THEN TRUE ELSE FALSE END as has_phone
         
-    FROM contacts_with_companies
+    FROM contacts_consolidated
 ),
 
 -- Final person-company relationships
