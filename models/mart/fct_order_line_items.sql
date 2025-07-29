@@ -115,7 +115,21 @@ filtered_line_items AS (
     )
 ),
 
--- Join with products for enrichment
+-- Get primary contacts for linking line items to persons
+customer_primary_contacts AS (
+    SELECT 
+        source_customer_name,
+        contact_id,
+        full_name as primary_contact_name,
+        primary_email as primary_contact_email,
+        primary_phone as primary_contact_phone,
+        contact_role,
+        company_domain_key
+    FROM {{ ref('dim_customer_contacts') }}
+    WHERE is_primary_company_contact = TRUE
+),
+
+-- Join with products and contacts for enrichment
 final_line_items AS (
     SELECT
         li.*,
@@ -130,11 +144,20 @@ final_line_items AS (
         p.sales_price as standard_sales_price,
         p.purchase_cost as standard_purchase_cost,
         p.margin_percentage,
-        p.margin_amount
+        p.margin_amount,
+        
+        -- Person/contact information
+        cpc.contact_id as primary_contact_id,
+        cpc.primary_contact_name,
+        cpc.primary_contact_email,
+        cpc.primary_contact_phone,
+        cpc.contact_role as primary_contact_role
         
     FROM filtered_line_items li
     LEFT JOIN {{ ref('fct_products') }} p
         ON li.product_service = p.item_name
+    LEFT JOIN customer_primary_contacts cpc 
+        ON li.customer = cpc.source_customer_name
 )
 
 SELECT * FROM final_line_items

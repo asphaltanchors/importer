@@ -17,96 +17,118 @@ WITH orders AS (
     SELECT * FROM {{ ref('int_quickbooks__orders') }}
 ),
 
+-- Get primary contacts for each customer to link orders to persons
+customer_primary_contacts AS (
+    SELECT 
+        source_customer_name,
+        contact_id,
+        full_name as primary_contact_name,
+        primary_email as primary_contact_email,
+        primary_phone as primary_contact_phone,
+        contact_role,
+        company_domain_key
+    FROM {{ ref('dim_customer_contacts') }}
+    WHERE is_primary_company_contact = TRUE
+),
+
 -- Add any additional transformations or business logic here
 orders_enriched AS (
     SELECT
         -- Primary key
-        order_number,
+        o.order_number,
         
         -- Order metadata
-        source_type,
-        order_date,
-        customer,
-        payment_method,
-        status,
-        due_date,
+        o.source_type,
+        o.order_date,
+        o.customer,
+        o.payment_method,
+        o.status,
+        o.due_date,
+        
+        -- Person/contact information
+        cpc.contact_id as primary_contact_id,
+        cpc.primary_contact_name,
+        cpc.primary_contact_email,
+        cpc.primary_contact_phone,
+        cpc.contact_role as primary_contact_role,
         
         -- Flag fields
-        is_tax_exempt,
+        o.is_tax_exempt,
         
         -- Additional flags/calculations
         CASE 
-            WHEN status = 'PAID' THEN TRUE
+            WHEN o.status = 'PAID' THEN TRUE
             ELSE FALSE
         END AS is_paid,
         
         CASE
-            WHEN due_date IS NOT NULL AND order_date IS NOT NULL AND due_date < order_date THEN TRUE
+            WHEN o.due_date IS NOT NULL AND o.order_date IS NOT NULL AND o.due_date < o.order_date THEN TRUE
             ELSE FALSE
         END AS is_backdated,
         
         -- Addresses
         CONCAT_WS(', ',
-            NULLIF(billing_address_line_1, ''),
-            NULLIF(billing_address_line_2, ''),
-            NULLIF(billing_address_line_3, '')
+            NULLIF(o.billing_address_line_1, ''),
+            NULLIF(o.billing_address_line_2, ''),
+            NULLIF(o.billing_address_line_3, '')
         ) AS billing_address,
         
-        billing_address_city,
-        billing_address_state,
-        billing_address_postal_code,
-        billing_address_country,
+        o.billing_address_city,
+        o.billing_address_state,
+        o.billing_address_postal_code,
+        o.billing_address_country,
         
         CONCAT_WS(', ',
-            NULLIF(shipping_address_line_1, ''),
-            NULLIF(shipping_address_line_2, ''),
-            NULLIF(shipping_address_line_3, '')
+            NULLIF(o.shipping_address_line_1, ''),
+            NULLIF(o.shipping_address_line_2, ''),
+            NULLIF(o.shipping_address_line_3, '')
         ) AS shipping_address,
         
-        shipping_address_city,
-        shipping_address_state,
-        shipping_address_postal_code,
-        shipping_address_country,
+        o.shipping_address_city,
+        o.shipping_address_state,
+        o.shipping_address_postal_code,
+        o.shipping_address_country,
         
         -- Country fields for reporting
-        primary_country,
-        country_category,
-        region,
+        o.primary_country,
+        o.country_category,
+        o.region,
         
         -- Shipping information
-        shipping_method,
-        ship_date,
+        o.shipping_method,
+        o.ship_date,
         
         -- Order details
-        memo,
-        message_to_customer,
-        class,
-        currency,
-        exchange_rate,
-        terms,
-        sales_rep,
+        o.memo,
+        o.message_to_customer,
+        o.class,
+        o.currency,
+        o.exchange_rate,
+        o.terms,
+        o.sales_rep,
         
         -- Identifiers for joins
-        transaction_id,
-        quickbooks_internal_id,
-        external_id,
+        o.transaction_id,
+        o.quickbooks_internal_id,
+        o.external_id,
         
         -- Dates for analytics
-        created_date,
-        modified_date,
+        o.created_date,
+        o.modified_date,
         
         -- Metrics
-        COALESCE(total_line_items_amount, 0.0) as total_line_items_amount,
-        COALESCE(total_tax, 0.0) as total_tax,
-        COALESCE(total_amount, 0.0) as total_amount,
-        COALESCE(item_count, 0) as item_count,
+        COALESCE(o.total_line_items_amount, 0.0) as total_line_items_amount,
+        COALESCE(o.total_tax, 0.0) as total_tax,
+        COALESCE(o.total_amount, 0.0) as total_amount,
+        COALESCE(o.item_count, 0) as item_count,
         
         -- Derived metrics
         CASE 
-            WHEN COALESCE(total_tax, 0) = 0 OR COALESCE(total_amount, 0) = 0 THEN 0
-            ELSE ROUND(CAST((total_tax / total_amount) * 100 AS NUMERIC), 2)
+            WHEN COALESCE(o.total_tax, 0) = 0 OR COALESCE(o.total_amount, 0) = 0 THEN 0
+            ELSE ROUND(CAST((o.total_tax / o.total_amount) * 100 AS NUMERIC), 2)
         END AS effective_tax_rate
-    FROM orders
+    FROM orders o
+    LEFT JOIN customer_primary_contacts cpc ON o.customer = cpc.source_customer_name
 )
 
 SELECT * FROM orders_enriched
