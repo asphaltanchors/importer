@@ -119,3 +119,67 @@ models:
         description: Boolean flag indicating if the item is a kit (TRUE) or not (FALSE)
         tests:
           - not_null
+
+  - name: int_quickbooks__customer_person_mapping
+    description: >
+      CRITICAL TESTING: Person-company mapping with email deduplication across customer records.
+      WARNING: Contains unstable surrogate keys that include email_position, causing relationship breakage.
+    columns:
+      - name: person_company_id
+        description: Unique relationship identifier between person and company
+        tests:
+          - unique
+          - not_null
+      
+      - name: person_id
+        description: "Contact ID from staging (WARNING: includes unstable email_position in hash)"
+        tests:
+          - not_null
+      
+      - name: company_domain_key
+        description: Company domain key for consolidation
+        tests:
+          - not_null
+          # Ensure no orphaned NO_EMAIL_DOMAIN records
+          - dbt_utils.expression_is_true:
+              expression: "company_domain_key != 'NO_EMAIL_DOMAIN'"
+      
+      - name: main_email
+        description: "Person's email address (should be unique across all persons after deduplication)"
+        tests:
+          - not_null
+          - unique  # CRITICAL: This tests the core email deduplication logic
+      
+      - name: contact_role
+        description: Role classification for the contact
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['primary_contact', 'primary_with_cc', 'cc_contact_only', 'name_only_contact', 'minimal_contact']
+      
+      - name: company_contact_rank
+        description: Ranking within the company (1 = primary contact)
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "company_contact_rank >= 1"
+      
+      - name: is_primary_company_contact
+        description: "Flag for primary contact (should match company_contact_rank = 1)"
+        tests:
+          - not_null
+          # Test consistency between rank and flag
+          - dbt_utils.expression_is_true:
+              expression: "(company_contact_rank = 1 AND is_primary_company_contact = TRUE) OR (company_contact_rank > 1 AND is_primary_company_contact = FALSE)"
+      
+      - name: contact_data_quality
+        description: Data quality assessment
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['complete', 'partial', 'minimal']
+      
+      - name: source_customer_id
+        description: Original customer ID for traceability
+        tests:
+          - not_null

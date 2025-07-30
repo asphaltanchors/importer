@@ -131,3 +131,86 @@ models:
           - not_null
           - accepted_values:
               values: ['North America', 'International']
+  
+  - name: stg_quickbooks__customer_contacts
+    description: >
+      CRITICAL TESTING: Staging model for extracting person-level contact information from QuickBooks customer data.
+      Handles name parsing, email extraction, and phone number normalization for individual contacts.
+      WARNING: This model contains complex business logic that belongs in intermediate layer.
+    columns:
+      - name: contact_id
+        description: Unique identifier for each contact (includes customer_id, email, source, position)
+        tests:
+          - unique
+          - not_null
+      
+      - name: customer_id  
+        description: Original QuickBooks customer ID
+        tests:
+          - not_null
+      
+      - name: main_email
+        description: "Individual email address (split from main_email or cc_email fields)"
+        tests:
+          - not_null
+          # Test for basic email format
+          - dbt_utils.expression_is_true:
+              expression: "main_email LIKE '%@%'"
+          # Ensure no Amazon marketplace emails pass through
+          - dbt_utils.expression_is_true:
+              expression: "NOT (LOWER(main_email) LIKE '%@marketplace.amazon.com')"
+      
+      - name: main_email_domain
+        description: Domain extracted from email address
+        tests:
+          - not_null
+          # Ensure domain extraction is consistent
+          - dbt_utils.expression_is_true:
+              expression: "main_email_domain = LOWER(SPLIT_PART(main_email, '@', 2))"
+      
+      - name: full_name
+        description: Constructed full name (from original data or derived from email)
+        tests:
+          - not_null
+      
+      - name: email_source
+        description: Source of the email (main or cc)  
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['main', 'cc']
+      
+      - name: email_position
+        description: "Position of email in the original field (1, 2, 3...)"
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "email_position >= 1"
+      
+      - name: contact_priority
+        description: Priority classification of the contact
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['primary', 'additional_main', 'cc']
+      
+      - name: contact_data_quality
+        description: Data quality assessment for the contact
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['complete', 'partial', 'minimal']
+      
+      - name: has_person_data
+        description: Flag indicating if contact has meaningful person information
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+      
+      - name: primary_contact_method
+        description: Primary method to contact this person
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['email', 'phone', 'cc_email', 'none']

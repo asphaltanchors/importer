@@ -682,3 +682,139 @@ models:
           - not_null
           - dbt_utils.expression_is_true:
               expression: ">= 0"
+
+  - name: dim_customer_contacts
+    description: >
+      CRITICAL TESTING: Customer contacts dimension table providing person-level information for CRM and analytics.
+      WARNING: Uses string-based joins in fact tables instead of stable surrogate keys.
+    columns:
+      - name: contact_dim_key
+        description: Surrogate key for change detection
+        tests:
+          - unique
+          - not_null
+      
+      - name: contact_id
+        description: Contact identifier (same as person_id from intermediate)
+        tests:
+          - unique
+          - not_null
+      
+      - name: primary_email
+        description: Primary email address for the contact
+        tests:
+          - not_null
+          - unique  # Ensures email deduplication worked
+      
+      - name: company_domain_key
+        description: Link to company consolidation
+        tests:
+          - not_null
+      
+      - name: company_name
+        description: Consolidated company name
+        tests:
+          - not_null
+      
+      - name: contact_role
+        description: Role within the company
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['primary_contact', 'primary_with_cc', 'cc_contact_only', 'name_only_contact', 'minimal_contact']
+      
+      - name: is_primary_company_contact
+        description: Flag for primary company contact
+        tests:
+          - not_null
+      
+      - name: contact_tier
+        description: Contact tier based on data quality and role
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['high_value_contact', 'complete_contact', 'email_contact', 'phone_contact', 'basic_contact']
+      
+      - name: email_marketable
+        description: Flag indicating if contact can be emailed
+        tests:
+          - not_null
+      
+      - name: phone_contactable
+        description: Flag indicating if contact can be called
+        tests:
+          - not_null
+      
+      - name: key_account_contact
+        description: Flag for key account contacts
+        tests:
+          - not_null
+
+  - name: dim_customer_contacts_fixed
+    description: >
+      FIXED: Customer contacts dimension table with stable surrogate keys and proper DBT architecture.
+      Replaces broken version with proper layering and dimensional modeling principles.
+    columns:
+      - name: contact_dim_key
+        description: Surrogate key for change detection (stable)
+        tests:
+          - unique
+          - not_null
+      
+      - name: contact_id
+        description: "Primary contact identifier (stable - NO email_position in hash)"
+        tests:
+          - unique
+          - not_null
+      
+      - name: primary_email
+        description: Primary email address for the contact
+        tests:
+          - not_null
+          - unique  # Ensures email deduplication worked
+      
+      - name: company_domain_key
+        description: Link to company consolidation
+        tests:
+          - not_null
+      
+      - name: company_name
+        description: Consolidated company name
+        tests:
+          - not_null
+      
+      - name: contact_role
+        description: Role within the company
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['primary_contact', 'secondary_contact', 'email_contact', 'phone_contact', 'name_only_contact', 'minimal_contact']
+      
+      - name: is_primary_company_contact
+        description: Flag for primary company contact
+        tests:
+          - not_null
+      
+      - name: contact_tier
+        description: Contact tier based on data quality and role
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['high_value_contact', 'complete_contact', 'email_contact', 'phone_contact', 'basic_contact']
+      
+      - name: completeness_score
+        description: Data completeness score from 0-100
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "completeness_score >= 0 and completeness_score <= 100"
+      
+      - name: email_marketable
+        description: Flag indicating if contact can be emailed
+        tests:
+          - not_null
+      
+      - name: phone_contactable
+        description: Flag indicating if contact can be called
+        tests:
+          - not_null
