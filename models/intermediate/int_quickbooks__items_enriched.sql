@@ -31,52 +31,41 @@ items_with_product_family AS (
     SELECT
         *,
         CASE
-            -- Electronics and Technology
-            WHEN LOWER(item_name) LIKE '%computer%' 
-                OR LOWER(item_name) LIKE '%laptop%' 
-                OR LOWER(sales_description) LIKE '%electronic%'
-                OR LOWER(item_name) LIKE '%ipad%'
-                OR LOWER(item_name) LIKE '%tablet%'
-                OR LOWER(item_name) LIKE '%phone%'
-                OR LOWER(item_name) LIKE '%monitor%'
-                OR LOWER(item_name) LIKE '%keyboard%'
-                OR LOWER(item_name) LIKE '%mouse%'
-                OR LOWER(item_name) LIKE '%cable%'
-                OR LOWER(item_name) LIKE '%adapter%'
-                OR LOWER(item_name) LIKE '%charger%'
-                THEN 'Electronics & Technology'
-            
-            -- Office Supplies
-            WHEN LOWER(item_name) LIKE '%pen%' 
-                OR LOWER(item_name) LIKE '%paper%' 
-                OR LOWER(item_name) LIKE '%folder%'
-                OR LOWER(item_name) LIKE '%binder%'
-                OR LOWER(item_name) LIKE '%stapler%'
-                OR LOWER(item_name) LIKE '%notebook%'
-                OR LOWER(item_name) LIKE '%marker%'
-                OR LOWER(item_name) LIKE '%tape%'
-                OR LOWER(sales_description) LIKE '%office%'
-                THEN 'Office Supplies'
-            
-            -- Furniture
-            WHEN LOWER(item_name) LIKE '%desk%'
-                OR LOWER(item_name) LIKE '%chair%'
-                OR LOWER(item_name) LIKE '%table%'
-                OR LOWER(item_name) LIKE '%cabinet%'
-                OR LOWER(item_name) LIKE '%shelf%'
-                OR LOWER(sales_description) LIKE '%furniture%'
-                THEN 'Furniture'
-            
-            -- Services
-            WHEN LOWER(item_type) LIKE '%service%'
-                OR LOWER(item_name) LIKE '%service%'
-                OR LOWER(item_name) LIKE '%consultation%'
-                OR LOWER(item_name) LIKE '%support%'
-                OR LOWER(item_name) LIKE '%maintenance%'
-                THEN 'Services'
-            
-            -- Default category for uncategorized items
-            ELSE 'General Products'
+            -- SP10 family
+            WHEN item_name LIKE '01-6310%' THEN 'SP10'
+            WHEN item_name IN ('01-7010-FBA', '01-7013.FBA', '01-7010', '01-7013') THEN 'SP10'
+
+            -- SP12 family
+            WHEN item_name LIKE '01-6315%' THEN 'SP12'
+
+            -- SP18 family
+            WHEN item_name LIKE '01-6318%' THEN 'SP18'
+
+            -- SP58 family
+            WHEN item_name LIKE '01-6358%' THEN 'SP58'
+
+            -- AM625 family
+            WHEN item_name LIKE '01-7625%' THEN 'AM625'
+            WHEN item_name IN ('01-7014-FBA', '71-7010.MST', '01-7014') THEN 'AM625'
+
+            -- Kits family (excluding specific items now assigned to other families)
+            WHEN item_name LIKE '%AK4%' OR
+                 item_name LIKE '%AK-4%' THEN 'Kits'
+
+            -- Adhesives family (includes all EPX products)
+            WHEN item_name LIKE '82-5002%' OR
+                 item_name LIKE '82-6002%' OR
+                 item_name LIKE '82-6005%' OR
+                 sales_description LIKE '%EPX2%' OR
+                 sales_description LIKE '%EPX3%' OR
+                 sales_description LIKE '%EPX5%' THEN 'Adhesives'
+
+            WHEN item_name LIKE '83-10%' OR
+                 item_name LIKE '49-800%' THEN 'Accessories'
+            WHEN item_name IN ('01-5390', '82-6002.N', '46-3001') THEN 'Accessories'
+
+            -- Default to 'Uncategorized' for products that don't fit into a family
+            ELSE 'Uncategorized'
         END as product_family
     FROM distinct_items
 ),
@@ -85,57 +74,16 @@ items_with_product_family AS (
 items_with_material_type AS (
     SELECT
         *,
-        CASE
-            -- Plastic/Synthetic materials
-            WHEN LOWER(item_name) LIKE '%plastic%'
-                OR LOWER(sales_description) LIKE '%plastic%'
-                OR LOWER(item_name) LIKE '%synthetic%'
-                OR LOWER(item_name) LIKE '%polymer%'
-                THEN 'Plastic'
-            
-            -- Metal materials
-            WHEN LOWER(item_name) LIKE '%metal%'
-                OR LOWER(item_name) LIKE '%steel%'
-                OR LOWER(item_name) LIKE '%aluminum%'
-                OR LOWER(item_name) LIKE '%iron%'
-                OR LOWER(sales_description) LIKE '%metal%'
-                THEN 'Metal'
-            
-            -- Wood materials
-            WHEN LOWER(item_name) LIKE '%wood%'
-                OR LOWER(item_name) LIKE '%timber%'
-                OR LOWER(sales_description) LIKE '%wood%'
-                OR LOWER(item_name) LIKE '%oak%'
-                OR LOWER(item_name) LIKE '%pine%'
-                THEN 'Wood'
-            
-            -- Fabric/Textile
-            WHEN LOWER(item_name) LIKE '%fabric%'
-                OR LOWER(item_name) LIKE '%cotton%'
-                OR LOWER(item_name) LIKE '%textile%'
-                OR LOWER(item_name) LIKE '%cloth%'
-                THEN 'Fabric'
-            
-            -- Glass materials
-            WHEN LOWER(item_name) LIKE '%glass%'
-                OR LOWER(sales_description) LIKE '%glass%'
-                THEN 'Glass'
-            
-            -- Paper materials
-            WHEN LOWER(item_name) LIKE '%paper%'
-                OR LOWER(sales_description) LIKE '%paper%'
-                THEN 'Paper'
-            
-            -- Digital/Virtual (for services and software)
-            WHEN LOWER(item_type) LIKE '%service%'
-                OR LOWER(item_name) LIKE '%software%'
-                OR LOWER(item_name) LIKE '%digital%'
-                OR LOWER(item_name) LIKE '%online%'
-                THEN 'Digital'
-            
-            -- Default for items where material can't be determined
-            ELSE 'Mixed/Unknown'
-        END as material_type
+        CASE 
+            WHEN item_name IN ('01-6318.7SK', '01-6315.3SK', '01-6315.3SK-2', '01-6358.5SK', '01-6358.5SK-2') THEN 'Stainless Steel'
+            WHEN item_name LIKE '01-63%' AND item_name NOT LIKE '%-D' THEN 'Zinc Plated'
+            WHEN item_name LIKE '%-D' THEN 'Dacromet'
+            WHEN item_name IN ('82-5002.K', '82-5002.010', '82-6002') THEN 'Adhesives'
+            WHEN item_name IN ('01-7014', '01-7014-FBA', '01-7625.L') THEN 'Plastic'
+            WHEN item_name IN ('01-7011.PST', '01-7010-FBA', '01-7010', '01-7013') THEN 'Zinc Plated'
+            WHEN item_name LIKE '01-8003%' THEN 'Tools'
+            ELSE 'Uncategorized'
+        END AS material_type
     FROM items_with_product_family
 ),
 
@@ -144,18 +92,12 @@ items_with_kit_detection AS (
     SELECT
         *,
         CASE
-            WHEN LOWER(item_name) LIKE '%kit%'
-                OR LOWER(item_name) LIKE '%bundle%'
-                OR LOWER(item_name) LIKE '%package%'
-                OR LOWER(item_name) LIKE '%set%'
-                OR LOWER(sales_description) LIKE '%kit%'
-                OR LOWER(sales_description) LIKE '%bundle%'
-                OR LOWER(sales_description) LIKE '%package%'
-                OR LOWER(item_subtype) LIKE '%group%'
-                OR LOWER(item_subtype) LIKE '%assembly%'
-            THEN TRUE
+            WHEN item_name LIKE '%AK4%' OR
+                 item_name LIKE '%AK-4%' OR
+                 item_name IN ('01-7010-FBA', '01-7013.FBA', '01-7014-FBA', 
+                                '71-7010.MST', '01-7010', '01-7013', '01-7014') THEN TRUE
             ELSE FALSE
-        END as is_kit
+        END AS is_kit
     FROM items_with_material_type
 )
 

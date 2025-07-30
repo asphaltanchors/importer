@@ -350,14 +350,14 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['Electronics & Technology', 'Office Supplies', 'Furniture', 'Services', 'General Products']
+              values: ['SP10', 'SP12', 'SP18', 'SP58', 'AM625', 'Kits', 'Adhesives', 'Accessories', 'Uncategorized']
       
       - name: material_type
         description: Derived material type based on item attributes
         tests:
           - not_null
           - accepted_values:
-              values: ['Plastic', 'Metal', 'Wood', 'Fabric', 'Glass', 'Paper', 'Digital', 'Mixed/Unknown']
+              values: ['Stainless Steel', 'Zinc Plated', 'Dacromet', 'Adhesives', 'Plastic', 'Tools', 'Uncategorized']
       
       - name: is_kit
         description: Boolean flag indicating if the item is a kit/bundle
