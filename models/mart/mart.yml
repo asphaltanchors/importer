@@ -546,6 +546,21 @@ models:
           - not_null
           - accepted_values:
               values: ['Rare Buyer (<5 orders)', 'Occasional Buyer (5-9 orders)', 'Regular Buyer (10-19 orders)', 'Frequent Buyer (20+ orders)']
+      
+      - name: product_service_description
+        description: Most recent product description for this company-product combination (critical field from correlated subquery)
+        tests:
+          - not_null
+      
+      - name: first_purchase_date
+        description: First date this company purchased this product
+        tests:
+          - not_null
+      
+      - name: latest_purchase_date
+        description: Most recent date this company purchased this product
+        tests:
+          - not_null
     tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns:

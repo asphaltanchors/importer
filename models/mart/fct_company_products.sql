@@ -11,7 +11,7 @@
     tags = ['companies', 'products', 'analytics', 'quickbooks']
 ) }}
 
-WITH company_product_details AS (
+WITH company_product_details_ranked AS (
     SELECT 
         -- Link to companies via customer mapping - use clean line items data
         bc.company_domain_key,
@@ -28,7 +28,14 @@ WITH company_product_details AS (
         
         -- Context
         oli.sales_rep,
-        oli.source_type
+        oli.source_type,
+        
+        -- Window function to rank records by most recent transaction date
+        -- This replaces the expensive correlated subquery
+        ROW_NUMBER() OVER (
+            PARTITION BY bc.company_domain_key, oli.product_service 
+            ORDER BY oli.order_date DESC
+        ) as description_rank
         
     FROM {{ ref('fct_order_line_items') }} oli
     INNER JOIN {{ ref('bridge_customer_company') }} bc 
@@ -39,18 +46,37 @@ WITH company_product_details AS (
       AND TRIM(oli.product_service) != ''
 ),
 
+-- Extract most recent product description for each company-product combination
+most_recent_descriptions AS (
+    SELECT 
+        company_domain_key,
+        product_service,
+        product_service_description
+    FROM company_product_details_ranked
+    WHERE description_rank = 1
+),
+
+-- Create base data without ranking for aggregation
+company_product_details AS (
+    SELECT 
+        company_domain_key,
+        product_service,
+        transaction_date,
+        quantity,
+        unit_price,
+        line_amount,
+        sales_rep,
+        source_type
+    FROM company_product_details_ranked
+),
+
 -- Aggregate by company and product
 company_product_metrics AS (
     SELECT 
         cpd.company_domain_key,
         cpd.product_service,
-        -- Get the most recent product description for this company-product combination
-        (SELECT cpd2.product_service_description 
-         FROM company_product_details cpd2 
-         WHERE cpd2.company_domain_key = cpd.company_domain_key 
-           AND cpd2.product_service = cpd.product_service 
-         ORDER BY cpd2.transaction_date DESC 
-         LIMIT 1) as product_service_description,
+        -- Get the most recent product description using window function approach
+        mrd.product_service_description,
         
         -- Purchase metrics
         COUNT(*) as total_transactions,
@@ -79,9 +105,12 @@ company_product_metrics AS (
         MAX(p.purchase_cost) as standard_purchase_cost
         
     FROM company_product_details cpd
+    LEFT JOIN most_recent_descriptions mrd 
+        ON cpd.company_domain_key = mrd.company_domain_key 
+        AND cpd.product_service = mrd.product_service
     LEFT JOIN {{ ref('fct_products') }} p ON cpd.product_service = p.item_name
     WHERE cpd.company_domain_key != 'NO_EMAIL_DOMAIN'
-    GROUP BY cpd.company_domain_key, cpd.product_service
+    GROUP BY cpd.company_domain_key, cpd.product_service, mrd.product_service_description
 )
 
 SELECT 
