@@ -146,7 +146,6 @@ models:
         description: Unique period identifier (YYYY-QN format)
         tests:
           - not_null
-      
       - name: order_count
         description: Number of orders in this period
         tests:
@@ -156,6 +155,12 @@ models:
         description: Total revenue for this company in this period
         tests:
           - not_null
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - company_domain_key
+            - order_year
+            - order_quarter
 
   - name: fct_products
     description: >
@@ -462,6 +467,7 @@ models:
         description: Unique order/invoice number
         tests:
           - not_null
+          - unique
       
       - name: order_date
         description: Date the order was placed
@@ -540,6 +546,11 @@ models:
           - not_null
           - accepted_values:
               values: ['Rare Buyer (<5 orders)', 'Occasional Buyer (5-9 orders)', 'Regular Buyer (10-19 orders)', 'Frequent Buyer (20+ orders)']
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - company_domain_key
+            - product_service
 
   - name: mart_product_company_period_spending
     description: >
@@ -682,6 +693,12 @@ models:
           - not_null
           - dbt_utils.expression_is_true:
               expression: ">= 0"
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - product_service
+            - company_domain_key
+            - period_type
 
   - name: dim_customer_contacts
     description: >
@@ -818,3 +835,51 @@ models:
         description: Flag indicating if contact can be called
         tests:
           - not_null
+
+  - name: fct_inventory_history
+    description: >
+      Fact table tracking inventory history and changes over time.
+    columns:
+      - name: item_name
+        description: Name of the inventory item
+        tests:
+          - not_null
+      
+      - name: snapshot_date
+        description: Date of the inventory snapshot
+        tests:
+          - not_null
+      
+      - name: quantity_on_hand
+        description: Quantity available in inventory
+        tests:
+          - not_null
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - item_name
+            - snapshot_date
+
+  - name: fct_product_pricing_history
+    description: >
+      Fact table tracking product pricing changes and history.
+    columns:
+      - name: item_name
+        description: Name of the product
+        tests:
+          - not_null
+      
+      - name: effective_date
+        description: Date when the price became effective
+        tests:
+          - not_null
+      
+      - name: sales_price
+        description: Sales price for the product
+        tests:
+          - not_null
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - item_name
+            - effective_date

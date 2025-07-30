@@ -6,6 +6,12 @@ models:
       Base model that unions order items data from invoices and sales receipts in QuickBooks.
       Standardizes field names and types across different source tables.
     columns:
+      - name: _dlt_id
+        description: Unique identifier for the line item (DLT generated)
+        tests:
+          - not_null
+          - unique
+      
       - name: order_number
         description: Unique identifier for the order (invoice_no or sales_receipt_no)
         tests:
@@ -33,6 +39,12 @@ models:
     description: >
       Enriched order items with tax exemption status derived from customer_sales_tax_code.
     columns:
+      - name: _dlt_id
+        description: Unique identifier for the line item (DLT generated)
+        tests:
+          - not_null
+          - unique
+      
       - name: order_number
         description: Unique identifier for the order
         tests:
@@ -83,6 +95,16 @@ models:
       
       - name: status
         description: Current status of the item
+      
+      - name: snapshot_date
+        description: Date of the item snapshot
+        tests:
+          - not_null
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - item_name
+            - snapshot_date
 
   - name: stg_quickbooks__customers
     description: >
@@ -278,5 +300,35 @@ models:
       
       - name: staged_at
         description: When the data was staged in DBT
+        tests:
+          - not_null
+
+  - name: stg_quickbooks__company_enrichment
+    description: >
+      Staging model for company enrichment data from external APIs.
+    columns:
+      - name: company_domain
+        description: Company domain used for matching
+        tests:
+          - not_null
+          - unique
+      
+      - name: company_name
+        description: Company name from enrichment source
+        tests:
+          - not_null
+
+  - name: stg_quickbooks__customer_contacts_clean
+    description: >
+      Staging model for cleaned customer contact data.
+    columns:
+      - name: customer_id
+        description: Customer identifier
+        tests:
+          - not_null
+          - unique
+      
+      - name: contact_email
+        description: Cleaned contact email
         tests:
           - not_null
