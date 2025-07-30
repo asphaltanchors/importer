@@ -6,56 +6,19 @@
     tags = ['intermediate', 'customers', 'revenue']
 ) }}
 
--- Get customer-level revenue from invoices
-WITH invoice_revenue AS (
-    SELECT 
-        customer,
-        SUM(product_service__amount) as customer_total_revenue,
-        COUNT(DISTINCT invoice_no) as customer_total_orders,
-        COUNT(*) as customer_total_line_items,
-        MIN(CAST(invoice_date AS DATE)) as customer_first_order_date,
-        MAX(CAST(invoice_date AS DATE)) as customer_latest_order_date,
-        COUNT(DISTINCT CAST(invoice_date AS DATE)) as customer_order_days
-    FROM {{ source('raw_data', 'xlsx_invoice') }}
-    WHERE product_service__amount IS NOT NULL 
-      AND product_service__amount > 0
-    GROUP BY customer
-),
-
--- Get customer-level revenue from sales receipts
-sales_receipt_revenue AS (
+-- Get customer-level revenue from unified order items (invoices + sales receipts)
+WITH customer_revenue_aggregated AS (
     SELECT 
         customer,
         SUM(product_service_amount) as customer_total_revenue,
-        COUNT(DISTINCT sales_receipt_no) as customer_total_orders,
+        COUNT(DISTINCT order_number) as customer_total_orders,
         COUNT(*) as customer_total_line_items,
-        MIN(CAST(sales_receipt_date AS DATE)) as customer_first_order_date,
-        MAX(CAST(sales_receipt_date AS DATE)) as customer_latest_order_date,
-        COUNT(DISTINCT CAST(sales_receipt_date AS DATE)) as customer_order_days
-    FROM {{ source('raw_data', 'xlsx_sales_receipt') }}
+        MIN(CAST(order_date AS DATE)) as customer_first_order_date,
+        MAX(CAST(order_date AS DATE)) as customer_latest_order_date,
+        COUNT(DISTINCT CAST(order_date AS DATE)) as customer_order_days
+    FROM {{ ref('base_quickbooks__order_items') }}
     WHERE product_service_amount IS NOT NULL 
       AND product_service_amount > 0
-    GROUP BY customer
-),
-
--- Combine all revenue sources
-combined_revenue AS (
-    SELECT * FROM invoice_revenue
-    UNION ALL
-    SELECT * FROM sales_receipt_revenue
-),
-
--- Aggregate total customer revenue metrics
-customer_revenue_aggregated AS (
-    SELECT 
-        customer,
-        SUM(customer_total_revenue) as customer_total_revenue,
-        SUM(customer_total_orders) as customer_total_orders,
-        SUM(customer_total_line_items) as customer_total_line_items,
-        MIN(customer_first_order_date) as customer_first_order_date,
-        MAX(customer_latest_order_date) as customer_latest_order_date,
-        SUM(customer_order_days) as customer_order_days
-    FROM combined_revenue
     GROUP BY customer
 )
 

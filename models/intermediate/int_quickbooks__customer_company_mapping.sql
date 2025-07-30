@@ -72,9 +72,9 @@ customers_with_normalized_domains AS (
             END
         ) as domain_type
     FROM customers_with_domains c
-    LEFT JOIN {{ source('raw_data', 'domain_mapping') }} dm_main 
+    LEFT JOIN {{ ref('stg_quickbooks__domain_mapping') }} dm_main 
         ON c.main_email_domain = dm_main.original_domain
-    LEFT JOIN {{ source('raw_data', 'domain_mapping') }} dm_cc 
+    LEFT JOIN {{ ref('stg_quickbooks__domain_mapping') }} dm_cc 
         ON c.cc_email_domain = dm_cc.original_domain
 ),
 
@@ -93,7 +93,7 @@ customers_with_standardized_names AS (
             'no_change'
         ) as customer_name_normalization_type
     FROM customers_with_normalized_domains c
-    LEFT JOIN {{ source('raw_data', 'customer_name_mapping') }} cnm 
+    LEFT JOIN {{ ref('stg_quickbooks__customer_name_mapping') }} cnm 
         ON c.customer_name = cnm.original_name
 )
 

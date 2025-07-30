@@ -214,3 +214,69 @@ models:
           - not_null
           - accepted_values:
               values: ['email', 'phone', 'cc_email', 'none']
+
+  - name: stg_quickbooks__domain_mapping
+    description: >
+      Staging model for email domain to company consolidation mapping created by domain_consolidation.py.
+      Cleans and standardizes the domain mapping lookup table used for customer company grouping.
+    columns:
+      - name: original_domain
+        description: Original email domain from customer data (cleaned and lowercased)
+        tests:
+          - not_null
+          - unique
+      
+      - name: normalized_domain
+        description: Consolidated domain key for company grouping (cleaned and lowercased)
+        tests:
+          - not_null
+      
+      - name: domain_type
+        description: Type classification for the domain
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['corporate', 'individual', 'skip']
+      
+      - name: mapping_created_date
+        description: When the domain mapping was created by the Python script
+        tests:
+          - not_null
+      
+      - name: staged_at
+        description: When the data was staged in DBT
+        tests:
+          - not_null
+
+  - name: stg_quickbooks__customer_name_mapping
+    description: >
+      Staging model for customer name standardization mapping created by domain_consolidation.py.
+      Cleans and standardizes the customer name lookup table used for name normalization.
+    columns:
+      - name: original_name
+        description: Original customer name from QuickBooks data (cleaned and trimmed)
+        tests:
+          - not_null
+          - unique
+      
+      - name: normalized_name
+        description: Standardized customer name with suffixes removed (cleaned and trimmed)
+        tests:
+          - not_null
+      
+      - name: normalization_type
+        description: Type of normalization applied to the name
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['explicit', 'automatic', 'no_change']
+      
+      - name: mapping_created_date
+        description: When the name mapping was created by the Python script
+        tests:
+          - not_null
+      
+      - name: staged_at
+        description: When the data was staged in DBT
+        tests:
+          - not_null
