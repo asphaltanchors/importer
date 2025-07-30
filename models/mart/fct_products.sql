@@ -1,6 +1,6 @@
 /*
   This fact table model represents products for business consumption.
-  It combines data from multiple intermediate models to provide a comprehensive view of products.
+  Uses consolidated intermediate model to avoid rejoining of upstream concepts.
   
   Fact tables contain:
   - Business entities
@@ -13,87 +13,59 @@
     tags = ['products', 'quickbooks']
 ) }}
 
-WITH items AS (
-    -- Get distinct items to ensure one row per item_name
-    -- Use ROW_NUMBER to pick the most recent record for each item_name
-    SELECT 
-        *,
-        ROW_NUMBER() OVER (
-            PARTITION BY item_name 
-            ORDER BY load_date DESC, snapshot_date DESC
-        ) as row_num
-    FROM {{ ref('stg_quickbooks__items') }}
-    WHERE item_name IS NOT NULL AND item_name != ''
+WITH enriched_items AS (
+    -- Use consolidated intermediate model to avoid staging rejoining
+    SELECT * FROM {{ ref('int_quickbooks__items_enriched') }}
 ),
 
--- Filter to only the most recent record for each item_name
-distinct_items AS (
-    SELECT * FROM items WHERE row_num = 1
-),
-
-product_family AS (
-    SELECT * FROM {{ ref('int_quickbooks__product_family') }}
-),
-
-material_type AS (
-    SELECT * FROM {{ ref('int_quickbooks__material_type') }}
-),
-
-item_kits AS (
-    SELECT * FROM {{ ref('int_quickbooks__item_kits') }}
-),
-
--- Join all the intermediate models to create the final fact table
+-- Calculate additional business metrics
 products_combined AS (
     SELECT
         -- Primary key
-        i.quick_books_internal_id,
+        quick_books_internal_id,
         
         -- Product details
-        i.item_name,
-        i.sales_description,
+        item_name,
+        sales_description,
         
-        -- Derived attributes
-        pf.product_family,
-        mt.material_type,
-        ik.is_kit,
+        -- Derived attributes (from consolidated intermediate model)
+        product_family,
+        material_type,
+        is_kit,
         
         -- Additional product information
-        i.item_type,
-        i.item_subtype,
-        i.purchase_description,
+        item_type,
+        item_subtype,
+        purchase_description,
         
         -- Pricing
-        COALESCE(i.sales_price, 0) as sales_price,
-        COALESCE(i.purchase_cost, 0) as purchase_cost,
+        COALESCE(sales_price, 0) as sales_price,
+        COALESCE(purchase_cost, 0) as purchase_cost,
         
         -- Calculated margins
         CASE 
-            WHEN COALESCE(i.sales_price, 0) > 0 
-            THEN ROUND(CAST(((COALESCE(i.sales_price, 0) - COALESCE(i.purchase_cost, 0)) / i.sales_price) * 100 AS NUMERIC), 2)
+            WHEN COALESCE(sales_price, 0) > 0 
+            THEN ROUND(CAST(((COALESCE(sales_price, 0) - COALESCE(purchase_cost, 0)) / sales_price) * 100 AS NUMERIC), 2)
             ELSE 0
         END AS margin_percentage,
         
         CASE 
-            WHEN COALESCE(i.sales_price, 0) > 0 OR COALESCE(i.purchase_cost, 0) > 0
-            THEN COALESCE(i.sales_price, 0) - COALESCE(i.purchase_cost, 0)
+            WHEN COALESCE(sales_price, 0) > 0 OR COALESCE(purchase_cost, 0) > 0
+            THEN COALESCE(sales_price, 0) - COALESCE(purchase_cost, 0)
             ELSE 0
         END AS margin_amount,
         
         -- Product identifiers
-        i.manufacturer_s_part_number,
+        manufacturer_s_part_number,
 
         -- Units
-        i.unit_of_measure,
+        unit_of_measure,
         
         -- Dates
-        i.load_date,
-        i.snapshot_date
+        load_date,
+        snapshot_date
         
-    FROM distinct_items i
-    LEFT JOIN product_family pf ON i.item_name = pf.item_name
-    LEFT JOIN material_type mt ON i.item_name = mt.item_name
-    LEFT JOIN item_kits ik ON i.item_name = ik.item_name
+    FROM enriched_items
 )
 
 SELECT * FROM products_combined

@@ -327,3 +327,41 @@ models:
         description: Primary email address for the person
         tests:
           - not_null
+
+  - name: int_quickbooks__items_enriched
+    description: >
+      Comprehensive intermediate model that enriches item data with all derived attributes.
+      Consolidates product family, material type, and kit classifications to prevent rejoining violations.
+      Replaces direct staging access pattern in fact tables.
+    columns:
+      - name: quick_books_internal_id
+        description: Unique identifier for the item in QuickBooks
+        tests:
+          - not_null
+      
+      - name: item_name
+        description: Name of the item (deduplicated to most recent)
+        tests:
+          - not_null
+          - unique
+      
+      - name: product_family
+        description: Derived product family based on item patterns
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Electronics & Technology', 'Office Supplies', 'Furniture', 'Services', 'General Products']
+      
+      - name: material_type
+        description: Derived material type based on item attributes
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Plastic', 'Metal', 'Wood', 'Fabric', 'Glass', 'Paper', 'Digital', 'Mixed/Unknown']
+      
+      - name: is_kit
+        description: Boolean flag indicating if the item is a kit/bundle
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]

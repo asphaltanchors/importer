@@ -1,18 +1,26 @@
 /*
 ABOUTME: Product-company period-based spending mart for dashboard analytics
 ABOUTME: Pre-calculates spending metrics by product and company across multiple time periods
+ABOUTME: Refactored to use fct_company_products as base to avoid rejoining violations
 */
 
 {{ config(
-    materialized = 'table',
+    materialized = 'table',  
     tags = ['mart', 'products', 'companies', 'period_spending', 'analytics']
 ) }}
 
-WITH transaction_base AS (
+WITH company_products_base AS (
+    -- Start with fct_company_products to avoid rejoining violations
+    -- This already has the company-product relationships established
+    SELECT * FROM {{ ref('fct_company_products') }}
+),
+
+transaction_details AS (
+    -- Get transaction-level details needed for period calculations
+    -- Only fetch what's needed beyond what's in fct_company_products
     SELECT 
         oli.product_service,
         bc.company_domain_key,
-        fc.company_name,
         oli.order_date,
         oli.product_service_amount,
         oli.product_service_quantity,
@@ -30,8 +38,6 @@ WITH transaction_base AS (
     FROM {{ ref('fct_order_line_items') }} oli
     INNER JOIN {{ ref('bridge_customer_company') }} bc 
         ON oli.customer = bc.customer_name
-    INNER JOIN {{ ref('fct_companies') }} fc 
-        ON bc.company_domain_key = fc.company_domain_key
     WHERE oli.product_service_amount IS NOT NULL
       AND oli.product_service_amount > 0
       AND oli.product_service IS NOT NULL
@@ -42,85 +48,81 @@ WITH transaction_base AS (
 
 period_aggregations AS (
     SELECT 
-        product_service,
-        company_domain_key,
-        company_name,
+        td.product_service,
+        td.company_domain_key,
         
         -- 30 day period metrics
         'trailing_30d' as period_type,
-        SUM(CASE WHEN order_date >= CURRENT_DATE - INTERVAL '30 days' 
-            THEN product_service_amount ELSE 0 END) as total_amount_spent,
-        COUNT(CASE WHEN order_date >= CURRENT_DATE - INTERVAL '30 days' 
+        SUM(CASE WHEN td.order_date >= CURRENT_DATE - INTERVAL '30 days' 
+            THEN td.product_service_amount ELSE 0 END) as total_amount_spent,
+        COUNT(CASE WHEN td.order_date >= CURRENT_DATE - INTERVAL '30 days' 
               THEN 1 ELSE NULL END) as total_transactions,
-        SUM(CASE WHEN order_date >= CURRENT_DATE - INTERVAL '30 days' 
-            THEN COALESCE(product_service_quantity, 0) ELSE 0 END) as total_quantity_purchased,
-        AVG(CASE WHEN order_date >= CURRENT_DATE - INTERVAL '30 days' 
-            THEN product_service_rate ELSE NULL END) as avg_unit_price,
-        MIN(order_date) as first_purchase_date,
-        MAX(order_date) as last_purchase_date,
+        SUM(CASE WHEN td.order_date >= CURRENT_DATE - INTERVAL '30 days' 
+            THEN COALESCE(td.product_service_quantity, 0) ELSE 0 END) as total_quantity_purchased,
+        AVG(CASE WHEN td.order_date >= CURRENT_DATE - INTERVAL '30 days' 
+            THEN td.product_service_rate ELSE NULL END) as avg_unit_price,
+        MIN(td.order_date) as first_purchase_date,
+        MAX(td.order_date) as last_purchase_date,
         -- Latest transaction info (for buyer status context)
-        MAX(CASE WHEN latest_transaction_rank = 1 THEN customer END) as latest_customer,
-        MAX(CASE WHEN latest_transaction_rank = 1 THEN source_type END) as latest_source_type
+        MAX(CASE WHEN td.latest_transaction_rank = 1 THEN td.customer END) as latest_customer,
+        MAX(CASE WHEN td.latest_transaction_rank = 1 THEN td.source_type END) as latest_source_type
         
-    FROM transaction_base
-    GROUP BY product_service, company_domain_key, company_name
+    FROM transaction_details td
+    GROUP BY td.product_service, td.company_domain_key
     
     UNION ALL
     
     SELECT 
-        product_service,
-        company_domain_key,
-        company_name,
+        td.product_service,
+        td.company_domain_key,
         
         -- 90 day period metrics
         'trailing_90d' as period_type,
-        SUM(CASE WHEN order_date >= CURRENT_DATE - INTERVAL '90 days' 
-            THEN product_service_amount ELSE 0 END) as total_amount_spent,
-        COUNT(CASE WHEN order_date >= CURRENT_DATE - INTERVAL '90 days' 
+        SUM(CASE WHEN td.order_date >= CURRENT_DATE - INTERVAL '90 days' 
+            THEN td.product_service_amount ELSE 0 END) as total_amount_spent,
+        COUNT(CASE WHEN td.order_date >= CURRENT_DATE - INTERVAL '90 days' 
               THEN 1 ELSE NULL END) as total_transactions,
-        SUM(CASE WHEN order_date >= CURRENT_DATE - INTERVAL '90 days' 
-            THEN COALESCE(product_service_quantity, 0) ELSE 0 END) as total_quantity_purchased,
-        AVG(CASE WHEN order_date >= CURRENT_DATE - INTERVAL '90 days' 
-            THEN product_service_rate ELSE NULL END) as avg_unit_price,
-        MIN(order_date) as first_purchase_date,
-        MAX(order_date) as last_purchase_date,
-        MAX(CASE WHEN latest_transaction_rank = 1 THEN customer END) as latest_customer,
-        MAX(CASE WHEN latest_transaction_rank = 1 THEN source_type END) as latest_source_type
+        SUM(CASE WHEN td.order_date >= CURRENT_DATE - INTERVAL '90 days' 
+            THEN COALESCE(td.product_service_quantity, 0) ELSE 0 END) as total_quantity_purchased,
+        AVG(CASE WHEN td.order_date >= CURRENT_DATE - INTERVAL '90 days' 
+            THEN td.product_service_rate ELSE NULL END) as avg_unit_price,
+        MIN(td.order_date) as first_purchase_date,
+        MAX(td.order_date) as last_purchase_date,
+        MAX(CASE WHEN td.latest_transaction_rank = 1 THEN td.customer END) as latest_customer,
+        MAX(CASE WHEN td.latest_transaction_rank = 1 THEN td.source_type END) as latest_source_type
         
-    FROM transaction_base
-    GROUP BY product_service, company_domain_key, company_name
+    FROM transaction_details td
+    GROUP BY td.product_service, td.company_domain_key
     
     UNION ALL
     
     SELECT 
-        product_service,
-        company_domain_key,
-        company_name,
+        td.product_service,
+        td.company_domain_key,
         
         -- 1 year period metrics
         'trailing_1y' as period_type,
-        SUM(CASE WHEN order_date >= CURRENT_DATE - INTERVAL '1 year' 
-            THEN product_service_amount ELSE 0 END) as total_amount_spent,
-        COUNT(CASE WHEN order_date >= CURRENT_DATE - INTERVAL '1 year' 
+        SUM(CASE WHEN td.order_date >= CURRENT_DATE - INTERVAL '1 year' 
+            THEN td.product_service_amount ELSE 0 END) as total_amount_spent,
+        COUNT(CASE WHEN td.order_date >= CURRENT_DATE - INTERVAL '1 year' 
               THEN 1 ELSE NULL END) as total_transactions,
-        SUM(CASE WHEN order_date >= CURRENT_DATE - INTERVAL '1 year' 
-            THEN COALESCE(product_service_quantity, 0) ELSE 0 END) as total_quantity_purchased,
-        AVG(CASE WHEN order_date >= CURRENT_DATE - INTERVAL '1 year' 
-            THEN product_service_rate ELSE NULL END) as avg_unit_price,
-        MIN(order_date) as first_purchase_date,
-        MAX(order_date) as last_purchase_date,
-        MAX(CASE WHEN latest_transaction_rank = 1 THEN customer END) as latest_customer,
-        MAX(CASE WHEN latest_transaction_rank = 1 THEN source_type END) as latest_source_type
+        SUM(CASE WHEN td.order_date >= CURRENT_DATE - INTERVAL '1 year' 
+            THEN COALESCE(td.product_service_quantity, 0) ELSE 0 END) as total_quantity_purchased,
+        AVG(CASE WHEN td.order_date >= CURRENT_DATE - INTERVAL '1 year' 
+            THEN td.product_service_rate ELSE NULL END) as avg_unit_price,
+        MIN(td.order_date) as first_purchase_date,
+        MAX(td.order_date) as last_purchase_date,
+        MAX(CASE WHEN td.latest_transaction_rank = 1 THEN td.customer END) as latest_customer,
+        MAX(CASE WHEN td.latest_transaction_rank = 1 THEN td.source_type END) as latest_source_type
         
-    FROM transaction_base
-    GROUP BY product_service, company_domain_key, company_name
+    FROM transaction_details td
+    GROUP BY td.product_service, td.company_domain_key
     
     UNION ALL
     
     SELECT 
-        product_service,
-        company_domain_key,
-        company_name,
+        td.product_service,
+        td.company_domain_key,
         
         -- All time metrics
         'all_time' as period_type,
@@ -128,13 +130,13 @@ period_aggregations AS (
         COUNT(*) as total_transactions,
         SUM(COALESCE(product_service_quantity, 0)) as total_quantity_purchased,
         AVG(product_service_rate) as avg_unit_price,
-        MIN(order_date) as first_purchase_date,
-        MAX(order_date) as last_purchase_date,
-        MAX(CASE WHEN latest_transaction_rank = 1 THEN customer END) as latest_customer,
-        MAX(CASE WHEN latest_transaction_rank = 1 THEN source_type END) as latest_source_type
+        MIN(td.order_date) as first_purchase_date,
+        MAX(td.order_date) as last_purchase_date,
+        MAX(CASE WHEN td.latest_transaction_rank = 1 THEN td.customer END) as latest_customer,
+        MAX(CASE WHEN td.latest_transaction_rank = 1 THEN td.source_type END) as latest_source_type
         
-    FROM transaction_base
-    GROUP BY product_service, company_domain_key, company_name
+    FROM transaction_details td
+    GROUP BY td.product_service, td.company_domain_key
 ),
 
 -- Filter to only periods with actual spending
@@ -149,30 +151,27 @@ final_with_context AS (
     SELECT 
         pa.*,
         
-        -- Company details from fct_companies
-        fc.domain_type,
-        fc.business_size_category,
-        fc.revenue_category as company_revenue_category,
-        fc.primary_country,
-        fc.region,
-        fc.customer_count as company_customer_count,
-        fc.total_revenue as company_total_revenue,
+        -- Company details (from company_products_base which includes company data)
+        cpb.company_name,
+        cpb.domain_type,
+        cpb.business_size_category,
+        cpb.company_total_revenue,
         
-        -- Product details from fct_products
-        fp.product_family,
-        fp.material_type,
-        fp.is_kit,
-        fp.item_type,
-        fp.sales_price as standard_sales_price,
-        fp.purchase_cost as standard_purchase_cost,
-        fp.margin_percentage as standard_margin_percentage,
+        -- Product details (from company_products_base which includes product data)
+        cpb.product_family,
+        cpb.material_type,
+        cpb.is_kit,
+        cpb.item_type,
+        cpb.standard_sales_price,
+        cpb.standard_purchase_cost,
+        cpb.avg_margin_percentage as standard_margin_percentage,
         
-        -- Business context from fct_company_products (lifetime metrics)
-        fcp.buyer_status as lifetime_buyer_status,
-        fcp.purchase_volume_category as lifetime_volume_category,
-        fcp.purchase_frequency_category as lifetime_frequency_category,
-        fcp.total_amount_spent as lifetime_total_spent,
-        fcp.total_transactions as lifetime_total_transactions,
+        -- Business context (lifetime metrics from company_products_base)
+        cpb.buyer_status as lifetime_buyer_status,
+        cpb.purchase_volume_category as lifetime_volume_category,
+        cpb.purchase_frequency_category as lifetime_frequency_category,
+        cpb.total_amount_spent as lifetime_total_spent,
+        cpb.total_transactions as lifetime_total_transactions,
         
         -- Period-specific business classifications
         CASE 
@@ -192,15 +191,15 @@ final_with_context AS (
         
         -- Price variance analysis (period vs standard)
         CASE 
-            WHEN fp.sales_price > 0 AND pa.avg_unit_price > 0 THEN
-                ROUND(CAST((pa.avg_unit_price - fp.sales_price) * 100.0 / fp.sales_price AS NUMERIC), 2)
+            WHEN cpb.standard_sales_price > 0 AND pa.avg_unit_price > 0 THEN
+                ROUND(CAST((pa.avg_unit_price - cpb.standard_sales_price) * 100.0 / cpb.standard_sales_price AS NUMERIC), 2)
             ELSE NULL
         END as price_variance_percentage,
         
         -- Period efficiency vs lifetime
         CASE 
-            WHEN fcp.total_amount_spent > 0 AND pa.total_amount_spent IS NOT NULL THEN
-                LEAST(100.0, ROUND(CAST(pa.total_amount_spent * 100.0 / fcp.total_amount_spent AS NUMERIC), 2))
+            WHEN cpb.total_amount_spent > 0 AND pa.total_amount_spent IS NOT NULL THEN
+                LEAST(100.0, ROUND(CAST(pa.total_amount_spent * 100.0 / cpb.total_amount_spent AS NUMERIC), 2))
             WHEN pa.total_amount_spent > 0 THEN 100.0  -- If this is their only period, it's 100%
             ELSE 0.0  -- No spending in this period
         END as period_share_of_lifetime_spending,
@@ -212,13 +211,9 @@ final_with_context AS (
         CURRENT_TIMESTAMP as created_at
         
     FROM filtered_periods pa
-    INNER JOIN {{ ref('fct_companies') }} fc 
-        ON pa.company_domain_key = fc.company_domain_key
-    LEFT JOIN {{ ref('fct_products') }} fp 
-        ON pa.product_service = fp.item_name
-    LEFT JOIN {{ ref('fct_company_products') }} fcp 
-        ON pa.company_domain_key = fcp.company_domain_key 
-        AND pa.product_service = fcp.product_service
+    INNER JOIN company_products_base cpb 
+        ON pa.company_domain_key = cpb.company_domain_key 
+        AND pa.product_service = cpb.product_service
 )
 
 SELECT * 
