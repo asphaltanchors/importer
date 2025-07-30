@@ -6,6 +6,8 @@ import sys
 import argparse
 import subprocess
 import re
+import hashlib
+import json
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -33,6 +35,272 @@ class PipelineOrchestrator:
         
         if self.use_tui:
             self._initialize_tui()
+        
+        # Initialize file hash tracking
+        self.hash_file_path = Path("logs/file_hashes.json")
+        self.hash_file_path.parent.mkdir(exist_ok=True)
+        self._load_file_hashes()
+    
+    def _load_file_hashes(self) -> None:
+        """Load previously stored file hashes"""
+        try:
+            if self.hash_file_path.exists():
+                with open(self.hash_file_path, 'r') as f:
+                    self.file_hashes = json.load(f)
+            else:
+                self.file_hashes = {}
+        except (json.JSONDecodeError, IOError) as e:
+            self.logger.warning(f"Could not load file hashes: {e}")
+            self.file_hashes = {}
+    
+    def _save_file_hashes(self) -> None:
+        """Save current file hashes"""
+        try:
+            with open(self.hash_file_path, 'w') as f:
+                json.dump(self.file_hashes, f, indent=2)
+        except IOError as e:
+            self.logger.warning(f"Could not save file hashes: {e}")
+    
+    def _calculate_file_hash(self, file_path: Path) -> str:
+        """Calculate SHA256 hash of file contents"""
+        try:
+            with open(file_path, 'rb') as f:
+                return hashlib.sha256(f.read()).hexdigest()
+        except IOError as e:
+            self.logger.warning(f"Could not hash file {file_path}: {e}")
+            return ""
+    
+    def _has_file_changed(self, file_path: Path) -> bool:
+        """Check if file has changed since last run"""
+        file_key = str(file_path)
+        current_hash = self._calculate_file_hash(file_path)
+        
+        if not current_hash:
+            return True  # Assume changed if we can't hash
+        
+        previous_hash = self.file_hashes.get(file_key)
+        has_changed = previous_hash != current_hash
+        
+        # Update hash regardless
+        self.file_hashes[file_key] = current_hash
+        
+        return has_changed
+    
+    def _check_source_files_changed(self, source_name: str, mode: str) -> bool:
+        """Check if any source files have changed since last run"""
+        if source_name != "quickbooks":
+            return True  # Always run non-QuickBooks sources for now
+        
+        # Get the DROPBOX_PATH from environment
+        dropbox_path = os.getenv("DROPBOX_PATH")
+        if not dropbox_path:
+            return True  # Run if we can't determine paths
+        
+        files_to_check = []
+        
+        if mode in ["seed", "full"]:
+            # Check seed files
+            seed_path = Path(dropbox_path) / "seed"
+            seed_files = [
+                seed_path / "all_lists.xlsx",
+                seed_path / "all_transactions.xlsx", 
+                seed_path / "company_enrichment.jsonl",
+                seed_path / "historical_items.jsonl"
+            ]
+            files_to_check.extend([f for f in seed_files if f.exists()])
+        
+        if mode in ["incremental", "full"]:
+            # Check input files
+            input_path = Path(dropbox_path) / "input"
+            if input_path.exists():
+                # Check all xlsx files in input directory
+                input_files = list(input_path.glob("*.xlsx")) + list(input_path.glob("*.xls"))
+                files_to_check.extend(input_files)
+        
+        if not files_to_check:
+            return True  # Run if no files found
+        
+        # Check if any file has changed
+        any_changed = False
+        for file_path in files_to_check:
+            if self._has_file_changed(file_path):
+                self.logger.info(f"File changed: {file_path}")
+                any_changed = True
+        
+        return any_changed
+    
+    def _update_pipeline_state(self, source_name: str, mode: str, status: str) -> None:
+        """Update pipeline state tracking"""
+        state_file = Path("logs/pipeline_state.json")
+        
+        try:
+            if state_file.exists():
+                with open(state_file, 'r') as f:
+                    pipeline_state = json.load(f)
+            else:
+                pipeline_state = {}
+            
+            # Update state for this source
+            if source_name not in pipeline_state:
+                pipeline_state[source_name] = {}
+            
+            pipeline_state[source_name][mode] = {
+                "last_run": datetime.now().isoformat(),
+                "status": status
+            }
+            
+            # Save updated state
+            with open(state_file, 'w') as f:
+                json.dump(pipeline_state, f, indent=2)
+                
+        except (json.JSONDecodeError, IOError) as e:
+            self.logger.warning(f"Could not update pipeline state: {e}")
+    
+    def _get_last_successful_run(self, source_name: str, mode: str) -> Optional[str]:
+        """Get timestamp of last successful run for source/mode"""
+        state_file = Path("logs/pipeline_state.json")
+        
+        try:
+            if not state_file.exists():
+                return None
+                
+            with open(state_file, 'r') as f:
+                pipeline_state = json.load(f)
+            
+            source_state = pipeline_state.get(source_name, {})
+            mode_state = source_state.get(mode, {})
+            
+            if mode_state.get("status") == "success":
+                return mode_state.get("last_run")
+            
+            return None
+            
+        except (json.JSONDecodeError, IOError) as e:
+            self.logger.warning(f"Could not read pipeline state: {e}")
+            return None
+    
+    def _run_subprocess(self, cmd: List[str], context: str, working_dir: str = None, timeout: int = 3600) -> Dict[str, Any]:
+        """
+        Shared subprocess execution with consistent error handling and progress tracking
+        
+        Args:
+            cmd: Command to execute
+            context: Description for logging and TUI
+            working_dir: Working directory (None to use current)
+            timeout: Timeout in seconds
+            
+        Returns:
+            Execution result dictionary
+        """
+        original_cwd = None
+        if working_dir:
+            original_cwd = os.getcwd()
+            os.chdir(working_dir)
+        
+        try:
+            start_time = datetime.now()
+            
+            if self.verbose or self.use_tui:
+                # Real-time output streaming for verbose mode or TUI
+                if not self.use_tui:
+                    print(f"Running command: {' '.join(cmd)}")
+                    print(f"Working directory: {os.getcwd()}")
+                    print("-" * 60)
+                
+                # Report step start to TUI
+                if self.progress_tracker:
+                    self.progress_tracker.step_started(context)
+                
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,  # Merge stderr into stdout for unified output
+                    text=True,
+                    bufsize=1,  # Line buffered
+                    universal_newlines=True
+                )
+                
+                stdout_lines = []
+                while True:
+                    output = process.stdout.readline()
+                    if output == '' and process.poll() is not None:
+                        break
+                    if output:
+                        if not self.use_tui:  # Only print if not using TUI
+                            print(output.rstrip())
+                        stdout_lines.append(output)
+                        
+                        # Parse output for TUI progress updates
+                        if self.subprocess_parser:
+                            self.subprocess_parser.parse_line(output, context)
+                
+                # Wait for process completion and get return code
+                return_code = process.wait()
+                stdout_content = ''.join(stdout_lines)
+                stderr_content = ""  # Merged into stdout
+                
+                # Report step completion to TUI
+                if self.progress_tracker:
+                    status = "success" if return_code == 0 else "error"
+                    self.progress_tracker.step_completed(context, status)
+                
+                # Create result object compatible with subprocess.run
+                class MockResult:
+                    def __init__(self, returncode, stdout, stderr):
+                        self.returncode = returncode
+                        self.stdout = stdout
+                        self.stderr = stderr
+                
+                result = MockResult(return_code, stdout_content, stderr_content)
+                if not self.use_tui:
+                    print("-" * 60)
+            else:
+                # Standard capture mode for non-verbose
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout
+                )
+            
+            end_time = datetime.now()
+            execution_time = (end_time - start_time).total_seconds()
+            
+            if result.returncode == 0:
+                return {
+                    "status": "success",
+                    "execution_time": execution_time,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr
+                }
+            else:
+                # Display detailed error information
+                error_details = self._format_subprocess_error(cmd, result, f"{context} failed")
+                print(error_details)
+                return {
+                    "status": "error", 
+                    "return_code": result.returncode,
+                    "execution_time": execution_time,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr
+                }
+                
+        except subprocess.TimeoutExpired:
+            self.logger.error(f"{context} timed out after {timeout/60:.1f} minutes")
+            return {"status": "timeout", "execution_time": timeout}
+        except Exception as e:
+            if 'process' in locals():
+                try:
+                    process.terminate()
+                    process.wait(timeout=5)
+                except:
+                    pass
+            self.logger.error(f"Error in {context}: {str(e)}")
+            return {"status": "error", "message": str(e)}
+        finally:
+            # Return to original directory
+            if original_cwd:
+                os.chdir(original_cwd)
         
     def _load_orchestrator_config(self) -> Dict[str, Any]:
         """Load orchestrator configuration"""
@@ -235,6 +503,11 @@ class PipelineOrchestrator:
         
         self.logger.info(f"Running pipeline for source: {source_name}")
         
+        # Check if source files have changed
+        if not self._check_source_files_changed(source_name, mode):
+            self.logger.info(f"No file changes detected for '{source_name}', skipping pipeline")
+            return {"status": "skipped", "reason": "no_changes", "execution_time": 0}
+        
         # Get pipeline path
         pipeline_path = Path(source_config["path"])
         pipeline_script = pipeline_path / "pipeline.py"
@@ -245,120 +518,23 @@ class PipelineOrchestrator:
             return {"status": "error", "message": error_msg}
         
         try:
-            # Change to pipeline directory and run
-            original_cwd = os.getcwd()
-            os.chdir(pipeline_path)
-            
-            start_time = datetime.now()
-            
             cmd = [sys.executable, "pipeline.py", "--mode", mode]
+            context = f"Pipeline: {source_name}"
             
-            if self.verbose or self.use_tui:
-                # Real-time output streaming for verbose mode or TUI
-                if not self.use_tui:
-                    print(f"Running command: {' '.join(cmd)}")
-                    print(f"Working directory: {os.getcwd()}")
-                    print("-" * 60)
-                
-                # Report step start to TUI
-                if self.progress_tracker:
-                    self.progress_tracker.step_started(f"Pipeline: {source_name}")
-                
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,  # Merge stderr into stdout for unified output
-                    text=True,
-                    bufsize=1,  # Line buffered
-                    universal_newlines=True
-                )
-                
-                stdout_lines = []
-                while True:
-                    output = process.stdout.readline()
-                    if output == '' and process.poll() is not None:
-                        break
-                    if output:
-                        if not self.use_tui:  # Only print if not using TUI
-                            print(output.rstrip())
-                        stdout_lines.append(output)
-                        
-                        # Parse output for TUI progress updates
-                        if self.subprocess_parser:
-                            self.subprocess_parser.parse_line(output, f"Pipeline: {source_name}")
-                
-                # Wait for process completion and get return code
-                return_code = process.wait()
-                stdout_content = ''.join(stdout_lines)
-                stderr_content = ""  # Merged into stdout
-                
-                # Report step completion to TUI
-                if self.progress_tracker:
-                    status = "success" if return_code == 0 else "error"
-                    self.progress_tracker.step_completed(f"Pipeline: {source_name}", status)
-                
-                # Create result object compatible with subprocess.run
-                class MockResult:
-                    def __init__(self, returncode, stdout, stderr):
-                        self.returncode = returncode
-                        self.stdout = stdout
-                        self.stderr = stderr
-                
-                result = MockResult(return_code, stdout_content, stderr_content)
-                if not self.use_tui:
-                    print("-" * 60)
-            else:
-                # Standard capture mode for non-verbose
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=3600  # 1 hour timeout
-                )
+            result = self._run_subprocess(cmd, context, str(pipeline_path), timeout=3600)
             
-            end_time = datetime.now()
-            
-            # Return to original directory
-            os.chdir(original_cwd)
-            
-            execution_time = (end_time - start_time).total_seconds()
-            
-            if result.returncode == 0:
-                self.logger.info(f"Pipeline '{source_name}' completed successfully in {execution_time:.1f}s")
-                if self.verbose and result.stdout:
+            if result["status"] == "success":
+                self.logger.info(f"Pipeline '{source_name}' completed successfully in {result['execution_time']:.1f}s")
+                self._update_pipeline_state(source_name, mode, "success")
+                if self.verbose and result.get("stdout"):
                     print("Pipeline output:")
-                    print(result.stdout)
-                return {
-                    "status": "success",
-                    "execution_time": execution_time,
-                    "stdout": result.stdout,
-                    "stderr": result.stderr
-                }
+                    print(result["stdout"])
             else:
-                self.logger.error(f"Pipeline '{source_name}' failed with return code {result.returncode}")
-                # Display detailed error information
-                cmd = [sys.executable, "pipeline.py", "--mode", mode]
-                error_details = self._format_subprocess_error(cmd, result, f"Pipeline '{source_name}' failed")
-                print(error_details)
-                return {
-                    "status": "error", 
-                    "return_code": result.returncode,
-                    "execution_time": execution_time,
-                    "stdout": result.stdout,
-                    "stderr": result.stderr
-                }
+                self.logger.error(f"Pipeline '{source_name}' failed")
+                self._update_pipeline_state(source_name, mode, "failed")
                 
-        except subprocess.TimeoutExpired:
-            self.logger.error(f"Pipeline '{source_name}' timed out after 1 hour")
-            return {"status": "timeout", "execution_time": 3600}
-        except Exception as e:
-            if 'process' in locals():
-                try:
-                    process.terminate()
-                    process.wait(timeout=5)
-                except:
-                    pass
-            raise e
+            return result
+                
         except Exception as e:
             self.logger.error(f"Error running pipeline '{source_name}': {str(e)}")
             return {"status": "error", "message": str(e)}
@@ -372,105 +548,26 @@ class PipelineOrchestrator:
         self.logger.info("Running DBT transformations")
         
         try:
-            start_time = datetime.now()
+            # Run all dbt models in single command - let DBT handle dependencies
+            cmd = ["dbt", "run"]
+            context = "DBT Transformations"
             
-            # Run dbt models
-            models_to_run = self.config["dbt"].get("models_to_run", ["staging", "intermediate", "mart"])
+            result = self._run_subprocess(cmd, context, timeout=1800)  # 30 minute timeout
             
-            for model_group in models_to_run:
-                self.logger.info(f"Running DBT models: {model_group}")
-                
-                cmd = ["dbt", "run", "--select", model_group]
-                
-                if self.verbose or self.use_tui:
-                    # Real-time output streaming for verbose mode or TUI
-                    if not self.use_tui:
-                        print(f"Running command: {' '.join(cmd)}")
-                        print("-" * 40)
-                    
-                    # Report step start to TUI
-                    if self.progress_tracker:
-                        self.progress_tracker.step_started(f"DBT: {model_group}")
-                    
-                    process = subprocess.Popen(
-                        cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,  # Merge stderr into stdout for unified output
-                        text=True,
-                        bufsize=1,  # Line buffered
-                        universal_newlines=True
-                    )
-                    
-                    stdout_lines = []
-                    while True:
-                        output = process.stdout.readline()
-                        if output == '' and process.poll() is not None:
-                            break
-                        if output:
-                            if not self.use_tui:  # Only print if not using TUI
-                                print(output.rstrip())
-                            stdout_lines.append(output)
-                            
-                            # Parse output for TUI progress updates
-                            if self.subprocess_parser:
-                                self.subprocess_parser.parse_line(output, f"DBT: {model_group}")
-                    
-                    # Wait for process completion and get return code
-                    return_code = process.wait()
-                    stdout_content = ''.join(stdout_lines)
-                    stderr_content = ""  # Merged into stdout
-                    
-                    # Report step completion to TUI
-                    if self.progress_tracker:
-                        status = "success" if return_code == 0 else "error"
-                        self.progress_tracker.step_completed(f"DBT: {model_group}", status)
-                    
-                    # Create result object compatible with subprocess.run
-                    class MockResult:
-                        def __init__(self, returncode, stdout, stderr):
-                            self.returncode = returncode
-                            self.stdout = stdout
-                            self.stderr = stderr
-                    
-                    result = MockResult(return_code, stdout_content, stderr_content)
-                    if not self.use_tui:
-                        print("-" * 40)
-                else:
-                    # Standard capture mode for non-verbose
-                    result = subprocess.run(
-                        cmd,
-                        capture_output=True,
-                        text=True,
-                        timeout=1800  # 30 minute timeout
-                    )
-                
-                if result.returncode != 0:
-                    self.logger.error(f"DBT run failed for {model_group}")
-                    # Display detailed error information
-                    cmd = ["dbt", "run", "--select", model_group]
-                    error_details = self._format_subprocess_error(cmd, result, f"DBT run failed for {model_group}")
-                    print(error_details)
-                    return {
-                        "status": "error",
-                        "model_group": model_group,
-                        "return_code": result.returncode,
-                        "stdout": result.stdout,
-                        "stderr": result.stderr
-                    }
+            if result["status"] == "success":
+                self.logger.info(f"DBT transformations completed successfully in {result['execution_time']:.1f}s")
+                models_to_run = self.config["dbt"].get("models_to_run", ["staging", "intermediate", "mart"])
+                return {
+                    "status": "success",
+                    "execution_time": result["execution_time"],
+                    "models_run": models_to_run,
+                    "stdout": result.get("stdout"),
+                    "stderr": result.get("stderr")
+                }
+            else:
+                self.logger.error("DBT transformations failed")
+                return result
             
-            end_time = datetime.now()
-            execution_time = (end_time - start_time).total_seconds()
-            
-            self.logger.info(f"DBT transformations completed successfully in {execution_time:.1f}s")
-            return {
-                "status": "success",
-                "execution_time": execution_time,
-                "models_run": models_to_run
-            }
-            
-        except subprocess.TimeoutExpired:
-            self.logger.error("DBT transformations timed out after 30 minutes")
-            return {"status": "timeout", "execution_time": 1800}
         except Exception as e:
             self.logger.error(f"Error running DBT transformations: {str(e)}")
             return {"status": "error", "message": str(e)}
@@ -584,6 +681,9 @@ class PipelineOrchestrator:
         # Report pipeline completion to TUI
         if self.progress_tracker:
             self.progress_tracker.pipeline_ended(pipeline_results['overall_status'])
+        
+        # Save file hashes after pipeline completion
+        self._save_file_hashes()
         
         return pipeline_results
     
