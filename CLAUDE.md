@@ -107,6 +107,24 @@ DATABASE_URL=postgresql://user:password@host:port/dbname
 - **DBT Project**: `dbt_project.yml` - Model materialization and schema configuration
 - **Sources**: `models/sources.yml` - Defines raw data tables from `raw` schema
 
+### Known Architectural Exceptions (DBT Project Evaluator)
+
+This section documents intentionally accepted warnings/violations to avoid re-investigation:
+
+#### Rejoining of Upstream Concepts (2 violations - ACCEPTED)
+**Status**: Reduced from 7 to 2 violations (71% improvement) - remaining violations are business necessities
+
+**Remaining Violations**:
+- `mart_product_company_period_spending` → `fct_order_line_items` + `bridge_customer_company` + `fct_company_products`
+
+**Business Justification**: 
+- `mart_product_company_period_spending` requires transaction-level detail for period calculations (30d, 90d, 1y)
+- Cannot be pre-aggregated due to dynamic date ranges and performance requirements
+- `fct_company_products` provides lifetime metrics, while transaction details provide period-specific metrics
+- Alternative architectures would require significant performance trade-offs or functionality loss
+
+**Last Reviewed**: 2025-01-30 - Architectural decision to accept these as necessary for business requirements
+
 ## Important Files
 - `pipeline.py`: Main DLT extraction logic
 - `matcher.py`: Company name normalization

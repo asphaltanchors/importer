@@ -2,6 +2,11 @@
 ABOUTME: Product-company period-based spending mart for dashboard analytics
 ABOUTME: Pre-calculates spending metrics by product and company across multiple time periods
 ABOUTME: Refactored to use fct_company_products as base to avoid rejoining violations
+
+ARCHITECTURAL NOTE: This model has accepted DBT project evaluator "rejoining" violations for:
+- fct_order_line_items + bridge_customer_company (transaction details needed for period calculations)
+- These are business necessities as period metrics (30d, 90d, 1y) require transaction-level data
+- that cannot be pre-aggregated due to dynamic date ranges. See CLAUDE.md for full justification.
 */
 
 {{ config(
