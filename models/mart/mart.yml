@@ -56,6 +56,24 @@ models:
           - accepted_values:
               values: ['invoice', 'sales_receipt']
       
+      - name: sales_channel
+        description: >
+          Sales channel attribution based on transaction patterns and payment methods.
+          Indicates HOW the customer purchased (Amazon, Website, Phone/Direct, Invoice/ACH).
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Amazon', 'Amazon FBA', 'Website', 'Phone/Direct', 'Invoice/ACH', 'Other']
+      
+      - name: customer_segment
+        description: >
+          Customer segment attribution based on business relationship and transaction patterns.
+          Indicates WHO the customer is (OEM, Distributor, Direct Consumer, etc.).
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['OEM', 'Distributor', 'Contractor', 'Export', 'Direct Consumer', 'B2B Direct', 'Other']
+      
       - name: billing_address_country
         description: Normalized billing country (inferred from state if not explicit)
         tests:

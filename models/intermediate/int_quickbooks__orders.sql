@@ -103,10 +103,66 @@ orders_with_countries AS (
     FROM aggregated_orders
 ),
 
+-- Add sales channel and customer segment attribution
+orders_with_attribution AS (
+    SELECT 
+        *,
+        
+        -- Sales Channel Attribution (HOW they bought)
+        CASE 
+            -- Amazon Channel (clear payment method or customer indicators)
+            WHEN payment_method = 'Amazon' THEN 'Amazon'
+            WHEN customer = 'Amazon FBA' THEN 'Amazon FBA'  
+            WHEN class LIKE '%Amazon%' THEN 'Amazon'
+            
+            -- Website Channel (immediate payment via credit/digital, no invoice terms)
+            WHEN source_type = 'sales_receipt' 
+             AND payment_method IN ('Credit Card', 'PayPal', 'Visa', 'MasterCard', 'American Express', 'Discover') 
+             THEN 'Website'
+            
+            -- Phone/Direct Channel (invoices with credit card terms - phone orders that became invoices)
+            WHEN source_type = 'invoice' 
+             AND terms IN ('CC', 'Credit Card') 
+             THEN 'Phone/Direct'
+             
+            -- Invoice/Terms Channel (traditional B2B invoice flow)  
+            WHEN source_type = 'invoice' 
+             AND terms IN ('Net 30', 'N30', 'Net 20', 'Prepaid', 'Prepaid TT') 
+             THEN 'Invoice/ACH'
+            
+            ELSE 'Other'
+        END AS sales_channel,
+        
+        -- Customer Segment Attribution (WHO they are)
+        CASE 
+            -- OEM (high-value B2B with special discount relationship)
+            WHEN class = 'OEM' THEN 'OEM'
+            
+            -- Distributors (B2B resellers, primarily net terms)
+            WHEN class = 'Distributor' THEN 'Distributor'
+            
+            -- Contractors (B2B project-based)
+            WHEN class = 'Contractor' THEN 'Contractor'
+            
+            -- Export customers
+            WHEN class IN ('EXPORT', 'EXPORT from WWD') THEN 'Export'
+            
+            -- Direct Consumers (sales receipts = immediate payment)
+            WHEN source_type = 'sales_receipt' AND class NOT IN ('OEM', 'Distributor') THEN 'Direct Consumer'
+            
+            -- B2B Direct (invoices that aren't distributors/OEMs/contractors)
+            WHEN source_type = 'invoice' AND class NOT IN ('OEM', 'Distributor', 'Contractor', 'EXPORT', 'EXPORT from WWD') THEN 'B2B Direct'
+            
+            ELSE 'Other'
+        END AS customer_segment
+        
+    FROM orders_with_countries
+),
+
 -- Filter out orders with null critical fields
 filtered_orders AS (
     SELECT *
-    FROM orders_with_countries
+    FROM orders_with_attribution
     WHERE order_date IS NOT NULL
     AND total_amount IS NOT NULL
     AND order_number IS NOT NULL

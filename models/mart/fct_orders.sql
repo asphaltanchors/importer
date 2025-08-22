@@ -107,6 +107,10 @@ orders_enriched AS (
         o.terms,
         o.sales_rep,
         
+        -- Channel and segment attribution
+        o.sales_channel,
+        o.customer_segment,
+        
         -- Identifiers for joins
         o.transaction_id,
         o.quickbooks_internal_id,
