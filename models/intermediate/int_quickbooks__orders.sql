@@ -110,9 +110,9 @@ orders_with_attribution AS (
         
         -- Sales Channel Attribution (HOW they bought)
         CASE 
-            -- Amazon Channel (clear payment method or customer indicators)
+            -- Amazon Channel (all Amazon variants combined)
             WHEN payment_method = 'Amazon' THEN 'Amazon'
-            WHEN customer = 'Amazon FBA' THEN 'Amazon FBA'  
+            WHEN customer = 'Amazon FBA' THEN 'Amazon'  
             WHEN class LIKE '%Amazon%' THEN 'Amazon'
             
             -- Website Channel (immediate payment via credit/digital, no invoice terms)
@@ -120,15 +120,8 @@ orders_with_attribution AS (
              AND payment_method IN ('Credit Card', 'PayPal', 'Visa', 'MasterCard', 'American Express', 'Discover') 
              THEN 'Website'
             
-            -- Phone/Direct Channel (invoices with credit card terms - phone orders that became invoices)
-            WHEN source_type = 'invoice' 
-             AND terms IN ('CC', 'Credit Card') 
-             THEN 'Phone/Direct'
-             
-            -- Invoice/Terms Channel (traditional B2B invoice flow)  
-            WHEN source_type = 'invoice' 
-             AND terms IN ('Net 30', 'N30', 'Net 20', 'Prepaid', 'Prepaid TT') 
-             THEN 'Invoice/ACH'
+            -- Invoice Channel (all B2B invoice transactions)
+            WHEN source_type = 'invoice' THEN 'Invoice'
             
             ELSE 'Other'
         END AS sales_channel,
@@ -141,17 +134,14 @@ orders_with_attribution AS (
             -- Distributors (B2B resellers, primarily net terms)
             WHEN class = 'Distributor' THEN 'Distributor'
             
-            -- Contractors (B2B project-based)
-            WHEN class = 'Contractor' THEN 'Contractor'
-            
             -- Export customers
             WHEN class IN ('EXPORT', 'EXPORT from WWD') THEN 'Export'
             
             -- Direct Consumers (sales receipts = immediate payment)
             WHEN source_type = 'sales_receipt' AND class NOT IN ('OEM', 'Distributor') THEN 'Direct Consumer'
             
-            -- B2B Direct (invoices that aren't distributors/OEMs/contractors)
-            WHEN source_type = 'invoice' AND class NOT IN ('OEM', 'Distributor', 'Contractor', 'EXPORT', 'EXPORT from WWD') THEN 'B2B Direct'
+            -- B2B Direct (invoices that aren't distributors/OEMs)
+            WHEN source_type = 'invoice' AND class NOT IN ('OEM', 'Distributor', 'EXPORT', 'EXPORT from WWD') THEN 'B2B Direct'
             
             ELSE 'Other'
         END AS customer_segment

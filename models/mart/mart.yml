@@ -1,6 +1,50 @@
 version: 2
 
 models:
+  - name: dim_accounts_receivable_aging
+    description: >
+      Comprehensive accounts receivable aging analysis for cash flow management.
+      Provides individual invoice details, customer summaries, and aging bucket analysis
+      for collection efficiency tracking and risk assessment.
+    columns:
+      - name: analysis_level
+        description: Type of analysis (Individual Invoices, Customer Summary, Aging Summary)
+        tests:
+          - not_null
+      - name: aging_bucket
+        description: Age classification (Current, Past Due, Overdue, Severely Overdue)
+      - name: collection_risk
+        description: Risk assessment (Low, Medium, High, Critical Risk)
+      - name: days_outstanding
+        description: Number of days since invoice was created
+      - name: days_past_due
+        description: Number of days past the due date (0 if not past due)
+      - name: payment_pattern
+        description: Customer payment behavior classification
+
+  - name: fct_dso_metrics
+    description: >
+      Key Days Sales Outstanding (DSO) metrics and performance indicators.
+      Calculates DSO over multiple time periods, collection efficiency,
+      and segment-level receivables analysis for cash flow monitoring.
+    columns:
+      - name: metric_category
+        description: Type of DSO metric (Overall DSO Metrics, Segment AR Breakdown)
+        tests:
+          - not_null
+      - name: dso_days
+        description: Days Sales Outstanding calculation
+      - name: collection_efficiency_pct
+        description: Collection efficiency as percentage of sales
+      - name: dso_assessment
+        description: Performance rating (Excellent, Good, Fair, Poor)
+        tests:
+          - accepted_values:
+              values: ['Excellent', 'Good', 'Fair', 'Poor', 'Good Payer', 'Slow Payer', 'Problem Segment']
+      - name: total_accounts_receivable
+        description: Total outstanding receivables amount
+        tests:
+          - not_null
   - name: base_fct_orders_current
     description: >
       Base view that filters fct_orders to exclude future-dated orders.
@@ -58,12 +102,12 @@ models:
       
       - name: sales_channel
         description: >
-          Sales channel attribution based on transaction patterns and payment methods.
-          Indicates HOW the customer purchased (Amazon, Website, Phone/Direct, Invoice/ACH).
+          Sales channel attribution based on transaction patterns.
+          Indicates HOW the customer purchased (Amazon, Website, Invoice).
         tests:
           - not_null
           - accepted_values:
-              values: ['Amazon', 'Amazon FBA', 'Website', 'Phone/Direct', 'Invoice/ACH', 'Other']
+              values: ['Amazon', 'Website', 'Invoice', 'Other']
       
       - name: customer_segment
         description: >
@@ -72,7 +116,7 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['OEM', 'Distributor', 'Contractor', 'Export', 'Direct Consumer', 'B2B Direct', 'Other']
+              values: ['OEM', 'Distributor', 'Export', 'Direct Consumer', 'B2B Direct', 'Other']
       
       - name: billing_address_country
         description: Normalized billing country (inferred from state if not explicit)
