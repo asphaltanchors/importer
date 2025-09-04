@@ -7,11 +7,12 @@ This project combines a DLT (Data Loading Tool) pipeline with DBT (Data Build To
 ## Architecture
 
 ### Data Flow
-1. **Complete Pipeline** (`pipeline.py`): Orchestrates the complete data workflow:
+1. **Orchestrator** (`orchestrator.py`): Master pipeline coordinator that runs the complete data workflow:
+   - Supports `--seed` (historical) and `--incremental` (daily) loading modes
    - DLT extraction: Loads XLSX files from Dropbox into PostgreSQL `raw` schema
-   - Supports seed (historical) and incremental (daily) loading modes
    - Domain consolidation: Creates `raw.domain_mapping` for company consolidation
    - DBT transformations: Processes data through staging → intermediate → mart layers
+   - Multi-source architecture: Ready for future data source integrations
 2. **Dashboard Integration**: Final `fct_*` tables feed into NextJS analytics dashboard
 
 ### Directory Structure
@@ -68,14 +69,15 @@ This project combines a DLT (Data Loading Tool) pipeline with DBT (Data Build To
 
 3. **Run locally:**
    ```bash
-   # Initial setup (load historical seed data)
-   python pipeline.py --mode seed
+   # Load all historical data from seed/ directory
+   python orchestrator.py --seed
    
-   # Daily incremental loading (latest files only)
-   python pipeline.py --mode incremental
+   # Load all available daily files from input/ directory
+   python orchestrator.py --incremental
    
-   # Complete pipeline (seed + all incremental data)
-   python pipeline.py --mode full
+   # Run pipeline for specific source (multi-source support)
+   python orchestrator.py --source quickbooks --seed
+   python orchestrator.py --source quickbooks --incremental
    
    # Optional: Run DBT commands separately (requires virtual environment)
    source .venv/bin/activate

@@ -410,152 +410,7 @@ def xlsx_quickbooks_source(mode="full"):
         
         resources.append(extract_company_enrichment)
         
-        # Historical items import resource (seed mode only)
-        @dlt.resource(
-            write_disposition="merge",
-            name="xlsx_item_historical", 
-            primary_key=["QuickBooks_Internal_Id", "snapshot_date"]
-        )
-        def import_historical_items():
-            """Load historical items data from JSONL file during seed"""
-            historical_items_file = os.path.join(SEED_PATH, "historical_items.jsonl")
-            print(f"Checking for historical items file at: {historical_items_file}")
-            
-            if os.path.exists(historical_items_file):
-                file_size = os.path.getsize(historical_items_file)
-                print(f"Found historical items file: {historical_items_file} ({file_size} bytes)")
-                
-                record_count = 0
-                with open(historical_items_file, 'r') as fh:
-                    for line_num, line in enumerate(fh, 1):
-                        line = line.strip()
-                        if line:
-                            try:
-                                data = json.loads(line)
-                                record_count += 1
-                                
-                                # Remove export metadata fields before loading
-                                data.pop('historical_export_timestamp', None)
-                                data.pop('historical_export_mode', None)
-                                
-                                # Ensure load_date and is_seed are set appropriately
-                                data["load_date"] = datetime.now(UTC).date().isoformat()
-                                data["is_seed"] = True
-                                data["worksheet_name"] = "Item"
-                                data["source_file"] = "historical_items.jsonl"
-                                
-                                yield data
-                            except json.JSONDecodeError as e:
-                                print(f"Warning: Failed to parse JSON line {line_num}: {e}")
-                                continue
-                
-                print(f"Historical items import: processed {record_count} records")
-            else:
-                print(f"Historical items file not found: {historical_items_file}")
-        
-        resources.append(import_historical_items)
     
-    # Historical items tracking resource (for incremental and full modes)
-    if mode in ['incremental', 'full']:
-        @dlt.resource(
-            write_disposition="append",
-            name="historical_items_export"
-        )
-        def export_historical_items():
-            """Export new xlsx_item records to JSONL for historical preservation"""
-            from shared import get_database_url
-            import psycopg2
-            
-            # Path for historical items JSONL file
-            historical_items_file = os.path.join(SEED_PATH, "historical_items.jsonl")
-            
-            # Get last exported snapshot date
-            last_exported_date = None
-            if os.path.exists(historical_items_file):
-                try:
-                    with open(historical_items_file, 'r') as f:
-                        # Read last line to get most recent export
-                        lines = f.readlines()
-                        if lines:
-                            last_record = json.loads(lines[-1].strip())
-                            last_exported_date = last_record.get('snapshot_date')
-                            print(f"Last exported snapshot date: {last_exported_date}")
-                except Exception as e:
-                    print(f"Warning: Could not read last export date: {e}")
-            
-            # Connect to database and get new records
-            try:
-                database_url = get_database_url()
-                conn = psycopg2.connect(database_url)
-                cursor = conn.cursor()
-                
-                # Query for new records
-                if last_exported_date:
-                    query = """
-                    SELECT * FROM raw.xlsx_item 
-                    WHERE snapshot_date > %s
-                    ORDER BY item_name, snapshot_date
-                    """
-                    cursor.execute(query, (last_exported_date,))
-                else:
-                    # First time - export all
-                    query = """
-                    SELECT * FROM raw.xlsx_item 
-                    ORDER BY item_name, snapshot_date
-                    """
-                    cursor.execute(query)
-                
-                columns = [desc[0] for desc in cursor.description]
-                records = cursor.fetchall()
-                
-                if records:
-                    # Append new records to JSONL file
-                    with open(historical_items_file, 'a') as f:
-                        for record in records:
-                            record_dict = dict(zip(columns, record))
-                            
-                            # Convert non-serializable types
-                            for key, value in record_dict.items():
-                                if value is None:
-                                    record_dict[key] = None
-                                elif isinstance(value, (str, int, float, bool)):
-                                    record_dict[key] = value
-                                else:
-                                    record_dict[key] = str(value)
-                            
-                            # Add export metadata
-                            record_dict['historical_export_timestamp'] = datetime.now(UTC).isoformat()
-                            record_dict['historical_export_mode'] = mode
-                            
-                            f.write(json.dumps(record_dict) + '\n')
-                    
-                    print(f"✅ Exported {len(records)} new xlsx_item records to {historical_items_file}")
-                else:
-                    print("No new xlsx_item records to export")
-                
-                cursor.close()
-                conn.close()
-                
-                # Yield a status record for DLT tracking
-                yield {
-                    "export_timestamp": datetime.now(UTC).isoformat(),
-                    "records_exported": len(records),
-                    "last_exported_date": last_exported_date,
-                    "export_file": historical_items_file,
-                    "mode": mode
-                }
-                
-            except Exception as e:
-                print(f"Warning: Historical items export failed: {e}")
-                # Don't fail the pipeline - this is supplementary
-                yield {
-                    "export_timestamp": datetime.now(UTC).isoformat(),
-                    "records_exported": 0,
-                    "error": str(e),
-                    "mode": mode
-                }
-        
-        resources.append(export_historical_items)
     
     return resources
 
@@ -601,9 +456,6 @@ def main():
                        choices=['seed', 'incremental', 'full'], 
                        default='full',
                        help='Loading mode: seed (historical only), incremental (latest daily), full (seed + all incremental)')
-    parser.add_argument('--skip-dbt', action='store_true', help='Skip DBT transformations')
-    parser.add_argument('--skip-domain', action='store_true', help='Skip domain consolidation')
-    parser.add_argument('--export-historical-items', action='store_true', help='Export current historical items to JSONL')
     
     args = parser.parse_args()
     
@@ -624,14 +476,13 @@ def main():
         return False
     
     # 2. Run domain consolidation (only needed for full/seed loads)
-    if not args.skip_domain and args.mode in ['seed', 'full']:
+    if args.mode in ['seed', 'full']:
         if not run_domain_consolidation():
             return False
     
     # 3. Run DBT transformations
-    if not args.skip_dbt:
-        if not run_dbt_transformations():
-            return False
+    if not run_dbt_transformations():
+        return False
     
     print(f"\n✅ {args.mode.title()} pipeline finished successfully!")
     return True
