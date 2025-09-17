@@ -331,8 +331,12 @@ models:
   - name: int_quickbooks__items_enriched
     description: >
       Comprehensive intermediate model that enriches item data with all derived attributes.
-      Consolidates product family, material type, and kit classifications to prevent rejoining violations.
-      Replaces direct staging access pattern in fact tables.
+      Consolidates product family, material type, kit classifications, and packaging logic to prevent rejoining violations.
+      Replaces direct staging access pattern and eliminates need for separate packaging model.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - item_name
     columns:
       - name: quick_books_internal_id
         description: Unique identifier for the item in QuickBooks
@@ -365,3 +369,21 @@ models:
           - not_null
           - accepted_values:
               values: [true, false]
+
+      - name: packaging_type
+        description: Type of packaging (kit, master_carton, 6-pack, individual)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['kit', 'master_carton', '6-pack', 'individual']
+
+      - name: units_per_sku
+        description: Number of units per SKU based on packaging type
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "> 0"
+
+      - name: parsed_unit_count
+        description: Parsed unit count from product descriptions (nullable for debugging)
+

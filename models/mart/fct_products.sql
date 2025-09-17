@@ -1,11 +1,6 @@
 /*
-  This fact table model represents products for business consumption.
-  Uses consolidated intermediate model to avoid rejoining of upstream concepts.
-  
-  Fact tables contain:
-  - Business entities
-  - Foreign keys to dimensions
-  - Business metrics/measures
+ABOUTME: Product fact table with comprehensive product attributes and business metrics
+ABOUTME: Uses single consolidated intermediate model that includes packaging to avoid rejoining violations
 */
 
 {{ config(
@@ -14,16 +9,12 @@
 ) }}
 
 WITH enriched_items AS (
-    -- Use consolidated intermediate model to avoid staging rejoining
+    -- Use consolidated intermediate model that now includes packaging data
+    -- This eliminates the LEFT JOIN that was causing rejoining violations
     SELECT * FROM {{ ref('int_quickbooks__items_enriched') }}
 ),
 
--- Get packaging information for unit calculations
-product_packaging AS (
-    SELECT * FROM {{ ref('int_quickbooks__product_packaging') }}
-),
-
--- Calculate additional business metrics and add packaging information
+-- Calculate additional business metrics (packaging already included)
 products_combined AS (
     SELECT
         -- Primary key
@@ -66,17 +57,15 @@ products_combined AS (
         -- Units
         e.unit_of_measure,
 
-        -- Packaging information for unit sales tracking
-        p.packaging_type,
-        p.units_per_sku,
+        -- Packaging information for unit sales tracking (now in enriched_items)
+        e.packaging_type,
+        e.units_per_sku,
 
         -- Dates
         e.load_date,
         e.snapshot_date
 
     FROM enriched_items e
-    LEFT JOIN product_packaging p
-        ON e.item_name = p.item_name
 )
 
 SELECT * FROM products_combined
