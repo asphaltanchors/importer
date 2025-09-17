@@ -145,6 +145,14 @@ final_line_items AS (
         p.purchase_cost as standard_purchase_cost,
         p.margin_percentage,
         p.margin_amount,
+
+        -- Packaging and unit information
+        p.packaging_type,
+        p.units_per_sku,
+
+        -- Unit calculations for sales tracking
+        li.product_service_quantity as sku_quantity,
+        COALESCE(p.units_per_sku, 1) * COALESCE(li.product_service_quantity, 0) as total_units_sold,
         
         -- Person/contact information
         cpc.contact_id as primary_contact_id,

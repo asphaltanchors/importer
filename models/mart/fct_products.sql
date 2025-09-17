@@ -18,54 +18,65 @@ WITH enriched_items AS (
     SELECT * FROM {{ ref('int_quickbooks__items_enriched') }}
 ),
 
--- Calculate additional business metrics
+-- Get packaging information for unit calculations
+product_packaging AS (
+    SELECT * FROM {{ ref('int_quickbooks__product_packaging') }}
+),
+
+-- Calculate additional business metrics and add packaging information
 products_combined AS (
     SELECT
         -- Primary key
-        quick_books_internal_id,
-        
+        e.quick_books_internal_id,
+
         -- Product details
-        item_name,
-        sales_description,
-        
+        e.item_name,
+        e.sales_description,
+
         -- Derived attributes (from consolidated intermediate model)
-        product_family,
-        material_type,
-        is_kit,
-        
+        e.product_family,
+        e.material_type,
+        e.is_kit,
+
         -- Additional product information
-        item_type,
-        item_subtype,
-        purchase_description,
-        
+        e.item_type,
+        e.item_subtype,
+        e.purchase_description,
+
         -- Pricing
-        COALESCE(sales_price, 0) as sales_price,
-        COALESCE(purchase_cost, 0) as purchase_cost,
-        
+        COALESCE(e.sales_price, 0) as sales_price,
+        COALESCE(e.purchase_cost, 0) as purchase_cost,
+
         -- Calculated margins
-        CASE 
-            WHEN COALESCE(sales_price, 0) > 0 
-            THEN ROUND(CAST(((COALESCE(sales_price, 0) - COALESCE(purchase_cost, 0)) / sales_price) * 100 AS NUMERIC), 2)
+        CASE
+            WHEN COALESCE(e.sales_price, 0) > 0
+            THEN ROUND(CAST(((COALESCE(e.sales_price, 0) - COALESCE(e.purchase_cost, 0)) / e.sales_price) * 100 AS NUMERIC), 2)
             ELSE 0
         END AS margin_percentage,
-        
-        CASE 
-            WHEN COALESCE(sales_price, 0) > 0 OR COALESCE(purchase_cost, 0) > 0
-            THEN COALESCE(sales_price, 0) - COALESCE(purchase_cost, 0)
+
+        CASE
+            WHEN COALESCE(e.sales_price, 0) > 0 OR COALESCE(e.purchase_cost, 0) > 0
+            THEN COALESCE(e.sales_price, 0) - COALESCE(e.purchase_cost, 0)
             ELSE 0
         END AS margin_amount,
-        
+
         -- Product identifiers
-        manufacturer_s_part_number,
+        e.manufacturer_s_part_number,
 
         -- Units
-        unit_of_measure,
-        
+        e.unit_of_measure,
+
+        -- Packaging information for unit sales tracking
+        p.packaging_type,
+        p.units_per_sku,
+
         -- Dates
-        load_date,
-        snapshot_date
-        
-    FROM enriched_items
+        e.load_date,
+        e.snapshot_date
+
+    FROM enriched_items e
+    LEFT JOIN product_packaging p
+        ON e.item_name = p.item_name
 )
 
 SELECT * FROM products_combined
