@@ -23,7 +23,7 @@ WITH unioned AS (
             product_service_amount,
             NULL::bigint as transx,
         {% endif %}
-        
+
         -- Common core fields
         customer,
         product_service,
@@ -31,7 +31,7 @@ WITH unioned AS (
         product_service_quantity,
         product_service_rate,
         customer_sales_tax_code,
-        
+
         -- Date fields
         {% if src.type == 'invoice' %}
             due_date,
@@ -40,7 +40,7 @@ WITH unioned AS (
             due_date,
             ship_date,
         {% endif %}
-        
+
         -- Tax fields (use correct numeric tax fields)
         {% if src.type == 'invoice' %}
             total_tax,  -- Use the numeric total_tax field, not the text sales_tax field
@@ -53,7 +53,7 @@ WITH unioned AS (
             total_amount,
             NULL::text as sales_tax_code,
         {% endif %}
-        
+
         -- Address fields
         {% if src.type == 'invoice' %}
             billing_address_line1 as billing_address_line_1,
@@ -86,14 +86,14 @@ WITH unioned AS (
             shipping_address_postal_code,
             NULL as shipping_address_country,
         {% endif %}
-        
+
         -- Other fields (minimal set that works)
         shipping_method,
-        
+
         -- Date fields
         created_date,
         modified_date,
-        
+
         -- Flags
         print_later,
         email_later,
@@ -102,10 +102,10 @@ WITH unioned AS (
         {% else %}
             is_pending,
         {% endif %}
-        
+
         -- Additional fields from XLSX
         class,
-        
+
         -- Additional fields available in XLSX data
         memo,
         {% if src.type == 'invoice' %}
@@ -153,18 +153,19 @@ WITH unioned AS (
             NULL as serial_no,
             NULL as lot_no,
         {% endif %}
-        
+
         -- Metadata
         quick_books_internal_id,
         load_date,
         _dlt_load_id,
         _dlt_id,
-        
+
         -- Source type
         '{{ src.type }}' as source_type
-        
+
     FROM {{ source(src.source, src.table) }}
-    WHERE total_amount IS NOT NULL  -- Filter out rows with invalid total_amount
+    -- Remove total_amount filter to include all line items for 2025+ invoices
+    -- WHERE total_amount IS NOT NULL  -- Filter out rows with invalid total_amount
     {% if not loop.last %}UNION ALL{% endif %}
     {% endfor %}
 )
