@@ -624,7 +624,7 @@ def main():
         return False
 
     # 2. Run domain consolidation (only needed for full/seed loads)
-    if not args.skip_domain and args.mode in ['seed', 'full']:
+    if args.mode in ['seed', 'full']:
         if not run_domain_consolidation():
             return False
 

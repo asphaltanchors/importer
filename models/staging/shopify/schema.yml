@@ -1,0 +1,95 @@
+version: 2
+
+models:
+  - name: stg_shopify__orders
+    description: "Staging model for Shopify orders with standardized financial data"
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - order_id
+    columns:
+      - name: order_id
+        description: "Shopify order ID (primary key)"
+        tests:
+          - unique
+          - not_null
+      - name: order_number
+        description: "Sequential order number"
+        tests:
+          - not_null
+      - name: order_number_formatted
+        description: "Order number with S- prefix to match QuickBooks"
+      - name: total_price
+        description: "Total order amount"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+      - name: financial_status
+        description: "Payment status (PAID, PENDING, REFUNDED, etc.)"
+      - name: fulfillment_status
+        description: "Fulfillment status (FULFILLED, UNFULFILLED, etc.)"
+
+  - name: stg_shopify__customers
+    description: "Staging model for Shopify customers with marketing consent"
+    columns:
+      - name: customer_id
+        description: "Shopify customer ID (primary key)"
+        tests:
+          - unique
+          - not_null
+      - name: email
+        description: "Customer email"
+        tests:
+          - not_null
+      - name: email_marketing_status
+        description: "Email marketing consent status"
+      - name: is_email_subscriber
+        description: "Boolean flag for email subscription"
+
+  - name: stg_shopify__order_attribution
+    description: "Staging model for Shopify order marketing attribution with UTM parameters"
+    columns:
+      - name: order_id
+        description: "Shopify order ID"
+        tests:
+          - not_null
+      - name: utm_source
+        description: "UTM source parameter extracted from landing site"
+      - name: utm_medium
+        description: "UTM medium parameter extracted from landing site"
+      - name: utm_campaign
+        description: "UTM campaign parameter extracted from landing site"
+
+  - name: stg_shopify__order_fulfillments
+    description: "Staging model for Shopify order fulfillments with tracking information"
+    columns:
+      - name: order_id
+        description: "Shopify order ID (foreign key)"
+      - name: fulfillment_id
+        description: "Fulfillment ID (primary key)"
+        tests:
+          - unique
+          - not_null
+      - name: tracking_number
+        description: "Shipment tracking number"
+
+  - name: stg_shopify__products
+    description: "Staging model for Shopify products with variants and SKUs"
+    columns:
+      - name: product_id
+        description: "Shopify product ID"
+      - name: variant_id
+        description: "Shopify variant ID"
+        tests:
+          - unique
+          - not_null
+      - name: sku
+        description: "Product SKU (matches QuickBooks item_name)"
+        tests:
+          - not_null
+      - name: variant_price
+        description: "Variant price"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0

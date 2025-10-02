@@ -25,14 +25,15 @@ This file should be consulted when making pipeline improvements but should not b
 # Install dependencies
 uv pip install -r requirements.txt
 
-# Initial setup (load historical seed data)
-python pipeline.py --mode seed
+# Load all historical data from seed/ directory
+python orchestrator.py --seed
 
-# Daily incremental loading (latest files only)
-python pipeline.py --mode incremental
+# Load all available daily files from input/ directory  
+python orchestrator.py --incremental
 
-# Complete pipeline (seed + all incremental data)
-python pipeline.py --mode full
+# Run pipeline for specific source only (multi-source support)
+python orchestrator.py --source quickbooks --seed
+python orchestrator.py --source quickbooks --incremental
 ```
 
 ### DBT Commands
@@ -80,10 +81,12 @@ DATABASE_URL=postgresql://user:password@host:port/dbname
 ## Architecture
 
 ### Data Flow
-1. **DLT Pipeline** (`pipeline.py`): Extracts XLSX files from Dropbox folder and loads into PostgreSQL `raw` schema
-   - Supports seed (historical) and incremental (daily) loading modes
-2. **DBT Models**: Transform raw data through staging → intermediate → mart layers  
-3. **Name Matching**: `matcher.py` normalizes company names during extraction
+1. **Orchestrator** (`orchestrator.py`): Master pipeline coordinator that runs the complete data pipeline
+   - Supports `--seed` (historical) and `--incremental` (daily) loading modes
+   - Automatically runs all pipeline steps: data extraction → domain consolidation → DBT transformations
+2. **DLT Pipeline** (`pipeline.py`): Extracts XLSX files from Dropbox folder and loads into PostgreSQL `raw` schema
+3. **DBT Models**: Transform raw data through staging → intermediate → mart layers  
+4. **Name Matching**: Domain consolidation normalizes company names during processing
 
 ### Schema Structure
 - **Raw Schema**: Raw data loaded by DLT (customers, items, sales_receipts, invoices)

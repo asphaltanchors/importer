@@ -1,0 +1,93 @@
+# Shopify Pipeline Configuration
+# Configuration for Shopify e-commerce data extraction via DLT verified source
+
+# Pipeline Metadata
+pipeline_name: "shopify_pipeline"
+description: "Shopify e-commerce data extraction using DLT verified source"
+version: "1.0.0"
+
+# Resources
+# These are the DLT verified source resources we're loading
+resources:
+  customers:
+    description: "Shopify customer records with contact and address information"
+    primary_key: "id"
+    incremental: true
+    incremental_field: "updated_at"
+
+  orders:
+    description: "Shopify order transactions with line items and fulfillment data"
+    primary_key: "id"
+    incremental: true
+    incremental_field: "updated_at"
+
+  products:
+    description: "Shopify product catalog with variants, pricing, and inventory"
+    primary_key: "id"
+    incremental: true
+    incremental_field: "updated_at"
+
+# Loading Strategy
+loading:
+  # Seed mode: Load 2 years of historical data
+  seed_days_back: 730
+
+  # Incremental mode: Load last 7 days by default (DLT state management will optimize)
+  incremental_days_back: 7
+
+  # Pagination
+  items_per_page: 250  # Maximum allowed by Shopify API
+
+# Environment Variables Required
+environment_variables:
+  required:
+    - SHOPIFY_SHOP_URL        # Format: your-shop.myshopify.com
+    - SHOPIFY_ACCESS_TOKEN    # Admin API access token
+    - DATABASE_URL            # PostgreSQL connection string
+
+# Raw Schema Destination
+destination:
+  schema: "raw"
+  tables:
+    - "shopify_customers"
+    - "shopify_orders"
+    - "shopify_products"
+
+# Data Quality Expectations
+data_quality:
+  customers:
+    - check: "not_null"
+      columns: ["id", "email"]
+    - check: "unique"
+      columns: ["id"]
+
+  orders:
+    - check: "not_null"
+      columns: ["id", "order_number", "created_at"]
+    - check: "unique"
+      columns: ["id"]
+    - check: "relationships"
+      field: "customer_id"
+      to: "shopify_customers.id"
+
+  products:
+    - check: "not_null"
+      columns: ["id", "title"]
+    - check: "unique"
+      columns: ["id"]
+
+# Integration Notes
+integration:
+  product_matching:
+    strategy: "SKU-based"
+    fields: ["variants.sku"]
+    notes: "Match Shopify product variants to QuickBooks items via SKU field"
+
+  customer_matching:
+    strategy: "Email-based"
+    fields: ["email"]
+    notes: "Match Shopify customers to QuickBooks customers via email domain consolidation"
+
+  order_attribution:
+    strategy: "Channel tagging"
+    notes: "Tag orders with 'shopify' channel for revenue attribution analysis"
