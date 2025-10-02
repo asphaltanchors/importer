@@ -1,4 +1,4 @@
-dlt[filesystem,postgres,dbt]>=1.10.0
+dlt[filesystem,postgres,dbt,shopify]>=1.10.0
 python-dotenv>=0.21.0
 dbt-core>=1.9.0
 dbt-postgres>=1.9.0

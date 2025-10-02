@@ -1,0 +1,67 @@
+version: 2
+
+models:
+  - name: int_shopify__orders_enriched
+    description: "Intermediate model enriching Shopify orders with attribution and fulfillment data"
+    columns:
+      - name: order_id
+        description: "Shopify order ID (primary key)"
+        tests:
+          - unique
+          - not_null
+      - name: order_number_formatted
+        description: "Order number with S- prefix (e.g., S-1198)"
+      - name: acquisition_channel
+        description: "Derived acquisition channel (Paid, Organic Search, Referral, Direct)"
+      - name: has_discount
+        description: "Boolean flag indicating if order used a discount"
+      - name: has_tracking
+        description: "Boolean flag indicating if order has tracking number"
+      - name: utm_source
+        description: "Marketing source from UTM parameters"
+      - name: utm_medium
+        description: "Marketing medium from UTM parameters"
+      - name: utm_campaign
+        description: "Marketing campaign from UTM parameters"
+
+  - name: int_shopify__customer_enrichment
+    description: "Intermediate model for Shopify customer marketing enrichment with aggregated metrics"
+    columns:
+      - name: customer_id
+        description: "Shopify customer ID (primary key)"
+        tests:
+          - unique
+          - not_null
+      - name: email
+        description: "Customer email"
+      - name: is_email_subscriber
+        description: "Boolean flag for email marketing subscription"
+      - name: is_sms_subscriber
+        description: "Boolean flag for SMS marketing subscription"
+      - name: shopify_order_count
+        description: "Total number of orders by this customer"
+      - name: shopify_lifetime_value
+        description: "Total revenue from this customer"
+
+  - name: int_unified__order_matching
+    description: "Intermediate model matching Shopify orders to QuickBooks invoices for reconciliation"
+    tests:
+      - dbt_utils.expression_is_true:
+          expression: "match_status != 'SHOPIFY_ONLY' or order_number > 'S-1200'"
+          config:
+            severity: warn
+    columns:
+      - name: order_number
+        description: "Order number (primary key)"
+        tests:
+          - unique
+          - not_null
+      - name: match_status
+        description: "Match status: MATCHED, SHOPIFY_ONLY, QB_ONLY"
+        tests:
+          - accepted_values:
+              values: ['MATCHED', 'SHOPIFY_ONLY', 'QB_ONLY']
+      - name: amounts_match
+        description: "Boolean flag indicating if Shopify and QB amounts match within $0.01"
+      - name: amount_difference
+        description: "Absolute difference between Shopify and QB amounts"
