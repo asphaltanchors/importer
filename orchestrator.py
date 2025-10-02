@@ -115,7 +115,18 @@ class PipelineOrchestrator:
         
         if not files_to_check:
             return True  # Run if no files found
-        
+
+        # Sort files chronologically by extracting date from filename
+        def extract_date(file_path):
+            """Extract date from filename pattern: All Lists_MM_DD_YYYY_H_MM_SS.xls"""
+            match = re.search(r'_(\d{2})_(\d{2})_(\d{4})_', file_path.name)
+            if match:
+                month, day, year = match.groups()
+                return datetime.strptime(f"{year}-{month}-{day}", "%Y-%m-%d")
+            return datetime.min  # Put unparseable files first
+
+        files_to_check.sort(key=extract_date)
+
         # Check if any files need processing
         new_files = []
         for file_path in files_to_check:
