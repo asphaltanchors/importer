@@ -6,7 +6,6 @@ import sys
 import argparse
 import subprocess
 import re
-import hashlib
 import json
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -20,71 +19,69 @@ from pipelines.shared import setup_logging, load_config, run_basic_quality_check
 class PipelineOrchestrator:
     """Master orchestrator for multi-source data pipeline"""
     
-    def __init__(self, config_path: str = "config/sources.yml", verbose: bool = False, use_tui: bool = False):
+    def __init__(self, config_path: str = "config/sources.yml", verbose: bool = False):
         self.config_path = config_path
         self.config = self._load_orchestrator_config()
         self.logger = setup_logging("orchestrator", "INFO")
         self.verbose = verbose
-        self.use_tui = use_tui
         self.results = {}
         
-        # TUI components
-        self.dashboard = None
-        self.progress_tracker = None
-        self.subprocess_parser = None
-        
-        if self.use_tui:
-            self._initialize_tui()
-        
-        # Initialize file hash tracking
-        self.hash_file_path = Path("logs/file_hashes.json")
-        self.hash_file_path.parent.mkdir(exist_ok=True)
-        self._load_file_hashes()
+        # Initialize simple file tracking
+        self.processed_files_path = Path("logs/processed_files.json")
+        self.processed_files_path.parent.mkdir(exist_ok=True)
+        self._load_processed_files()
     
-    def _load_file_hashes(self) -> None:
-        """Load previously stored file hashes"""
+    def _load_processed_files(self) -> None:
+        """Load previously processed file records"""
         try:
-            if self.hash_file_path.exists():
-                with open(self.hash_file_path, 'r') as f:
-                    self.file_hashes = json.load(f)
+            if self.processed_files_path.exists():
+                with open(self.processed_files_path, 'r') as f:
+                    self.processed_files = json.load(f)
             else:
-                self.file_hashes = {}
+                self.processed_files = {}
         except (json.JSONDecodeError, IOError) as e:
-            self.logger.warning(f"Could not load file hashes: {e}")
-            self.file_hashes = {}
+            self.logger.warning(f"Could not load processed files: {e}")
+            self.processed_files = {}
     
-    def _save_file_hashes(self) -> None:
-        """Save current file hashes"""
+    def _save_processed_files(self) -> None:
+        """Save processed file records"""
         try:
-            with open(self.hash_file_path, 'w') as f:
-                json.dump(self.file_hashes, f, indent=2)
+            with open(self.processed_files_path, 'w') as f:
+                json.dump(self.processed_files, f, indent=2)
         except IOError as e:
-            self.logger.warning(f"Could not save file hashes: {e}")
+            self.logger.warning(f"Could not save processed files: {e}")
     
-    def _calculate_file_hash(self, file_path: Path) -> str:
-        """Calculate SHA256 hash of file contents"""
-        try:
-            with open(file_path, 'rb') as f:
-                return hashlib.sha256(f.read()).hexdigest()
-        except IOError as e:
-            self.logger.warning(f"Could not hash file {file_path}: {e}")
-            return ""
-    
-    def _has_file_changed(self, file_path: Path) -> bool:
-        """Check if file has changed since last run"""
+    def _is_file_already_processed(self, file_path: Path) -> bool:
+        """Check if file has been processed (simple filename + mod time check)"""
         file_key = str(file_path)
-        current_hash = self._calculate_file_hash(file_path)
         
-        if not current_hash:
-            return True  # Assume changed if we can't hash
+        try:
+            current_mod_time = file_path.stat().st_mtime
+        except OSError:
+            return False  # File doesn't exist, not processed
         
-        previous_hash = self.file_hashes.get(file_key)
-        has_changed = previous_hash != current_hash
+        # Check if we've seen this file before
+        if file_key not in self.processed_files:
+            return False
         
-        # Update hash regardless
-        self.file_hashes[file_key] = current_hash
+        # Check if modification time has changed
+        previous_mod_time = self.processed_files[file_key].get("mod_time", 0)
+        if current_mod_time > previous_mod_time:
+            return False  # File has been modified
         
-        return has_changed
+        return True  # File already processed and unchanged
+    
+    def _mark_file_processed(self, file_path: Path) -> None:
+        """Mark a file as processed with current modification time"""
+        file_key = str(file_path)
+        try:
+            current_mod_time = file_path.stat().st_mtime
+            self.processed_files[file_key] = {
+                "mod_time": current_mod_time,
+                "processed_at": datetime.now().isoformat()
+            }
+        except OSError as e:
+            self.logger.warning(f"Could not mark file as processed {file_path}: {e}")
     
     def _check_source_files_changed(self, source_name: str, mode: str) -> bool:
         """Check if any source files have changed since last run"""
@@ -104,8 +101,7 @@ class PipelineOrchestrator:
             seed_files = [
                 seed_path / "all_lists.xlsx",
                 seed_path / "all_transactions.xlsx", 
-                seed_path / "company_enrichment.jsonl",
-                seed_path / "historical_items.jsonl"
+                seed_path / "company_enrichment.jsonl"
             ]
             files_to_check.extend([f for f in seed_files if f.exists()])
         
@@ -120,14 +116,18 @@ class PipelineOrchestrator:
         if not files_to_check:
             return True  # Run if no files found
         
-        # Check if any file has changed
-        any_changed = False
+        # Check if any files need processing
+        new_files = []
         for file_path in files_to_check:
-            if self._has_file_changed(file_path):
-                self.logger.info(f"File changed: {file_path}")
-                any_changed = True
+            if not self._is_file_already_processed(file_path):
+                self.logger.info(f"File needs processing: {file_path}")
+                new_files.append(file_path)
         
-        return any_changed
+        # Mark new files as processed
+        for file_path in new_files:
+            self._mark_file_processed(file_path)
+        
+        return len(new_files) > 0
     
     def _update_pipeline_state(self, source_name: str, mode: str, status: str) -> None:
         """Update pipeline state tracking"""
@@ -200,16 +200,11 @@ class PipelineOrchestrator:
         try:
             start_time = datetime.now()
             
-            if self.verbose or self.use_tui:
-                # Real-time output streaming for verbose mode or TUI
-                if not self.use_tui:
-                    print(f"Running command: {' '.join(cmd)}")
-                    print(f"Working directory: {os.getcwd()}")
-                    print("-" * 60)
-                
-                # Report step start to TUI
-                if self.progress_tracker:
-                    self.progress_tracker.step_started(context)
+            if self.verbose:
+                # Real-time output streaming for verbose mode
+                print(f"Running command: {' '.join(cmd)}")
+                print(f"Working directory: {os.getcwd()}")
+                print("-" * 60)
                 
                 process = subprocess.Popen(
                     cmd,
@@ -226,23 +221,13 @@ class PipelineOrchestrator:
                     if output == '' and process.poll() is not None:
                         break
                     if output:
-                        if not self.use_tui:  # Only print if not using TUI
-                            print(output.rstrip())
+                        print(output.rstrip())
                         stdout_lines.append(output)
-                        
-                        # Parse output for TUI progress updates
-                        if self.subprocess_parser:
-                            self.subprocess_parser.parse_line(output, context)
                 
                 # Wait for process completion and get return code
                 return_code = process.wait()
                 stdout_content = ''.join(stdout_lines)
                 stderr_content = ""  # Merged into stdout
-                
-                # Report step completion to TUI
-                if self.progress_tracker:
-                    status = "success" if return_code == 0 else "error"
-                    self.progress_tracker.step_completed(context, status)
                 
                 # Create result object compatible with subprocess.run
                 class MockResult:
@@ -252,8 +237,7 @@ class PipelineOrchestrator:
                         self.stderr = stderr
                 
                 result = MockResult(return_code, stdout_content, stderr_content)
-                if not self.use_tui:
-                    print("-" * 60)
+                print("-" * 60)
             else:
                 # Standard capture mode for non-verbose
                 result = subprocess.run(
@@ -341,146 +325,24 @@ class PipelineOrchestrator:
             return default_config
     
     def _format_subprocess_error(self, cmd: List[str], result, context: str = "") -> str:
-        """Format subprocess error output for better debugging"""
+        """Simple error formatting - just show essential information"""
         error_lines = []
-        error_lines.append(f"{'='*70}")
-        error_lines.append(f"❌ SUBPROCESS ERROR: {context}")
+        error_lines.append(f"❌ ERROR: {context}")
         error_lines.append(f"Command: {' '.join(cmd)}")
         error_lines.append(f"Return code: {result.returncode}")
-        error_lines.append(f"Working directory: {os.getcwd()}")
-        error_lines.append(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        error_lines.append(f"{'='*70}")
-        
-        # Extract key error information for quick diagnosis
-        key_errors = self._extract_key_errors(result.stdout, result.stderr)
-        if key_errors:
-            error_lines.append("🔍 KEY ERRORS DETECTED:")
-            error_lines.append("-" * 50)
-            for error in key_errors[:5]:  # Show top 5 key errors
-                error_lines.append(f"  • {error}")
-            error_lines.append("")
+        error_lines.append("")
         
         if result.stdout and result.stdout.strip():
-            error_lines.append("📄 STDOUT:")
-            error_lines.append("-" * 50)
-            # Truncate if too long (unless verbose)
-            stdout_lines = result.stdout.strip().split('\n')
-            if not self.verbose and len(stdout_lines) > 25:
-                error_lines.extend(stdout_lines[:12])
-                error_lines.append(f"    ... ({len(stdout_lines) - 25} more lines, use --verbose for full output) ...")
-                error_lines.extend(stdout_lines[-12:])
-            else:
-                error_lines.extend(stdout_lines)
+            error_lines.append("STDOUT:")
+            error_lines.append(result.stdout.strip())
             error_lines.append("")
         
         if result.stderr and result.stderr.strip():
-            error_lines.append("⚠️  STDERR:")
-            error_lines.append("-" * 50)
-            # Truncate if too long (unless verbose)
-            stderr_lines = result.stderr.strip().split('\n')
-            if not self.verbose and len(stderr_lines) > 25:
-                error_lines.extend(stderr_lines[:12])
-                error_lines.append(f"    ... ({len(stderr_lines) - 25} more lines, use --verbose for full output) ...")
-                error_lines.extend(stderr_lines[-12:])
-            else:
-                error_lines.extend(stderr_lines)
-            error_lines.append("")
+            error_lines.append("STDERR:")
+            error_lines.append(result.stderr.strip())
         
-        # Add troubleshooting suggestions
-        suggestions = self._get_troubleshooting_suggestions(cmd, result)
-        if suggestions:
-            error_lines.append("💡 TROUBLESHOOTING SUGGESTIONS:")
-            error_lines.append("-" * 50)
-            for suggestion in suggestions:
-                error_lines.append(f"  • {suggestion}")
-            error_lines.append("")
-        
-        error_lines.append(f"{'='*70}")
         return '\n'.join(error_lines)
     
-    def _extract_key_errors(self, stdout: str, stderr: str) -> List[str]:
-        """Extract key error messages from subprocess output"""
-        key_errors = []
-        combined_output = f"{stdout or ''} {stderr or ''}"
-        
-        # Common error patterns
-        error_patterns = [
-            r'ERROR:.*',
-            r'FATAL:.*', 
-            r'.*Error:.*',
-            r'.*Exception:.*',
-            r'.*Failed:.*',
-            r'.*not found.*',
-            r'.*Permission denied.*',
-            r'.*Connection.*refused.*',
-            r'.*Authentication.*failed.*',
-            r'.*Timeout.*',
-            r'.*Invalid.*',
-            r'.*Missing.*requirement.*'
-        ]
-        
-        for pattern in error_patterns:
-            matches = re.findall(pattern, combined_output, re.IGNORECASE | re.MULTILINE)
-            for match in matches[:3]:  # Limit to 3 matches per pattern
-                if match.strip() and len(match.strip()) > 10:  # Skip very short matches
-                    key_errors.append(match.strip())
-        
-        return list(dict.fromkeys(key_errors))  # Remove duplicates while preserving order
-    
-    def _get_troubleshooting_suggestions(self, cmd: List[str], result) -> List[str]:
-        """Provide troubleshooting suggestions based on the command and error"""
-        suggestions = []
-        combined_output = f"{result.stdout or ''} {result.stderr or ''}".lower()
-        
-        # Command-specific suggestions
-        if 'pipeline.py' in cmd:
-            suggestions.append("Check if all required environment variables are set (.env file)")
-            suggestions.append("Verify DROPBOX_PATH directory exists and contains expected files")
-            suggestions.append("Ensure database connection is working (DATABASE_URL)")
-            
-            if 'connection' in combined_output or 'database' in combined_output:
-                suggestions.append("Test database connectivity: psql $DATABASE_URL")
-            
-            if 'permission' in combined_output or 'access' in combined_output:
-                suggestions.append("Check file/directory permissions for DROPBOX_PATH")
-                
-        elif 'dbt' in cmd:
-            suggestions.append("Check DBT profiles.yml configuration")
-            suggestions.append("Verify database schema exists and has proper permissions")
-            suggestions.append("Run 'dbt debug' to test DBT configuration")
-            
-            if 'relation' in combined_output or 'table' in combined_output:
-                suggestions.append("Check if source tables exist in the raw schema")
-            
-            if 'compilation' in combined_output:
-                suggestions.append("Review DBT model SQL syntax for errors")
-        
-        # Generic suggestions based on error content
-        if 'timeout' in combined_output:
-            suggestions.append("Consider increasing timeout values or checking system performance")
-            
-        if 'memory' in combined_output or 'oom' in combined_output:
-            suggestions.append("Check available system memory and consider processing smaller data batches")
-        
-        return suggestions
-    
-    def _initialize_tui(self) -> None:
-        """Initialize TUI components"""
-        try:
-            from tui.dashboard import PipelineDashboard
-            from tui.progress_tracker import ProgressTracker, SubprocessProgressParser
-            
-            self.dashboard = PipelineDashboard()
-            self.progress_tracker = ProgressTracker(self.dashboard)
-            self.subprocess_parser = SubprocessProgressParser(self.progress_tracker)
-            
-            # Start the progress tracker
-            self.progress_tracker.start()
-            
-        except ImportError as e:
-            print(f"Warning: TUI dependencies not available: {e}")
-            print("Install TUI dependencies with: pip install rich textual")
-            self.use_tui = False
     
     def run_source_pipeline(self, source_name: str, mode: str = "incremental") -> Dict[str, Any]:
         """
@@ -626,9 +488,6 @@ class PipelineOrchestrator:
         if self.config.get("data_quality", {}).get("enabled", False):
             total_steps += 1
         
-        # Report pipeline start to TUI
-        if self.progress_tracker:
-            self.progress_tracker.pipeline_started(total_steps=total_steps)
         
         pipeline_results = {
             "start_time": start_time.isoformat(),
@@ -678,75 +537,33 @@ class PipelineOrchestrator:
         
         self.logger.info(f"Full pipeline completed with status: {pipeline_results['overall_status']} in {total_time:.1f}s")
         
-        # Report pipeline completion to TUI
-        if self.progress_tracker:
-            self.progress_tracker.pipeline_ended(pipeline_results['overall_status'])
         
-        # Save file hashes after pipeline completion
-        self._save_file_hashes()
+        # Save processed files after pipeline completion
+        self._save_processed_files()
         
         return pipeline_results
     
-    def run_with_tui(self, mode: str = "incremental") -> Dict[str, Any]:
-        """Run pipeline with TUI interface"""
-        if not self.use_tui or not self.dashboard:
-            return self.run_full_pipeline(mode)
-        
-        import asyncio
-        from threading import Thread
-        
-        # Pipeline execution in separate thread
-        pipeline_result = {}
-        pipeline_exception = None
-        
-        def pipeline_worker():
-            nonlocal pipeline_result, pipeline_exception
-            try:
-                pipeline_result = self.run_full_pipeline(mode)
-            except Exception as e:
-                pipeline_exception = e
-        
-        # Start pipeline in background thread
-        pipeline_thread = Thread(target=pipeline_worker, daemon=True)
-        pipeline_thread.start()
-        
-        # Run TUI dashboard
-        try:
-            self.dashboard.run()
-        except KeyboardInterrupt:
-            if self.progress_tracker:
-                self.progress_tracker.log("Dashboard closed by user", "WARNING")
-        
-        # Wait for pipeline to complete
-        pipeline_thread.join()
-        
-        # Stop progress tracker
-        if self.progress_tracker:
-            self.progress_tracker.stop()
-        
-        if pipeline_exception:
-            raise pipeline_exception
-        
-        return pipeline_result
 
 def main():
     """Main entry point for orchestrator"""
     parser = argparse.ArgumentParser(description="Multi-source data pipeline orchestrator")
-    parser.add_argument(
-        "--mode", 
-        choices=["full", "source", "dbt", "data-quality"],
-        default="full",
-        help="Execution mode"
+    
+    # Create mutually exclusive group for load modes
+    mode_group = parser.add_mutually_exclusive_group(required=True)
+    mode_group.add_argument(
+        "--seed",
+        action="store_true",
+        help="Load all historical data from seed/ directory"
     )
-    parser.add_argument(
-        "--load-mode",
-        choices=["seed", "incremental", "full"],
-        default="incremental", 
-        help="Data loading mode: seed (historical only), incremental (latest daily), full (seed + all incremental)"
+    mode_group.add_argument(
+        "--incremental",
+        action="store_true", 
+        help="Load all available daily files from input/ directory"
     )
+    
     parser.add_argument(
         "--source",
-        help="Source name (required for --mode source)"
+        help="Run pipeline for specific source only (for multi-source support)"
     )
     parser.add_argument(
         "--config",
@@ -758,36 +575,29 @@ def main():
         action="store_true",
         help="Show detailed output including full subprocess stdout/stderr"
     )
-    parser.add_argument(
-        "--tui",
-        action="store_true",
-        help="Use Terminal User Interface for enhanced monitoring and control"
-    )
     
     args = parser.parse_args()
     
     # Create orchestrator
     orchestrator = PipelineOrchestrator(
         args.config, 
-        verbose=getattr(args, 'verbose', False),
-        use_tui=getattr(args, 'tui', False)
+        verbose=getattr(args, 'verbose', False)
     )
     
     try:
-        if args.mode == "full":
-            if getattr(args, 'tui', False):
-                result = orchestrator.run_with_tui(args.load_mode)
-            else:
-                result = orchestrator.run_full_pipeline(args.load_mode)
-        elif args.mode == "source":
-            if not args.source:
-                print("Error: --source required for source mode")
-                sys.exit(1)
-            result = orchestrator.run_source_pipeline(args.source, args.load_mode)
-        elif args.mode == "dbt":
-            result = orchestrator.run_dbt_transformations()
-        elif args.mode == "data-quality":
-            result = orchestrator.run_data_quality_checks()
+        # Determine load mode from new arguments
+        if args.seed:
+            load_mode = "seed"
+        elif args.incremental:
+            load_mode = "incremental"
+        
+        # Execute pipeline
+        if args.source:
+            # Run specific source only
+            result = orchestrator.run_source_pipeline(args.source, load_mode)
+        else:
+            # Run full pipeline (all enabled sources + DBT + data quality)
+            result = orchestrator.run_full_pipeline(load_mode)
         
         # Print enhanced summary
         print("\n" + "="*70)

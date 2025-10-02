@@ -7,11 +7,12 @@ This project combines a DLT (Data Loading Tool) pipeline with DBT (Data Build To
 ## Architecture
 
 ### Data Flow
-1. **Complete Pipeline** (`pipeline.py`): Orchestrates the complete data workflow:
+1. **Orchestrator** (`orchestrator.py`): Master pipeline coordinator that runs the complete data workflow:
+   - Supports `--seed` (historical) and `--incremental` (daily) loading modes
    - DLT extraction: Loads XLSX files from Dropbox into PostgreSQL `raw` schema
-   - Supports seed (historical) and incremental (daily) loading modes
    - Domain consolidation: Creates `raw.domain_mapping` for company consolidation
    - DBT transformations: Processes data through staging → intermediate → mart layers
+   - Multi-source architecture: Ready for future data source integrations
 2. **Dashboard Integration**: Final `fct_*` tables feed into NextJS analytics dashboard
 
 ### Directory Structure
