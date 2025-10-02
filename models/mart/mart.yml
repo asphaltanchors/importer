@@ -6,6 +6,12 @@ models:
       Comprehensive accounts receivable aging analysis for cash flow management.
       Provides individual invoice details, customer summaries, and aging bucket analysis
       for collection efficiency tracking and risk assessment.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - analysis_level
+            - order_number
+            - customer
     columns:
       - name: analysis_level
         description: Type of analysis (Individual Invoices, Customer Summary, Aging Summary)
@@ -27,6 +33,12 @@ models:
       Key Days Sales Outstanding (DSO) metrics and performance indicators.
       Calculates DSO over multiple time periods, collection efficiency,
       and segment-level receivables analysis for cash flow monitoring.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - metric_category
+            - period
+            - customer_segment
     columns:
       - name: metric_category
         description: Type of DSO metric (Overall DSO Metrics, Segment AR Breakdown)
@@ -960,3 +972,85 @@ models:
           combination_of_columns:
             - item_name
             - effective_date
+
+  - name: mart_company_period_metrics
+    description: >
+      Company period-based metrics mart for dashboard analytics.
+      Pre-calculates revenue and order metrics by company across multiple time periods.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - company_domain_key
+            - period_type
+    columns:
+      - name: company_domain_key
+        description: Unique identifier for the consolidated company
+        tests:
+          - not_null
+
+      - name: period_type
+        description: Time period type (trailing_7d, trailing_30d, trailing_90d, trailing_1y, all_time)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['trailing_7d', 'trailing_30d', 'trailing_90d', 'trailing_1y', 'all_time']
+
+      - name: total_revenue
+        description: Total revenue for this company in this period
+        tests:
+          - not_null
+
+  - name: mart_product_margin_analytics
+    description: >
+      Time-series margin analytics by product/SKU for dashboard consumption.
+      Provides aggregated actual vs standard margins with temporal dimensions.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - sku
+            - time_period
+            - period_date
+    columns:
+      - name: sku
+        description: Product/service code (SKU)
+        tests:
+          - not_null
+
+      - name: time_period
+        description: Time period aggregation level (daily, monthly)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['daily', 'monthly']
+
+      - name: period_date
+        description: Date for the period (sale_date for daily, order_month for monthly)
+        tests:
+          - not_null
+
+  - name: mart_product_unit_sales
+    description: >
+      This mart table provides aggregated unit sales data for frontend consumption and analytics.
+      Enables queries like "5,234 UNITS of SP10 sold in last 30 days" by aggregating individual unit sales by product and time period.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - product_name
+            - sale_date
+    columns:
+      - name: product_name
+        description: Product name
+        tests:
+          - not_null
+
+      - name: sale_date
+        description: Date of the sales transaction
+        tests:
+          - not_null
+
+      - name: total_units_sold
+        description: Total units sold on this date for this product
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "> 0"

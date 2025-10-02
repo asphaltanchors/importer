@@ -17,6 +17,23 @@ WITH orders AS (
     SELECT * FROM {{ ref('int_quickbooks__orders') }}
 ),
 
+-- Get Shopify enrichment data for S- orders
+shopify_enrichment AS (
+    SELECT
+        order_number_formatted as order_number,
+        acquisition_channel,
+        utm_source,
+        utm_medium,
+        utm_campaign,
+        landing_site,
+        referring_site,
+        tracking_number,
+        tracking_company,
+        fulfilled_at,
+        has_discount as shopify_has_discount
+    FROM {{ ref('int_shopify__orders_enriched') }}
+),
+
 -- Get primary contacts for each customer to link orders to persons
 customer_primary_contacts AS (
     SELECT 
@@ -97,7 +114,24 @@ orders_enriched AS (
         -- Shipping information
         o.shipping_method,
         o.ship_date,
-        
+
+        -- Shopify enrichment (marketing attribution & fulfillment)
+        CASE
+            WHEN o.order_number LIKE 'S-%' THEN 'Shopify'
+            WHEN o.order_number LIKE 'A%' THEN 'Direct'
+            ELSE 'Other'
+        END AS sales_channel_source,
+
+        s.acquisition_channel,
+        s.utm_source,
+        s.utm_medium,
+        s.utm_campaign,
+        s.landing_site,
+        s.referring_site,
+        s.tracking_number,
+        s.tracking_company,
+        s.fulfilled_at,
+
         -- Order details
         o.memo,
         o.message_to_customer,
@@ -133,6 +167,7 @@ orders_enriched AS (
         END AS effective_tax_rate
     FROM orders o
     LEFT JOIN customer_primary_contacts cpc ON o.customer = cpc.source_customer_name
+    LEFT JOIN shopify_enrichment s ON o.order_number = s.order_number
 )
 
 SELECT * FROM orders_enriched

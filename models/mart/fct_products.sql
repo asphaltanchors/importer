@@ -1,11 +1,6 @@
 /*
-  This fact table model represents products for business consumption.
-  Uses consolidated intermediate model to avoid rejoining of upstream concepts.
-  
-  Fact tables contain:
-  - Business entities
-  - Foreign keys to dimensions
-  - Business metrics/measures
+ABOUTME: Product fact table with comprehensive product attributes and business metrics
+ABOUTME: Uses single consolidated intermediate model that includes packaging to avoid rejoining violations
 */
 
 {{ config(
@@ -14,58 +9,63 @@
 ) }}
 
 WITH enriched_items AS (
-    -- Use consolidated intermediate model to avoid staging rejoining
+    -- Use consolidated intermediate model that now includes packaging data
+    -- This eliminates the LEFT JOIN that was causing rejoining violations
     SELECT * FROM {{ ref('int_quickbooks__items_enriched') }}
 ),
 
--- Calculate additional business metrics
+-- Calculate additional business metrics (packaging already included)
 products_combined AS (
     SELECT
         -- Primary key
-        quick_books_internal_id,
-        
+        e.quick_books_internal_id,
+
         -- Product details
-        item_name,
-        sales_description,
-        
+        e.item_name,
+        e.sales_description,
+
         -- Derived attributes (from consolidated intermediate model)
-        product_family,
-        material_type,
-        is_kit,
-        
+        e.product_family,
+        e.material_type,
+        e.is_kit,
+
         -- Additional product information
-        item_type,
-        item_subtype,
-        purchase_description,
-        
+        e.item_type,
+        e.item_subtype,
+        e.purchase_description,
+
         -- Pricing
-        COALESCE(sales_price, 0) as sales_price,
-        COALESCE(purchase_cost, 0) as purchase_cost,
-        
+        COALESCE(e.sales_price, 0) as sales_price,
+        COALESCE(e.purchase_cost, 0) as purchase_cost,
+
         -- Calculated margins
-        CASE 
-            WHEN COALESCE(sales_price, 0) > 0 
-            THEN ROUND(CAST(((COALESCE(sales_price, 0) - COALESCE(purchase_cost, 0)) / sales_price) * 100 AS NUMERIC), 2)
+        CASE
+            WHEN COALESCE(e.sales_price, 0) > 0
+            THEN ROUND(CAST(((COALESCE(e.sales_price, 0) - COALESCE(e.purchase_cost, 0)) / e.sales_price) * 100 AS NUMERIC), 2)
             ELSE 0
         END AS margin_percentage,
-        
-        CASE 
-            WHEN COALESCE(sales_price, 0) > 0 OR COALESCE(purchase_cost, 0) > 0
-            THEN COALESCE(sales_price, 0) - COALESCE(purchase_cost, 0)
+
+        CASE
+            WHEN COALESCE(e.sales_price, 0) > 0 OR COALESCE(e.purchase_cost, 0) > 0
+            THEN COALESCE(e.sales_price, 0) - COALESCE(e.purchase_cost, 0)
             ELSE 0
         END AS margin_amount,
-        
+
         -- Product identifiers
-        manufacturer_s_part_number,
+        e.manufacturer_s_part_number,
 
         -- Units
-        unit_of_measure,
-        
+        e.unit_of_measure,
+
+        -- Packaging information for unit sales tracking (now in enriched_items)
+        e.packaging_type,
+        e.units_per_sku,
+
         -- Dates
-        load_date,
-        snapshot_date
-        
-    FROM enriched_items
+        e.load_date,
+        e.snapshot_date
+
+    FROM enriched_items e
 )
 
 SELECT * FROM products_combined

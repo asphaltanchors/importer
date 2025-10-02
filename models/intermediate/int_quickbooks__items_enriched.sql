@@ -1,6 +1,6 @@
 /*
 ABOUTME: Comprehensive intermediate model that enriches item data with all derived attributes
-ABOUTME: Consolidates product family, material type, and kit classifications in single model to prevent rejoining violations
+ABOUTME: Consolidates product family, material type, kit classifications, and packaging logic to prevent rejoining violations
 */
 
 {{ config(
@@ -94,48 +94,118 @@ items_with_kit_detection AS (
         CASE
             WHEN item_name LIKE '%AK4%' OR
                  item_name LIKE '%AK-4%' OR
-                 item_name IN ('01-7010-FBA', '01-7013.FBA', '01-7014-FBA', 
+                 item_name IN ('01-7010-FBA', '01-7013.FBA', '01-7014-FBA',
                                 '71-7010.MST', '01-7010', '01-7013', '01-7014') THEN TRUE
             ELSE FALSE
         END AS is_kit
     FROM items_with_material_type
+),
+
+-- Apply packaging classification logic (consolidated from int_quickbooks__product_packaging)
+-- Parse master carton unit counts from descriptions
+items_with_packaging_parsed AS (
+    SELECT
+        *,
+        -- Extract numbers from master carton descriptions
+        CASE
+            -- Look for patterns like "72 anchors per carton", "36 for EPX2", "40 EPX2"
+            WHEN sales_description ~* '\b(\d+)\s*(anchors?\s*per\s*carton|for\s*EPX2|EPX2)\b'
+            THEN CAST(SUBSTRING(sales_description FROM '\b(\d+)\s*(?:anchors?\s*per\s*carton|for\s*EPX2|EPX2)\b') AS INTEGER)
+
+            -- Look for "Master 6 6-packs" = 6 * 6 = 36 units
+            WHEN sales_description ~* 'Master\s+(\d+)\s+6-packs'
+            THEN CAST(SUBSTRING(sales_description FROM 'Master\s+(\d+)\s+6-packs') AS INTEGER) * 6
+
+            -- Look for generic "carton of X" or "X per box"
+            WHEN sales_description ~* '\b(\d+)\s*per\s*box\b'
+            THEN CAST(SUBSTRING(sales_description FROM '\b(\d+)\s*per\s*box\b') AS INTEGER)
+
+            ELSE NULL
+        END AS parsed_unit_count
+    FROM items_with_kit_detection
+),
+
+-- Determine packaging type and units per SKU
+items_with_packaging_classified AS (
+    SELECT
+        *,
+        -- Classify packaging type
+        CASE
+            WHEN is_kit = TRUE THEN 'kit'
+            WHEN item_name ~ '\.[0-9]+L$'
+                 OR sales_description ILIKE '%master carton%'
+                 OR sales_description ILIKE '%master%'
+                 OR item_name LIKE '%.MST' THEN 'master_carton'
+            WHEN item_name ~ '\.[0-9]+K(\s|$|\()'
+                 OR unit_of_measure ILIKE '%6-pack%'
+                 OR sales_description ILIKE '%carton of 6%' THEN '6-pack'
+            WHEN unit_of_measure ILIKE '%each%' THEN 'individual'
+            ELSE 'individual'  -- Default
+        END AS packaging_type,
+
+        -- Determine units per SKU
+        CASE
+            WHEN is_kit = TRUE THEN 4
+            WHEN item_name ~ '\.[0-9]+L$'
+                 OR sales_description ILIKE '%master carton%'
+                 OR sales_description ILIKE '%master%'
+                 OR item_name LIKE '%.MST' THEN
+                COALESCE(parsed_unit_count,
+                    CASE
+                        -- Default master carton sizes based on patterns observed
+                        WHEN sales_description ILIKE '%AK4%' THEN 24  -- 4 units * 6 packs = 24
+                        WHEN sales_description ILIKE '%EPX2%' THEN 36  -- Common EPX2 master carton size
+                        ELSE 72  -- Default for anchor master cartons
+                    END
+                )
+            WHEN item_name ~ '\.[0-9]+K(\s|$|\()'
+                 OR unit_of_measure ILIKE '%6-pack%'
+                 OR sales_description ILIKE '%carton of 6%' THEN 6
+            ELSE 1  -- Individual items
+        END AS units_per_sku
+    FROM items_with_packaging_parsed
 )
 
 SELECT
     -- Primary identifiers
     quick_books_internal_id,
     item_name,
-    
+
     -- Basic item information
     item_type,
     item_subtype,
     sales_description,
     purchase_description,
-    
+
     -- Enriched attributes (consolidated from separate intermediate models)
     product_family,
     material_type,
     is_kit,
-    
+
+    -- Packaging attributes (consolidated from int_quickbooks__product_packaging)
+    packaging_type,
+    units_per_sku,
+    parsed_unit_count,
+
     -- Pricing information
     sales_price,
     purchase_cost,
-    
+
     -- Inventory
     quantity_on_hand,
     quantity_on_order,
     quantity_on_sales_order,
-    
+
     -- Additional attributes
     manufacturer_s_part_number,
     upc,
     unit_of_measure,
     unit_weight_kg,
     status,
-    
+
     -- Dates and metadata
     load_date,
     snapshot_date,
     is_seed
-    
-FROM items_with_kit_detection
+
+FROM items_with_packaging_classified

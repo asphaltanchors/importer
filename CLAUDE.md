@@ -120,13 +120,21 @@ This section documents intentionally accepted warnings/violations to avoid re-in
 **Remaining Violations**:
 - `mart_product_company_period_spending` → `fct_order_line_items` + `bridge_customer_company` + `fct_company_products`
 
-**Business Justification**: 
+**Resolved Violations**:
+- ✅ `fct_products` → `int_quickbooks__items_enriched` + `int_quickbooks__product_packaging` (RESOLVED 2025-01-17)
+
+**Business Justification**:
 - `mart_product_company_period_spending` requires transaction-level detail for period calculations (30d, 90d, 1y)
 - Cannot be pre-aggregated due to dynamic date ranges and performance requirements
 - `fct_company_products` provides lifetime metrics, while transaction details provide period-specific metrics
 - Alternative architectures would require significant performance trade-offs or functionality loss
 
-**Last Reviewed**: 2025-01-30 - Architectural decision to accept these as necessary for business requirements
+**Resolution Notes**:
+- `fct_products` violation resolved by consolidating packaging logic into `int_quickbooks__items_enriched`
+- This eliminated unnecessary intermediate model split and follows DBT best practices
+- Single enriched intermediate model now provides all product attributes (family, material, kits, packaging)
+
+**Last Reviewed**: 2025-01-17 - Architectural consolidation completed; remaining violations are accepted business necessities
 
 ## Important Files
 - `pipeline.py`: Main DLT extraction logic

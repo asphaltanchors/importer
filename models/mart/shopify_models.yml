@@ -1,0 +1,99 @@
+version: 2
+
+models:
+  - name: fct_order_attribution
+    description: "Fact table for marketing attribution and channel performance - one row per Shopify order"
+    columns:
+      - name: order_id
+        description: "Shopify order ID (primary key)"
+        tests:
+          - unique
+          - not_null
+      - name: order_number
+        description: "Formatted order number (S-xxxx)"
+      - name: order_date
+        description: "Order date (date type)"
+      - name: order_month
+        description: "Order month for aggregation"
+      - name: acquisition_channel
+        description: "Derived acquisition channel (Paid, Organic Search, Referral, Direct, Unknown)"
+      - name: utm_source
+        description: "Marketing source (defaults to 'organic' if null)"
+      - name: utm_medium
+        description: "Marketing medium (defaults to 'none' if null)"
+      - name: utm_campaign
+        description: "Marketing campaign (defaults to 'none' if null)"
+      - name: revenue
+        description: "Order total revenue"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+      - name: discount_amount
+        description: "Total discount applied to order"
+      - name: has_discount
+        description: "Boolean flag for discount usage"
+
+  - name: fct_customer_marketing
+    description: "Fact table for customer marketing status and engagement - one row per Shopify customer"
+    columns:
+      - name: customer_id
+        description: "Shopify customer ID (primary key)"
+        tests:
+          - unique
+          - not_null
+      - name: email
+        description: "Customer email"
+        tests:
+          - not_null
+      - name: is_email_subscriber
+        description: "Email marketing subscription status"
+      - name: is_sms_subscriber
+        description: "SMS marketing subscription status"
+      - name: shopify_order_count
+        description: "Total number of orders"
+      - name: shopify_lifetime_value
+        description: "Total customer lifetime value"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+      - name: customer_segment
+        description: "Customer value segment (High Value, Medium Value, Low Value)"
+        tests:
+          - accepted_values:
+              values: ['High Value', 'Medium Value', 'Low Value']
+      - name: customer_status
+        description: "Customer activity status (Active, At Risk, Churned)"
+        tests:
+          - accepted_values:
+              values: ['Active', 'At Risk', 'Churned']
+      - name: days_since_last_order
+        description: "Days since customer's last order"
+
+  - name: mart_marketing_performance
+    description: "Aggregated marketing channel performance metrics by month, channel, source, medium, and campaign"
+    columns:
+      - name: order_month
+        description: "Month of orders"
+      - name: acquisition_channel
+        description: "Acquisition channel grouping"
+      - name: utm_source
+        description: "Marketing source"
+      - name: utm_medium
+        description: "Marketing medium"
+      - name: utm_campaign
+        description: "Marketing campaign"
+      - name: order_count
+        description: "Number of orders in this group"
+      - name: customer_count
+        description: "Number of unique customers in this group"
+      - name: total_revenue
+        description: "Total revenue for this group"
+      - name: total_discounts
+        description: "Total discounts given in this group"
+      - name: avg_order_value
+        description: "Average order value in this group"
+      - name: discount_rate
+        description: "Percentage of orders with discounts"
+      - name: opt_in_rate
+        description: "Percentage of customers who accepted marketing"

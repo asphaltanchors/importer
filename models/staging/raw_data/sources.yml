@@ -92,3 +92,64 @@ sources:
             description: "When the data was loaded into pipeline"
           - name: is_manual_load
             description: "True for manual CSV loads, false for automated API calls"
+
+      # Shopify e-commerce data (DLT verified source)
+      - name: customers
+        description: "Shopify customer records with marketing consent and contact details"
+        columns:
+          - name: id
+            description: "Shopify customer ID (primary key)"
+          - name: email
+            description: "Customer email for matching with QuickBooks customers"
+          - name: created_at
+            description: "Customer account creation timestamp"
+
+      - name: orders
+        description: "Shopify order transactions with financial and attribution data"
+        columns:
+          - name: id
+            description: "Shopify order ID (primary key)"
+          - name: order_number
+            description: "Sequential order number (matches QuickBooks as S-{order_number})"
+          - name: created_at
+            description: "Order creation timestamp"
+          - name: financial_status
+            description: "Payment status (paid, pending, refunded, etc.)"
+
+      - name: orders__line_items
+        description: "Shopify order line items (nested child table)"
+        columns:
+          - name: id
+            description: "Line item ID"
+          - name: _dlt_parent_id
+            description: "Foreign key to parent order"
+
+      - name: orders__fulfillments
+        description: "Shopify fulfillment records with tracking information"
+        columns:
+          - name: id
+            description: "Fulfillment ID"
+          - name: _dlt_parent_id
+            description: "Foreign key to parent order"
+          - name: tracking_number
+            description: "Shipment tracking number"
+
+      - name: products
+        description: "Shopify product catalog"
+        columns:
+          - name: id
+            description: "Shopify product ID (primary key)"
+          - name: title
+            description: "Product title/name"
+
+      - name: products__variants
+        description: "Shopify product variants with SKUs and pricing"
+        columns:
+          - name: id
+            description: "Variant ID"
+          - name: product_id
+            description: "Foreign key to parent product"
+          - name: sku
+            description: "Product SKU (matches QuickBooks item_name)"
+          - name: _dlt_parent_id
+            description: "DLT parent relationship key"

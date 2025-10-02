@@ -145,7 +145,66 @@ final_line_items AS (
         p.purchase_cost as standard_purchase_cost,
         p.margin_percentage,
         p.margin_amount,
-        
+
+        -- Packaging and unit information
+        p.packaging_type,
+        p.units_per_sku,
+
+        -- Unit calculations for sales tracking
+        li.product_service_quantity as sku_quantity,
+        COALESCE(p.units_per_sku, 1) * COALESCE(li.product_service_quantity, 0) as total_units_sold,
+
+        -- Actual margin calculations
+        COALESCE(
+            CASE
+                WHEN li.product_service_rate IS NOT NULL
+                THEN CAST(li.product_service_rate AS NUMERIC)
+                ELSE NULL
+            END,
+            0
+        ) as actual_unit_price,
+
+        -- Actual margin amount (actual price - purchase cost)
+        CASE
+            WHEN li.product_service_rate IS NOT NULL AND COALESCE(p.purchase_cost, 0) > 0
+            THEN CAST(li.product_service_rate AS NUMERIC) - COALESCE(p.purchase_cost, 0)
+            ELSE NULL
+        END as actual_margin_amount,
+
+        -- Actual margin percentage
+        CASE
+            WHEN li.product_service_rate IS NOT NULL
+                AND CAST(li.product_service_rate AS NUMERIC) > 0
+                AND COALESCE(p.purchase_cost, 0) > 0
+            THEN ROUND(
+                CAST(
+                    ((CAST(li.product_service_rate AS NUMERIC) - COALESCE(p.purchase_cost, 0)) / CAST(li.product_service_rate AS NUMERIC)) * 100
+                AS NUMERIC),
+                2
+            )
+            ELSE NULL
+        END as actual_margin_percentage,
+
+        -- Price discount from standard (how much discount was given)
+        CASE
+            WHEN li.product_service_rate IS NOT NULL AND COALESCE(p.sales_price, 0) > 0
+            THEN COALESCE(p.sales_price, 0) - CAST(li.product_service_rate AS NUMERIC)
+            ELSE NULL
+        END as price_discount_amount,
+
+        -- Price discount percentage
+        CASE
+            WHEN li.product_service_rate IS NOT NULL
+                AND COALESCE(p.sales_price, 0) > 0
+            THEN ROUND(
+                CAST(
+                    ((COALESCE(p.sales_price, 0) - CAST(li.product_service_rate AS NUMERIC)) / p.sales_price) * 100
+                AS NUMERIC),
+                2
+            )
+            ELSE NULL
+        END as price_discount_percentage,
+
         -- Person/contact information
         cpc.contact_id as primary_contact_id,
         cpc.primary_contact_name,

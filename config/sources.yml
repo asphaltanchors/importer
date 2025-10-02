@@ -53,16 +53,15 @@ sources:
       max_age_hours: 24
       
   shopify:
-    enabled: false
+    enabled: true
     schedule: "hourly"
     path: "pipelines/shopify"
     priority: 4
-    description: "Shopify e-commerce data via REST API"
+    description: "Shopify e-commerce data via DLT verified source"
     tables:
+      - "customers"
       - "orders"
       - "products"
-      - "customers"
-      - "inventory"
     data_quality:
       check_freshness: true
       max_age_hours: 2
