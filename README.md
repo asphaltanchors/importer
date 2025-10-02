@@ -92,16 +92,17 @@ This project combines a DLT (Data Loading Tool) pipeline with DBT (Data Build To
 4. **Run locally:**
    ```bash
    # Initial setup (load historical seed data)
-   python pipeline.py --mode seed
+   python orchestrator.py --seed
 
    # Daily incremental loading (latest files only)
-   python pipeline.py --mode incremental
+   python orchestrator.py --incremental
 
-   # Complete pipeline (seed + all incremental data)
-   python pipeline.py --mode full
+   # Run specific source pipelines only
+   python orchestrator.py --seed --source quickbooks
+   python orchestrator.py --incremental --source shopify
 
-   # Run specific source pipelines
-   python pipelines/shopify/pipeline.py --mode incremental
+   # Verbose mode for debugging
+   python orchestrator.py --incremental --verbose
 
    # Optional: Run DBT commands separately (requires virtual environment)
    source .venv/bin/activate
@@ -170,7 +171,10 @@ Environment variables:
 ### Local Development
 ```bash
 # Complete pipeline (DLT + Domain Consolidation + DBT)
-python pipeline.py
+python orchestrator.py --incremental
+
+# Or load historical seed data
+python orchestrator.py --seed
 
 # Optional DBT commands (requires virtual environment)
 source .venv/bin/activate
@@ -197,18 +201,17 @@ docker-compose exec cron /app/entrypoint.sh shell
 
 ### Company Consolidation
 ```bash
-# Generate domain consolidation mapping (optional - automatically included in pipeline.py)
-python domain_consolidation.py
+# Domain consolidation is automatically included in orchestrator.py
+# No separate invocation needed
 ```
 
 ## Key Files
 
-- **`orchestrator.py`**: Multi-source pipeline orchestrator coordinating all data sources
+- **`orchestrator.py`**: Multi-source pipeline orchestrator coordinating all data sources (main entry point)
 - **`config/sources.yml`**: Source configuration for QuickBooks and Shopify
-- **`pipelines/shopify/pipeline.py`**: Shopify DLT pipeline using verified source
-- **`pipeline.py`**: QuickBooks DLT extraction logic
-- **`matcher.py`**: Company name normalization utilities
-- **`domain_consolidation.py`**: Email domain-based company consolidation
+- **`pipelines/quickbooks/pipeline.py`**: QuickBooks DLT extraction pipeline (called by orchestrator)
+- **`pipelines/shopify/pipeline.py`**: Shopify DLT pipeline using verified source (called by orchestrator)
+- **`pipelines/shared.py`**: Shared utilities and domain consolidation logic
 - **`models/staging/raw_data/sources.yml`**: DBT source definitions for raw tables
 - **`dbt_project.yml`**: DBT project configuration with schema routing
 - **`profiles.yml`**: Database connection settings
