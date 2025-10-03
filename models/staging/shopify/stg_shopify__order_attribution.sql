@@ -13,8 +13,11 @@ attribution as (
 
         -- Attribution fields
         source_name,
-        landing_site,
-        referring_site,
+        split_part(landing_site, '?', 1) as landing_site,
+        case
+            when referring_site like '%asphaltanchors.com%' then null
+            else referring_site
+        end as referring_site,
 
         -- Extract UTM parameters from landing_site
         case
@@ -56,6 +59,7 @@ attribution as (
 
     from source
     where not coalesce(test, false)
+        and (landing_site is null or landing_site not like '%/checkout%')
 )
 
 select * from attribution
