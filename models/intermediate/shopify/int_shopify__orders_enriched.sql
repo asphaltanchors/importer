@@ -46,6 +46,7 @@ enriched as (
             when a.utm_source is not null then 'Paid'
             when a.referring_site like '%google%' then 'Organic Search'
             when a.referring_site like '%bing%' then 'Organic Search'
+            when a.referring_site like '%duckduckgo%' then 'Organic Search'
             when a.referring_site is not null then 'Referral'
             when a.source_name = 'web' then 'Direct'
             else 'Unknown'

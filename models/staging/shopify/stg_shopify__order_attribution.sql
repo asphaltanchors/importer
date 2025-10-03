@@ -16,6 +16,8 @@ attribution as (
         split_part(landing_site, '?', 1) as landing_site,
         case
             when referring_site like '%asphaltanchors.com%' then null
+            when referring_site like '%pay.shopify.com%' then null
+            when trim(referring_site) = '' then null
             else referring_site
         end as referring_site,
 
