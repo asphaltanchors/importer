@@ -3,21 +3,21 @@ dqi:
   outputs:
     dev:
       type: postgres
-      host: localhost
+      host: postgres
       port: 5432
-      user: atlas
-      password: atlas
-      dbname: atlas
+      user: "{{ env_var('DB_USER', 'test') }}"
+      password: "{{ env_var('DB_PASSWORD', 'test') }}"
+      dbname: yourdb
       schema: analytics
       threads: 4
       connect_timeout: 15
     prod:
       type: postgres
-      host: db
+      host: postgres
       port: 5432
-      user: postgres
-      password: postgres
-      dbname: dashboard
+      user: "{{ env_var('DB_USER', 'postgres') }}"
+      password: "{{ env_var('DB_PASSWORD', 'postgres') }}"
+      dbname: yourdb
       schema: analytics
       threads: 4
       connect_timeout: 15
