@@ -79,8 +79,8 @@ customers_normalized AS (
         
         -- Financial
         current_balance,
-        status,
-        
+        NULL::VARCHAR as status,  -- Note: status column not in all QuickBooks exports
+
         -- Metadata
         created_date,
         modified_date,

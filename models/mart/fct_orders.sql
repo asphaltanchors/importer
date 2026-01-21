@@ -17,21 +17,56 @@ WITH orders AS (
     SELECT * FROM {{ ref('int_quickbooks__orders') }}
 ),
 
--- Get Shopify enrichment data for S- orders
+-- Get Shopify enrichment data for S- orders (if available)
 shopify_enrichment AS (
-    SELECT
-        order_number_formatted as order_number,
-        acquisition_channel,
-        utm_source,
-        utm_medium,
-        utm_campaign,
-        landing_site,
-        referring_site,
-        tracking_number,
-        tracking_company,
-        fulfilled_at,
-        has_discount as shopify_has_discount
-    FROM {{ ref('int_shopify__orders_enriched') }}
+    {% if execute %}
+        {% set shopify_orders = adapter.get_relation(database=target.database, schema='analytics_intermediate', identifier='int_shopify__orders_enriched') %}
+        {% if shopify_orders is not none %}
+            SELECT
+                order_number_formatted as order_number,
+                acquisition_channel,
+                utm_source,
+                utm_medium,
+                utm_campaign,
+                landing_site,
+                referring_site,
+                tracking_number,
+                tracking_company,
+                fulfilled_at,
+                has_discount as shopify_has_discount
+            FROM {{ ref('int_shopify__orders_enriched') }}
+        {% else %}
+            -- Return empty result set with correct schema when Shopify data not available
+            SELECT
+                NULL::VARCHAR as order_number,
+                NULL::VARCHAR as acquisition_channel,
+                NULL::VARCHAR as utm_source,
+                NULL::VARCHAR as utm_medium,
+                NULL::VARCHAR as utm_campaign,
+                NULL::VARCHAR as landing_site,
+                NULL::VARCHAR as referring_site,
+                NULL::VARCHAR as tracking_number,
+                NULL::VARCHAR as tracking_company,
+                NULL::TIMESTAMP as fulfilled_at,
+                NULL::BOOLEAN as shopify_has_discount
+            WHERE FALSE
+        {% endif %}
+    {% else %}
+        -- Compile-time placeholder
+        SELECT
+            NULL::VARCHAR as order_number,
+            NULL::VARCHAR as acquisition_channel,
+            NULL::VARCHAR as utm_source,
+            NULL::VARCHAR as utm_medium,
+            NULL::VARCHAR as utm_campaign,
+            NULL::VARCHAR as landing_site,
+            NULL::VARCHAR as referring_site,
+            NULL::VARCHAR as tracking_number,
+            NULL::VARCHAR as tracking_company,
+            NULL::TIMESTAMP as fulfilled_at,
+            NULL::BOOLEAN as shopify_has_discount
+        WHERE FALSE
+    {% endif %}
 ),
 
 -- Get primary contacts for each customer to link orders to persons

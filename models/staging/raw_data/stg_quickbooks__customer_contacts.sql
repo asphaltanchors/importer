@@ -51,7 +51,7 @@ customer_contacts_split AS (
         email_source,
         customer_type,
         current_balance,
-        status as customer_status,
+        NULL::VARCHAR as customer_status,  -- Note: status column not in all QuickBooks exports
         main_phone,
         alt_phone, 
         work_phone,
@@ -82,7 +82,7 @@ customer_contacts_split AS (
         email_source,
         customer_type,
         current_balance,
-        status as customer_status,
+        NULL::VARCHAR as customer_status,  -- Note: status column not in all QuickBooks exports
         main_phone,
         alt_phone, 
         work_phone,

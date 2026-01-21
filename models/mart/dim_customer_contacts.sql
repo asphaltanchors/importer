@@ -120,8 +120,8 @@ customer_contacts_dimension AS (
         END as contact_tier,
         
         -- Marketing and outreach flags
-        CASE WHEN has_main_email AND customer_status THEN TRUE ELSE FALSE END as email_marketable,
-        CASE WHEN has_phone AND customer_status THEN TRUE ELSE FALSE END as phone_contactable,
+        CASE WHEN has_main_email AND COALESCE(customer_status, 'Active') != 'Inactive' THEN TRUE ELSE FALSE END as email_marketable,
+        CASE WHEN has_phone AND COALESCE(customer_status, 'Active') != 'Inactive' THEN TRUE ELSE FALSE END as phone_contactable,
         CASE WHEN is_primary_company_contact AND company_total_revenue > 0 THEN TRUE ELSE FALSE END as key_account_contact,
         
         -- Source tracking

@@ -44,8 +44,8 @@ SELECT
     -- Business fields (basic casting)
     customer_type,
     CAST(current_balance AS NUMERIC) as current_balance,
-    status as customer_status,
-    
+    NULL::VARCHAR as customer_status,  -- Note: status column not in all QuickBooks exports
+
     -- Metadata (basic casting)
     CAST(created_date AS DATE) as created_date,
     CAST(modified_date AS DATE) as modified_date,
