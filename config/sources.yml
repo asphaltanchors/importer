@@ -66,6 +66,19 @@ sources:
       check_freshness: true
       max_age_hours: 2
 
+  trade_shows:
+    enabled: true
+    schedule: "on_demand"
+    path: "pipelines/trade_shows"
+    priority: 5
+    description: "Trade show lead data with company attribution"
+    tables:
+      - "trade_show_leads"
+    data_quality:
+      check_freshness: false
+      required_columns:
+        trade_show_leads: ["lead_id", "email", "show_name"]
+
 # DBT Configuration
 dbt:
   enabled: true

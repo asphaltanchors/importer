@@ -1,0 +1,23 @@
+version: 2
+
+sources:
+  - name: raw_trade_shows
+    description: "Raw trade show lead data loaded via DLT pipeline"
+    database: yourdb
+    schema: raw
+    tables:
+      - name: trade_show_leads
+        description: "Trade show leads with contact information and show metadata"
+        columns:
+          - name: lead_id
+            description: "Unique identifier for the lead"
+            tests:
+              - not_null
+          - name: show_name
+            description: "Name of the trade show event"
+            tests:
+              - not_null
+          - name: email
+            description: "Lead email address"
+          - name: company
+            description: "Lead company name"

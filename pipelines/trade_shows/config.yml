@@ -1,0 +1,79 @@
+# Trade Show Pipeline Configuration
+name: trade_shows
+description: "Trade show lead extraction and company attribution"
+enabled: true
+priority: 5
+
+# Data source configuration
+data_source:
+  type: "xlsx"
+  base_path: "/data/trade_shows"
+  file_pattern: "*/leads.xlsx"
+  metadata_file: "show_metadata.json"
+
+# Schema configuration
+schema:
+  raw_table: "trade_show_leads"
+  columns:
+    - name: "lead_id"
+      type: "VARCHAR"
+      source: "ID"
+    - name: "first_name"
+      type: "VARCHAR"
+      source: "First name"
+    - name: "last_name"
+      type: "VARCHAR"
+      source: "Last name"
+    - name: "company"
+      type: "VARCHAR"
+      source: "Company"
+    - name: "department"
+      type: "VARCHAR"
+      source: "Department"
+    - name: "job_title"
+      type: "VARCHAR"
+      source: "Job title"
+    - name: "email"
+      type: "VARCHAR"
+      source: "Email"
+    - name: "phone"
+      type: "VARCHAR"
+      source: "Phone"
+    - name: "address_1"
+      type: "VARCHAR"
+      source: "Street address 1"
+    - name: "address_2"
+      type: "VARCHAR"
+      source: "Street address 2"
+    - name: "city"
+      type: "VARCHAR"
+      source: "City"
+    - name: "state"
+      type: "VARCHAR"
+      source: "State"
+    - name: "postal_code"
+      type: "VARCHAR"
+      source: "Postal code"
+    - name: "country"
+      type: "VARCHAR"
+      source: "Country"
+    - name: "source_id"
+      type: "VARCHAR"
+      source: "Source ID"
+    - name: "notes"
+      type: "TEXT"
+      source: "Notes"
+    - name: "created"
+      type: "TIMESTAMP"
+      source: "Created"
+    - name: "updated"
+      type: "TIMESTAMP"
+      source: "Updated"
+
+# Data quality checks
+data_quality:
+  required_columns:
+    - "email"
+    - "company"
+  check_duplicates: true
+  duplicate_key: ["email", "show_name"]
