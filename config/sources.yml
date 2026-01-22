@@ -53,7 +53,7 @@ sources:
       max_age_hours: 24
       
   shopify:
-    enabled: true
+    enabled: false  # Disabled until credentials are configured
     schedule: "hourly"
     path: "pipelines/shopify"
     priority: 4

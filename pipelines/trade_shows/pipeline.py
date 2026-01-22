@@ -242,10 +242,21 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Trade Show Lead Pipeline")
     parser.add_argument(
         "--mode",
-        choices=["replace", "merge"],
+        choices=["replace", "merge", "seed", "incremental"],
         default="replace",
-        help="Pipeline mode: replace (default) or merge"
+        help="Pipeline mode: replace/seed (full load) or merge/incremental (upsert)"
     )
 
     args = parser.parse_args()
-    run_trade_show_pipeline(mode=args.mode)
+
+    # Map orchestrator modes to DLT write dispositions
+    mode_mapping = {
+        "seed": "replace",        # Orchestrator seed mode → replace all data
+        "incremental": "merge",   # Orchestrator incremental mode → upsert
+        "replace": "replace",     # Direct mode still works
+        "merge": "merge"          # Direct mode still works
+    }
+
+    dlt_mode = mode_mapping[args.mode]
+    logger.info(f"Running with mode '{args.mode}' (mapped to DLT disposition: '{dlt_mode}')")
+    run_trade_show_pipeline(mode=dlt_mode)

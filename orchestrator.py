@@ -391,9 +391,12 @@ class PipelineOrchestrator:
             return {"status": "error", "message": error_msg}
         
         try:
+            # Build command - skip DBT for individual pipelines (orchestrator runs it centrally)
             cmd = [sys.executable, "pipeline.py", "--mode", mode]
+            if source_name == "quickbooks":
+                cmd.append("--skip-dbt")  # QuickBooks pipeline supports skipping DBT
             context = f"Pipeline: {source_name}"
-            
+
             result = self._run_subprocess(cmd, context, str(pipeline_path), timeout=3600)
             
             if result["status"] == "success":
@@ -419,12 +422,27 @@ class PipelineOrchestrator:
             return {"status": "skipped", "reason": "disabled"}
         
         self.logger.info("Running DBT transformations")
-        
+
         try:
-            # Run all dbt models in single command - let DBT handle dependencies
+            # Build DBT command with exclusions for disabled sources
             cmd = ["dbt", "run"]
+
+            # Exclude models from disabled sources by path (all layers)
+            disabled_sources = [
+                source_name for source_name, source_config in self.config["sources"].items()
+                if not source_config.get("enabled", False)
+            ]
+
+            if disabled_sources:
+                for source in disabled_sources:
+                    # Exclude staging, intermediate, and mart layers
+                    cmd.extend(["--exclude", f"path:models/staging/{source}/*"])
+                    cmd.extend(["--exclude", f"path:models/intermediate/{source}/*"])
+                    cmd.extend(["--exclude", f"path:models/mart/*{source}*"])
+                    self.logger.info(f"Excluding all {source} models from DBT run")
+
             context = "DBT Transformations"
-            
+
             result = self._run_subprocess(cmd, context, timeout=1800)  # 30 minute timeout
             
             if result["status"] == "success":
