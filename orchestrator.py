@@ -670,7 +670,8 @@ def main():
         print("="*70)
         
         # Exit with appropriate code
-        if result.get("status") in ["success", "completed", "skipped"] and result.get("overall_status", "success") != "failure":
+        final_status = result.get("overall_status") or result.get("status") or "unknown"
+        if final_status in ["success", "completed", "skipped"]:
             sys.exit(0)
         else:
             sys.exit(1)

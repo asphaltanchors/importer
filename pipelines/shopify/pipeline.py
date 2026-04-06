@@ -22,9 +22,10 @@ from shared import (
 logger = setup_logging("shopify", "INFO")
 
 # Validate required environment variables
-# Note: Shopify credentials are read from .dlt/secrets.toml by DLT automatically
 REQUIRED_ENV_VARS = [
-    "DATABASE_URL"
+    "DATABASE_URL",
+    "SHOPIFY_SHOP_URL",
+    "SHOPIFY_ACCESS_TOKEN",
 ]
 
 def validate_environment():
@@ -32,11 +33,17 @@ def validate_environment():
     try:
         env_vars = validate_environment_variables(REQUIRED_ENV_VARS)
         logger.info(f"Environment validation successful")
-        logger.info("Note: Shopify credentials are read from .dlt/secrets.toml")
         return env_vars
     except ValueError as e:
         logger.error(f"Environment validation failed: {e}")
         raise
+
+def normalize_shop_url(shop_url: str) -> str:
+    """Accept either a bare myshopify domain or a full HTTPS URL."""
+    normalized = shop_url.strip().rstrip("/")
+    if not normalized.startswith(("http://", "https://")):
+        normalized = f"https://{normalized}"
+    return normalized
 
 def run_pipeline(mode: str = "incremental"):
     """
@@ -74,10 +81,10 @@ def run_pipeline(mode: str = "incremental"):
             start_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
             logger.info(f"Incremental mode: loading data from {start_date} (DLT will optimize based on state)")
 
-        # Configure Shopify source with selected resources
-        # Credentials are automatically read from .dlt/secrets.toml
-        # Using the verified source with customers, orders, and products
+        # Configure Shopify source with selected resources using repo-level env vars
         source = shopify_source(
+            shop_url=normalize_shop_url(env_vars["SHOPIFY_SHOP_URL"]),
+            private_app_password=env_vars["SHOPIFY_ACCESS_TOKEN"],
             start_date=start_date,
             items_per_page=250  # Maximum allowed by Shopify API
         ).with_resources("customers", "orders", "products")

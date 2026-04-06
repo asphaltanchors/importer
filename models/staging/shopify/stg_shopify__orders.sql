@@ -1,8 +1,10 @@
 -- ABOUTME: Staging model for Shopify orders with standardized financial data
 -- ABOUTME: Converts string amounts to numeric, cleans status values
 
+{% set raw_orders_relation = source('raw_data', 'orders') %}
+
 with source as (
-    select * from {{ source('raw_data', 'orders') }}
+    select * from {{ raw_orders_relation }}
 ),
 
 cleaned as (
@@ -16,7 +18,7 @@ cleaned as (
         created_at as order_created_at,
         updated_at as order_updated_at,
         processed_at as order_processed_at,
-        cancelled_at as order_cancelled_at,
+        {{ first_existing_column_or_null(raw_orders_relation, ['cancelled_at', 'canceled_at'], 'timestamp') }} as order_cancelled_at,
 
         -- Customer reference
         customer__id as customer_id,
@@ -35,7 +37,7 @@ cleaned as (
         -- Status fields (standardized)
         upper(financial_status) as financial_status,
         upper(coalesce(fulfillment_status, 'UNFULFILLED')) as fulfillment_status,
-        cancel_reason,
+        {{ first_existing_column_or_null(raw_orders_relation, ['cancel_reason'], 'varchar') }} as cancel_reason,
 
         -- Addresses
         billing_address__address1 as billing_address1,

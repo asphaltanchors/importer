@@ -115,12 +115,18 @@ orders_with_attribution AS (
             WHEN customer = 'Amazon FBA' THEN 'Amazon'  
             WHEN class LIKE '%Amazon%' THEN 'Amazon'
             
-            -- Website Channel (immediate payment via credit/digital, no invoice terms)
+            -- Website Channel (legacy direct website orders before Webgility invoicing)
             WHEN source_type = 'sales_receipt' 
              AND payment_method IN ('Credit Card', 'PayPal', 'Visa', 'MasterCard', 'American Express', 'Discover') 
              THEN 'Website'
+
+            -- Website Channel (Shopify -> Webgility -> QuickBooks now lands as S- invoices)
+            WHEN source_type = 'invoice'
+             AND order_number LIKE 'S-%'
+             AND terms = 'Credit Card'
+             THEN 'Website'
             
-            -- Invoice Channel (all B2B invoice transactions)
+            -- Invoice Channel (all remaining B2B invoice transactions)
             WHEN source_type = 'invoice' THEN 'Invoice'
             
             ELSE 'Other'
@@ -137,8 +143,12 @@ orders_with_attribution AS (
             -- Export customers
             WHEN class IN ('EXPORT', 'EXPORT from WWD') THEN 'Export'
             
-            -- Direct Consumers (sales receipts = immediate payment)
+            -- Direct Consumers (legacy sales receipts and new S- Webgility website invoices)
             WHEN source_type = 'sales_receipt' AND class NOT IN ('OEM', 'Distributor') THEN 'Direct Consumer'
+            WHEN source_type = 'invoice'
+             AND order_number LIKE 'S-%'
+             AND terms = 'Credit Card'
+             AND class NOT IN ('OEM', 'Distributor', 'EXPORT', 'EXPORT from WWD') THEN 'Direct Consumer'
             
             -- B2B Direct (invoices that aren't distributors/OEMs)
             WHEN source_type = 'invoice' AND class NOT IN ('OEM', 'Distributor', 'EXPORT', 'EXPORT from WWD') THEN 'B2B Direct'

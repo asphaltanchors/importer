@@ -80,16 +80,11 @@ This project combines a DLT (Data Loading Tool) pipeline with DBT (Data Build To
    ```bash
    DROPBOX_PATH=/path/to/your/dropbox/folder  # Parent directory containing seed/ and input/
    DATABASE_URL=postgresql://user:password@host:port/dbname
+   SHOPIFY_SHOP_URL=your-store.myshopify.com
+   SHOPIFY_ACCESS_TOKEN=your_admin_api_access_token
    ```
 
-3. **Shopify configuration** in `.dlt/config.toml`:
-   ```toml
-   [sources.shopify_dlt]
-   shop_url = "your-store.myshopify.com"
-   private_app_password = "shppa_xxxxx"  # Admin API access token
-   ```
-
-4. **Run locally:**
+3. **Run locally:**
    ```bash
    # Initial setup (load historical seed data)
    python orchestrator.py --seed
@@ -253,9 +248,6 @@ docker-compose exec cron /app/entrypoint.sh shell
 ```
 .
 ├── .env                        # Environment variables (not in repo)
-├── .dlt/                       # DLT configuration directory
-│   ├── config.toml            # Source credentials (Shopify API tokens)
-│   └── secrets.toml           # Sensitive configuration (gitignored)
 ├── README.md                   # This file
 ├── CLAUDE.md                   # Project documentation and development guide
 ├── DBT_CANDIDATES.md           # Dashboard-pipeline communication

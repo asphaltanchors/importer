@@ -8,6 +8,8 @@
   - Business metrics/measures
 */
 
+-- depends_on: {{ ref('int_shopify__orders_enriched') }}
+
 {{ config(
     materialized = 'table',
     tags = ['orders', 'quickbooks']
