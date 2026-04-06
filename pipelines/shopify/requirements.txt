@@ -1,1 +1,1 @@
-dlt[postgres]>=0.5.1
+dlt[postgres]==1.24.0

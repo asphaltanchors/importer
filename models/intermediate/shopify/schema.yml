@@ -47,7 +47,8 @@ models:
     description: "Intermediate model matching Shopify orders to QuickBooks invoices for reconciliation"
     tests:
       - dbt_utils.expression_is_true:
-          expression: "match_status != 'SHOPIFY_ONLY' or order_number > 'S-1200'"
+          arguments:
+            expression: "match_status != 'SHOPIFY_ONLY' or order_number > 'S-1200'"
           config:
             severity: warn
     columns:

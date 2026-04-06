@@ -1,75 +1,75 @@
 #!/bin/bash
 
+run_orchestrator() {
+    local load_mode="$1"
+    local source_name="${2:-}"
+
+    cd /app
+
+    if [ -n "$source_name" ]; then
+        python orchestrator.py "--${load_mode}" --source "$source_name"
+    else
+        python orchestrator.py "--${load_mode}"
+    fi
+
+    if [ $? -ne 0 ]; then
+        echo "$(date): Orchestrator failed for mode '${load_mode}'${source_name:+ and source '${source_name}'}!" >&2
+        exit 1
+    fi
+}
+
 # Function to run complete data pipeline using new orchestrator
 run_pipeline() {
     echo "$(date): Starting multi-source data pipeline..."
-    
-    # Change to app directory
-    cd /app
-    
-    # Run complete pipeline using orchestrator
-    echo "$(date): Running complete pipeline (all sources + DBT + data quality)..."
-    python orchestrator.py --mode full --load-mode full
-    if [ $? -ne 0 ]; then
-        echo "$(date): Complete pipeline failed!" >&2
-        exit 1
-    fi
-    
+
+    # "run"/"full" now means a full orchestrated incremental pass.
+    echo "$(date): Running complete incremental pipeline (all enabled sources + DBT + data quality)..."
+    run_orchestrator incremental
+
     echo "$(date): Multi-source data pipeline finished successfully!"
 }
 
 # Function to run seed data pipeline (historical data only)
 run_seed_pipeline() {
     echo "$(date): Starting seed data pipeline..."
-    
-    # Change to app directory
-    cd /app
-    
-    # Run seed pipeline using orchestrator
+
     echo "$(date): Running seed pipeline (historical data + DBT + data quality)..."
-    python orchestrator.py --mode full --load-mode seed
-    if [ $? -ne 0 ]; then
-        echo "$(date): Seed pipeline failed!" >&2
-        exit 1
-    fi
-    
+    run_orchestrator seed
+
     echo "$(date): Seed data pipeline finished successfully!"
 }
 
 # Function to run incremental data pipeline (latest daily data only)
 run_incremental_pipeline() {
     echo "$(date): Starting incremental data pipeline..."
-    
-    # Change to app directory
-    cd /app
-    
-    # Run incremental pipeline using orchestrator
+
     echo "$(date): Running incremental pipeline (latest daily data + DBT)..."
-    python orchestrator.py --mode full --load-mode incremental
-    if [ $? -ne 0 ]; then
-        echo "$(date): Incremental pipeline failed!" >&2
-        exit 1
-    fi
-    
+    run_orchestrator incremental
+
     echo "$(date): Incremental data pipeline finished successfully!"
 }
 
 # Function to run individual data source
 run_source() {
     local source_name="$2"
+    local source_mode="${3:-incremental}"
     if [ -z "$source_name" ]; then
         echo "$(date): Error: Source name required for source mode" >&2
-        echo "Usage: $0 source <source_name>" >&2
+        echo "Usage: $0 source <source_name> [seed|incremental]" >&2
         exit 1
     fi
-    
-    echo "$(date): Running pipeline for source: $source_name"
-    cd /app
-    python orchestrator.py --mode source --source "$source_name"
-    if [ $? -ne 0 ]; then
-        echo "$(date): Source pipeline '$source_name' failed!" >&2
-        exit 1
-    fi
+
+    case "$source_mode" in
+        seed|incremental)
+            ;;
+        *)
+            echo "$(date): Error: Unsupported source mode '$source_mode'. Use seed or incremental." >&2
+            exit 1
+            ;;
+    esac
+
+    echo "$(date): Running ${source_mode} pipeline for source: $source_name"
+    run_orchestrator "$source_mode" "$source_name"
     echo "$(date): Source pipeline '$source_name' completed successfully!"
 }
 
@@ -77,7 +77,7 @@ run_source() {
 run_dbt() {
     echo "$(date): Running DBT transformations only..."
     cd /app
-    python orchestrator.py --mode dbt
+    dbt run
     if [ $? -ne 0 ]; then
         echo "$(date): DBT transformations failed!" >&2
         exit 1
@@ -101,7 +101,7 @@ run_tests() {
 run_data_quality() {
     echo "$(date): Running data quality checks..."
     cd /app
-    python orchestrator.py --mode data-quality
+    python -c 'from orchestrator import PipelineOrchestrator; import sys; result = PipelineOrchestrator().run_data_quality_checks(); print(result); sys.exit(0 if result.get("status") in ("completed", "success", "skipped") else 1)'
     if [ $? -ne 0 ]; then
         echo "$(date): Data quality checks failed!" >&2
         exit 1

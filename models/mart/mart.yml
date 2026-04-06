@@ -675,14 +675,16 @@ models:
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "> 0"
+              arguments:
+                expression: "> 0"
       
       - name: total_transactions
         description: Number of transactions for this product-company-period
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "> 0"
+              arguments:
+                expression: "> 0"
       
       - name: total_quantity_purchased
         description: Total quantity purchased in this period (defaults to 0 for NULL quantities)
@@ -774,14 +776,16 @@ models:
         description: What percentage of lifetime spending on this product occurred in this period
         tests:
           - dbt_utils.expression_is_true:
-              expression: ">= 0 AND period_share_of_lifetime_spending <= 100"
+              arguments:
+                expression: ">= 0 AND period_share_of_lifetime_spending <= 100"
       
       - name: days_since_last_purchase
         description: Days since last purchase of this product by this company
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: ">= 0"
+              arguments:
+                expression: ">= 0"
     tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns:
@@ -913,7 +917,8 @@ models:
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "completeness_score >= 0 and completeness_score <= 100"
+              arguments:
+                expression: ">= 0 and completeness_score <= 100"
       
       - name: email_marketable
         description: Flag indicating if contact can be emailed
@@ -1053,4 +1058,5 @@ models:
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "> 0"
+              arguments:
+                expression: "> 0"

@@ -148,7 +148,8 @@ models:
           - not_null
           # Ensure no orphaned NO_EMAIL_DOMAIN records
           - dbt_utils.expression_is_true:
-              expression: "company_domain_key != 'NO_EMAIL_DOMAIN'"
+              arguments:
+                expression: "!= 'NO_EMAIL_DOMAIN'"
       
       - name: main_email
         description: "Person's email address (should be unique across all persons after deduplication)"
@@ -168,7 +169,8 @@ models:
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "company_contact_rank >= 1"
+              arguments:
+                expression: ">= 1"
       
       - name: is_primary_company_contact
         description: "Flag for primary contact (should match company_contact_rank = 1)"
@@ -176,7 +178,8 @@ models:
           - not_null
           # Test consistency between rank and flag
           - dbt_utils.expression_is_true:
-              expression: "(company_contact_rank = 1 AND is_primary_company_contact = TRUE) OR (company_contact_rank > 1 AND is_primary_company_contact = FALSE)"
+              arguments:
+                expression: "= (company_contact_rank = 1)"
       
       - name: contact_data_quality
         description: Data quality assessment
@@ -382,8 +385,8 @@ models:
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "> 0"
+              arguments:
+                expression: "> 0"
 
       - name: parsed_unit_count
         description: Parsed unit count from product descriptions (nullable for debugging)
-

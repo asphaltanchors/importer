@@ -177,10 +177,12 @@ models:
           - not_null
           # Test for basic email format
           - dbt_utils.expression_is_true:
-              expression: "main_email LIKE '%@%'"
+              arguments:
+                expression: "LIKE '%@%'"
           # Ensure no Amazon marketplace emails pass through
           - dbt_utils.expression_is_true:
-              expression: "NOT (LOWER(main_email) LIKE '%@marketplace.amazon.com')"
+              arguments:
+                expression: "IS NULL OR LOWER(main_email) NOT LIKE '%@marketplace.amazon.com'"
       
       - name: main_email_domain
         description: Domain extracted from email address
@@ -188,7 +190,8 @@ models:
           - not_null
           # Ensure domain extraction is consistent
           - dbt_utils.expression_is_true:
-              expression: "main_email_domain = LOWER(SPLIT_PART(main_email, '@', 2))"
+              arguments:
+                expression: "= LOWER(SPLIT_PART(main_email, '@', 2))"
       
       - name: full_name
         description: Constructed full name (from original data or derived from email)
@@ -207,7 +210,8 @@ models:
         tests:
           - not_null
           - dbt_utils.expression_is_true:
-              expression: "email_position >= 1"
+              arguments:
+                expression: ">= 1"
       
       - name: contact_priority
         description: Priority classification of the contact
