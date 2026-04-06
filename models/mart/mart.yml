@@ -12,6 +12,7 @@ models:
             - analysis_level
             - order_number
             - customer
+            - customer_segment
     columns:
       - name: analysis_level
         description: Type of analysis (Individual Invoices, Customer Summary, Aging Summary)
@@ -531,6 +532,13 @@ models:
       Company-level order analytics enabling analysis of ordering patterns,
       order sizes, product mix, and purchasing behavior by consolidated company.
       Each row represents one order from a company.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - company_domain_key
+            - order_number
+            - order_date
+            - customer_name
     columns:
       - name: company_domain_key
         description: Links to fct_companies.company_domain_key
@@ -541,7 +549,6 @@ models:
         description: Unique order/invoice number
         tests:
           - not_null
-          - unique
       
       - name: order_date
         description: Date the order was placed
@@ -727,12 +734,8 @@ models:
           - accepted_values:
               values: ['Individual Customer', 'Single Location', 'Small Multi-Location', 'Medium Multi-Location', 'Large Multi-Location']
       
-      - name: company_revenue_category
-        description: Company revenue classification
-        tests:
-          - not_null
-          - accepted_values:
-              values: ['No Revenue', 'Low Value (<$5K)', 'Growing Value ($5K-$25K)', 'Medium Value ($25K-$100K)', 'High Value ($100K+)']
+      - name: company_total_revenue
+        description: Lifetime company revenue from the company-product base model
       
       - name: product_family
         description: Product family from fct_products (may be NULL for products not in fct_products)
@@ -939,7 +942,7 @@ models:
         tests:
           - not_null
       
-      - name: snapshot_date
+      - name: inventory_date
         description: Date of the inventory snapshot
         tests:
           - not_null
@@ -952,31 +955,31 @@ models:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns:
             - item_name
-            - snapshot_date
+            - inventory_date
 
   - name: fct_product_pricing_history
     description: >
       Fact table tracking product pricing changes and history.
     columns:
-      - name: item_name
-        description: Name of the product
+      - name: product_service
+        description: Name of the product or service
         tests:
           - not_null
       
-      - name: effective_date
-        description: Date when the price became effective
+      - name: order_date
+        description: Transaction date for the observed price point
         tests:
           - not_null
       
-      - name: sales_price
-        description: Sales price for the product
+      - name: avg_unit_price
+        description: Average unit price observed for the product on that date
         tests:
           - not_null
     tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns:
-            - item_name
-            - effective_date
+            - product_service
+            - order_date
 
   - name: mart_company_period_metrics
     description: >

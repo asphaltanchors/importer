@@ -329,6 +329,9 @@ SELECT
 FROM contacts_with_person_data
 -- Only include records with meaningful person information
 WHERE has_person_data = TRUE
+  AND main_email LIKE '%@%'
+  AND SPLIT_PART(main_email, '@', 1) != ''
+  AND SPLIT_PART(main_email, '@', 2) != ''
   -- Exclude Amazon marketplace emails (anonymous, not actionable contacts)
   AND NOT (LOWER(main_email) LIKE '%@marketplace.amazon.com')
 ORDER BY customer_name, full_name

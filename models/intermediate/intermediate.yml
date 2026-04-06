@@ -249,8 +249,8 @@ models:
     description: >
       Intermediate model for contact name enrichment and parsing.
     columns:
-      - name: contact_id
-        description: Unique contact identifier
+      - name: email_contact_id
+        description: Unique email contact identifier
         tests:
           - not_null
           - unique
@@ -259,14 +259,14 @@ models:
     description: >
       Intermediate model for scoring contact data quality.
     columns:
-      - name: contact_id
-        description: Contact identifier
+      - name: email_contact_id
+        description: Email contact identifier
         tests:
           - not_null
           - unique
       
-      - name: quality_score
-        description: Data quality score for the contact
+      - name: completeness_score
+        description: Data completeness score for the contact
         tests:
           - not_null
 
@@ -321,12 +321,12 @@ models:
           - not_null
           - unique
       
-      - name: customer_id
+      - name: source_customer_id
         description: Customer identifier from QuickBooks
         tests:
           - not_null
       
-      - name: primary_email
+      - name: main_email
         description: Primary email address for the person
         tests:
           - not_null

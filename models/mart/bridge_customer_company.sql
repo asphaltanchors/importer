@@ -51,8 +51,8 @@ SELECT
     COALESCE(cr.customer_order_days, 0) as customer_order_days,
     
     -- Customer classifications from revenue model
-    cr.customer_value_tier,
-    cr.customer_activity_status,
+    COALESCE(cr.customer_value_tier, 'No Revenue') as customer_value_tier,
+    COALESCE(cr.customer_activity_status, 'No Orders') as customer_activity_status,
     cr.orders_per_day,
     
     -- Flags for analysis
